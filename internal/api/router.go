@@ -104,6 +104,7 @@ func (s *Server) Handler(webFS fs.FS) http.Handler {
 	mux.HandleFunc("POST /api/admin/requests/{id}/refuse", s.requireAdmin(s.handleRefuseRequest))
 	mux.HandleFunc("GET /api/admin/settings/discord", s.requireAdmin(s.handleGetDiscordSettings))
 	mux.HandleFunc("PUT /api/admin/settings/discord", s.requireAdmin(s.handlePutDiscordSettings))
+	mux.HandleFunc("GET /api/caddy/ask", s.handleCaddyAsk)
 	mux.HandleFunc("GET /api/apps", s.requireUser(s.handleListApps))
 	mux.HandleFunc("POST /api/apps", s.requireUser(s.handleCreateApp))
 	mux.HandleFunc("GET /api/apps/{id}", s.requireUser(s.handleGetApp))

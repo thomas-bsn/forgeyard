@@ -9,6 +9,17 @@ import (
 	"context"
 )
 
+const appExistsByName = `-- name: AppExistsByName :one
+SELECT EXISTS (SELECT 1 FROM apps WHERE name = ?)
+`
+
+func (q *Queries) AppExistsByName(ctx context.Context, name string) (int64, error) {
+	row := q.db.QueryRowContext(ctx, appExistsByName, name)
+	var column_1 int64
+	err := row.Scan(&column_1)
+	return column_1, err
+}
+
 const countAppsByNode = `-- name: CountAppsByNode :many
 SELECT node_id, COUNT(*) AS count FROM apps GROUP BY node_id
 `

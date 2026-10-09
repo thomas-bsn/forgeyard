@@ -11,18 +11,33 @@ services:
     #   - "9001:8081"
 
     # --- Behind Caddy running in Docker ---------------------------------------------------
-    # Caddyfile:
-    #   forgeyard.example.com {
-    #       reverse_proxy forgeyard:8080
-    #   }
-    # The web UI is then only reachable through Caddy. Port 8081 stays published: agents connect
-    # to it directly with mutual TLS, never through Caddy (and, with Cloudflare, the DNS record of
-    # Forgeyard's address must be "DNS only", since Cloudflare's proxy cannot carry it).
+    # Join Caddy's network, so Caddy reaches Forgeyard as forgeyard:8080. Port 8081 stays published:
+    # agents connect to it directly with mutual TLS, never through Caddy (with Cloudflare, the record of
+    # Forgeyard's address must be "DNS only": Cloudflare's proxy cannot carry it).
     # ports: !override
     #   - "8081:8081"
     # networks:
     #   - default
     #   - caddy
+    #
+    # Caddyfile (Caddy's container must also join the external network "forgeyard", created by the agent,
+    # to reach Traefik). Each app gets its own certificate on its first visit; Caddy asks Forgeyard first,
+    # so it only does it for real apps:
+    #   {
+    #       on_demand_tls {
+    #           ask http://forgeyard:8080/api/caddy/ask
+    #       }
+    #   }
+    #   forgeyard.example.com {
+    #       reverse_proxy forgeyard:8080
+    #   }
+    #   https:// {
+    #       tls {
+    #           on_demand
+    #       }
+    #       reverse_proxy forgeyard-traefik:80
+    #   }
+    # In Forgeyard, set the node's network to "behind my proxy".
 
     # --- Behind Caddy installed on the host ---------------------------------------------
     # Caddyfile:

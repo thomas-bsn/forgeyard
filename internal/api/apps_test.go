@@ -165,6 +165,16 @@ func TestAppLifecycle(t *testing.T) {
 		t.Fatalf("duplicate name: %d", code)
 	}
 
+	// Caddy's on-demand TLS check accepts app domains and Forgeyard's own, nothing else.
+	for domain, want := range map[string]int{
+		"blog.example.com": http.StatusOK, "BLOG.example.com.": http.StatusOK, "forgeyard.example.com": http.StatusOK,
+		"nope.example.com": http.StatusNotFound, "blog.other.org": http.StatusNotFound, "x.blog.example.com": http.StatusNotFound,
+	} {
+		if code := get(t, newClient(), ts.URL+"/api/caddy/ask?domain="+domain, nil); code != want {
+			t.Errorf("caddy ask %s: %d, want %d", domain, code, want)
+		}
+	}
+
 	// The agent's report shows in the API.
 	fa.stream.Send(&agentpb.AgentMessage{Msg: &agentpb.AgentMessage_AppStatuses{AppStatuses: &agentpb.AppStatuses{
 		Apps: []*agentpb.AppStatus{{AppId: app.ID, State: "running", StartedAt: time.Now().Unix()}},

@@ -43,3 +43,6 @@ DELETE FROM apps WHERE id = ?;
 
 -- name: UpdateNodeIngress :one
 UPDATE nodes SET public_ip = ?, ingress_mode = ?, ingress_http_port = ? WHERE id = ? RETURNING *;
+
+-- name: AppExistsByName :one
+SELECT EXISTS (SELECT 1 FROM apps WHERE name = ?);

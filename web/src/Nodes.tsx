@@ -349,9 +349,20 @@ function IngressSettings({ node, onSaved }: { node: Node; onSaved: () => void })
             <input type="number" min={1} max={65535} value={port} onChange={(e) => setPort(e.target.value)} required />
           </label>
           <div className="field">
-            <span>À ajouter dans votre Caddyfile</span>
-            <CopyField value={`*.mondomaine.com {\n    reverse_proxy localhost:${port}\n}`} />
-            <small>Votre proxy fait le HTTPS et envoie tous les sous-domaines à Forgeyard.</small>
+            <span>Caddy dans Docker</span>
+            <CopyField
+              value={`{\n    on_demand_tls {\n        ask http://forgeyard:8080/api/caddy/ask\n    }\n}\n\nhttps:// {\n    tls {\n        on_demand\n    }\n    reverse_proxy forgeyard-traefik:80\n}`}
+            />
+            <small>
+              Le conteneur de Caddy doit rejoindre les réseaux Docker <code>forgeyard</code> et celui de Forgeyard. Chaque app
+              reçoit son certificat à sa première visite, et seulement si c’est une vraie app.
+            </small>
+          </div>
+          <div className="field">
+            <span>Caddy installé directement sur la machine</span>
+            <CopyField
+              value={`{\n    on_demand_tls {\n        ask http://localhost:8080/api/caddy/ask\n    }\n}\n\nhttps:// {\n    tls {\n        on_demand\n    }\n    reverse_proxy localhost:${port}\n}`}
+            />
           </div>
         </>
       )}
