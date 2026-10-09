@@ -1,8 +1,10 @@
 package api
 
 import (
+	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"net"
 	"net/http"
 	"net/url"
@@ -39,6 +41,9 @@ type nodeResponse struct {
 	DockerVersion string       `json:"dockerVersion"`
 	AgentVersion  string       `json:"agentVersion"`
 	LastSeenAt    int64        `json:"lastSeenAt,omitempty"`
+	PublicIP      string       `json:"publicIp"`
+	IngressMode   string       `json:"ingressMode"`
+	IngressPort   int64        `json:"ingressHttpPort"`
 	Metrics       *nodeMetrics `json:"metrics,omitempty"`
 	CPUHistory    []float64    `json:"cpuHistory,omitempty"`
 }
@@ -48,6 +53,7 @@ func (s *Server) toNodeResponse(n db.Node) nodeResponse {
 		ID: n.ID, Name: n.Name, State: "pending", Hostname: n.Hostname, OS: n.Os, Arch: n.Arch, CPUs: n.Cpus,
 		MemoryBytes: n.MemoryBytes, DiskBytes: n.DiskBytes, DockerVersion: n.DockerVersion,
 		AgentVersion: n.AgentVersion, LastSeenAt: n.LastSeenAt.Int64,
+		PublicIP: n.PublicIp, IngressMode: n.IngressMode, IngressPort: n.IngressHttpPort,
 	}
 	if n.Status != "active" {
 		return resp
@@ -174,6 +180,13 @@ func (s *Server) handleDeleteNode(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	if apps, err := s.store.ListAppsByNode(r.Context(), node.ID); err != nil {
+		s.internalError(w, r, err)
+		return
+	} else if len(apps) > 0 {
+		writeError(w, http.StatusConflict, fmt.Sprintf("ce node héberge encore %d app(s) : supprimez-les d'abord", len(apps)))
+		return
+	}
 	if err := s.store.DeleteNode(r.Context(), node.ID); err != nil {
 		s.internalError(w, r, err)
 		return
@@ -278,3 +291,81 @@ func (s *Server) handleJoinNode(w http.ResponseWriter, r *http.Request) {
 }
 
 var errBadCSR = errors.New("invalid certificate request")
+
+type nodeIngressRequest struct {
+	PublicIP string `json:"publicIp"`
+	Mode     string `json:"ingressMode"`
+	HTTPPort int    `json:"ingressHttpPort"`
+}
+
+// handleNodeIngress sets a node's public IP and how it receives web traffic. When the IP changes, the DNS
+// records of its apps follow.
+func (s *Server) handleNodeIngress(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	node, ok := s.nodeFromPath(w, r)
+	if !ok {
+		return
+	}
+	var body nodeIngressRequest
+	if !decodeJSON(w, r, &body) {
+		return
+	}
+	body.PublicIP = strings.TrimSpace(body.PublicIP)
+	if body.PublicIP != "" && net.ParseIP(body.PublicIP) == nil {
+		writeError(w, http.StatusBadRequest, "IP publique invalide")
+		return
+	}
+	if body.Mode != "traefik" && body.Mode != "proxy" {
+		writeError(w, http.StatusBadRequest, "mode inconnu")
+		return
+	}
+	if body.Mode == "proxy" && (body.HTTPPort < 1 || body.HTTPPort > 65535 || body.HTTPPort == 8080 || body.HTTPPort == 8081) {
+		writeError(w, http.StatusBadRequest, "port HTTP invalide (et 8080/8081 sont pris par Forgeyard)")
+		return
+	}
+	if body.HTTPPort == 0 {
+		body.HTTPPort = int(node.IngressHttpPort)
+	}
+	updated, err := s.store.UpdateNodeIngress(ctx, db.UpdateNodeIngressParams{
+		PublicIp: body.PublicIP, IngressMode: body.Mode, IngressHttpPort: int64(body.HTTPPort), ID: node.ID,
+	})
+	if err != nil {
+		s.internalError(w, r, err)
+		return
+	}
+
+	c, err := s.loadDNSConfig(ctx)
+	if err != nil {
+		s.internalError(w, r, err)
+		return
+	}
+	if nodeIP(updated, c) != nodeIP(node, c) {
+		if err := s.repointAppRecords(ctx, updated, c); err != nil {
+			s.logger.Warn("updating DNS records after an IP change failed", "node", node.Name, "err", err)
+		}
+	}
+	s.logger.Info("node ingress changed", "node", node.Name, "mode", body.Mode, "ip", body.PublicIP, "by", currentUser(r).DisplayName)
+	s.push(ctx, node.ID)
+	writeJSON(w, http.StatusOK, s.toNodeResponse(updated))
+}
+
+// repointAppRecords points the DNS records of a node's apps to its current IP.
+func (s *Server) repointAppRecords(ctx context.Context, node db.Node, c dnsConfig) error {
+	p, err := s.dnsProvider(c)
+	if err != nil || p == nil {
+		return err
+	}
+	apps, err := s.store.ListAppsByNode(ctx, node.ID)
+	if err != nil {
+		return err
+	}
+	for _, a := range apps {
+		if a.DnsName == "" {
+			continue
+		}
+		if err := s.setAppRecord(ctx, c, p, a.DnsName, nodeIP(node, c)); err != nil {
+			return fmt.Errorf("%s: %w", a.DnsName, err)
+		}
+	}
+	return nil
+}

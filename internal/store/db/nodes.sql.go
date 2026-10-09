@@ -28,7 +28,7 @@ func (q *Queries) ActivateNode(ctx context.Context, arg ActivateNodeParams) erro
 const createNode = `-- name: CreateNode :one
 INSERT INTO nodes (name, status, join_token_hash, join_expires_at, created_at)
 VALUES (?, 'pending', ?, ?, ?)
-RETURNING id, name, status, join_token_hash, join_expires_at, cert_serial, hostname, os, arch, cpus, memory_bytes, disk_bytes, docker_version, agent_version, last_seen_at, created_at
+RETURNING id, name, status, join_token_hash, join_expires_at, cert_serial, hostname, os, arch, cpus, memory_bytes, disk_bytes, docker_version, agent_version, last_seen_at, created_at, public_ip, ingress_mode, ingress_http_port
 `
 
 type CreateNodeParams struct {
@@ -63,6 +63,9 @@ func (q *Queries) CreateNode(ctx context.Context, arg CreateNodeParams) (Node, e
 		&i.AgentVersion,
 		&i.LastSeenAt,
 		&i.CreatedAt,
+		&i.PublicIp,
+		&i.IngressMode,
+		&i.IngressHttpPort,
 	)
 	return i, err
 }
@@ -77,7 +80,7 @@ func (q *Queries) DeleteNode(ctx context.Context, id int64) error {
 }
 
 const getNode = `-- name: GetNode :one
-SELECT id, name, status, join_token_hash, join_expires_at, cert_serial, hostname, os, arch, cpus, memory_bytes, disk_bytes, docker_version, agent_version, last_seen_at, created_at FROM nodes WHERE id = ?
+SELECT id, name, status, join_token_hash, join_expires_at, cert_serial, hostname, os, arch, cpus, memory_bytes, disk_bytes, docker_version, agent_version, last_seen_at, created_at, public_ip, ingress_mode, ingress_http_port FROM nodes WHERE id = ?
 `
 
 func (q *Queries) GetNode(ctx context.Context, id int64) (Node, error) {
@@ -100,12 +103,15 @@ func (q *Queries) GetNode(ctx context.Context, id int64) (Node, error) {
 		&i.AgentVersion,
 		&i.LastSeenAt,
 		&i.CreatedAt,
+		&i.PublicIp,
+		&i.IngressMode,
+		&i.IngressHttpPort,
 	)
 	return i, err
 }
 
 const getPendingNodeByJoinToken = `-- name: GetPendingNodeByJoinToken :one
-SELECT id, name, status, join_token_hash, join_expires_at, cert_serial, hostname, os, arch, cpus, memory_bytes, disk_bytes, docker_version, agent_version, last_seen_at, created_at FROM nodes WHERE join_token_hash = ? AND status = 'pending' AND join_expires_at > ?
+SELECT id, name, status, join_token_hash, join_expires_at, cert_serial, hostname, os, arch, cpus, memory_bytes, disk_bytes, docker_version, agent_version, last_seen_at, created_at, public_ip, ingress_mode, ingress_http_port FROM nodes WHERE join_token_hash = ? AND status = 'pending' AND join_expires_at > ?
 `
 
 type GetPendingNodeByJoinTokenParams struct {
@@ -133,12 +139,15 @@ func (q *Queries) GetPendingNodeByJoinToken(ctx context.Context, arg GetPendingN
 		&i.AgentVersion,
 		&i.LastSeenAt,
 		&i.CreatedAt,
+		&i.PublicIp,
+		&i.IngressMode,
+		&i.IngressHttpPort,
 	)
 	return i, err
 }
 
 const listNodes = `-- name: ListNodes :many
-SELECT id, name, status, join_token_hash, join_expires_at, cert_serial, hostname, os, arch, cpus, memory_bytes, disk_bytes, docker_version, agent_version, last_seen_at, created_at FROM nodes ORDER BY name
+SELECT id, name, status, join_token_hash, join_expires_at, cert_serial, hostname, os, arch, cpus, memory_bytes, disk_bytes, docker_version, agent_version, last_seen_at, created_at, public_ip, ingress_mode, ingress_http_port FROM nodes ORDER BY name
 `
 
 func (q *Queries) ListNodes(ctx context.Context) ([]Node, error) {
@@ -167,6 +176,9 @@ func (q *Queries) ListNodes(ctx context.Context) ([]Node, error) {
 			&i.AgentVersion,
 			&i.LastSeenAt,
 			&i.CreatedAt,
+			&i.PublicIp,
+			&i.IngressMode,
+			&i.IngressHttpPort,
 		); err != nil {
 			return nil, err
 		}

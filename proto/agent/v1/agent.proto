@@ -14,12 +14,17 @@ message AgentMessage {
   oneof msg {
     Hello hello = 1;
     Metrics metrics = 2;
+    AppStatuses app_statuses = 3;
+    LogLine log_line = 4;
   }
 }
 
 message ServerMessage {
   oneof msg {
     Welcome welcome = 1;
+    DesiredState desired_state = 2;
+    StartLogs start_logs = 3;
+    StopLogs stop_logs = 4;
   }
 }
 
@@ -52,4 +57,63 @@ message Metrics {
 message Welcome {
   int64 node_id = 1;
   string node_name = 2;
+}
+
+// DesiredState is everything that must run on the node. It is sent after Welcome and whenever it changes;
+// the agent makes Docker match it: creates, updates and removes containers, and runs the ingress proxy.
+message DesiredState {
+  repeated AppSpec apps = 1;
+  Ingress ingress = 2;
+}
+
+message AppSpec {
+  int64 id = 1;
+  string name = 2;
+  string image = 3;
+  int32 port = 4; // port the app listens on inside its container
+  map<string, string> env = 5;
+  string hostname = 6; // full domain name routed to the app; empty publishes the port on the node instead
+  bool running = 7;
+  int64 memory_bytes = 8;
+  int64 generation = 9; // bumped to force a redeploy (fresh pull, new container)
+}
+
+message Ingress {
+  // "traefik": Traefik listens on 80/443 and gets HTTPS certificates itself.
+  // "proxy": Traefik listens on http_port in plain HTTP, behind a proxy the user runs (Caddy…).
+  string mode = 1;
+  int32 http_port = 2;
+}
+
+message AppStatuses {
+  repeated AppStatus apps = 1;
+}
+
+message AppStatus {
+  int64 app_id = 1;
+  // pulling, creating, running, restarting, stopped, exited, error
+  string state = 2;
+  int32 exit_code = 3;
+  bool oom_killed = 4;
+  string error = 5;
+  int64 started_at = 6;
+  int32 host_port = 7; // when the app has no hostname
+  int32 restart_count = 8;
+}
+
+message StartLogs {
+  string stream_id = 1;
+  int64 app_id = 2;
+  int32 tail = 3;
+}
+
+message StopLogs {
+  string stream_id = 1;
+}
+
+message LogLine {
+  string stream_id = 1;
+  string text = 2;
+  bool stderr = 3;
+  bool end = 4; // the stream is over (container gone or error in text)
 }

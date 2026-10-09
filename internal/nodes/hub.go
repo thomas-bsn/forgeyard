@@ -3,7 +3,9 @@ package nodes
 
 import (
 	"context"
+	"crypto/rand"
 	"database/sql"
+	"encoding/hex"
 	"errors"
 	"log/slog"
 	"sync"
@@ -37,7 +39,18 @@ type session struct {
 	cancel      context.CancelFunc
 	connectedAt time.Time
 	metrics     []*agentpb.Metrics
+	out         chan *agentpb.ServerMessage // the stream's only sender reads it
 }
+
+// AppStatus is the last state an agent reported for an app.
+type AppStatus struct {
+	NodeID     int64
+	Status     *agentpb.AppStatus
+	ReportedAt time.Time
+}
+
+// DesiredStateFunc computes what must run on a node.
+type DesiredStateFunc func(ctx context.Context, nodeID int64) (*agentpb.DesiredState, error)
 
 // Hub knows which nodes are connected. It implements the AgentService gRPC server.
 type Hub struct {
@@ -46,13 +59,122 @@ type Hub struct {
 	store  *store.Store
 	logger *slog.Logger
 
-	mu       sync.Mutex
-	sessions map[int64]*session
+	// Desired computes the state sent to an agent when it connects and on Push. Set it before serving.
+	Desired DesiredStateFunc
+
+	mu         sync.Mutex
+	sessions   map[int64]*session
+	statuses   map[int64]AppStatus              // by app ID
+	logStreams map[string]chan *agentpb.LogLine // by stream ID
 }
 
 // NewHub returns an empty Hub.
 func NewHub(st *store.Store, logger *slog.Logger) *Hub {
-	return &Hub{store: st, logger: logger, sessions: make(map[int64]*session)}
+	return &Hub{
+		store: st, logger: logger, sessions: make(map[int64]*session),
+		statuses: make(map[int64]AppStatus), logStreams: make(map[string]chan *agentpb.LogLine),
+	}
+}
+
+// AppStatus returns the last state reported for an app, if any.
+func (h *Hub) AppStatus(appID int64) (AppStatus, bool) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	s, ok := h.statuses[appID]
+	return s, ok
+}
+
+// ForgetApp drops the status of a deleted app.
+func (h *Hub) ForgetApp(appID int64) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	delete(h.statuses, appID)
+}
+
+func (h *Hub) send(nodeID int64, msg *agentpb.ServerMessage) bool {
+	h.mu.Lock()
+	s, ok := h.sessions[nodeID]
+	h.mu.Unlock()
+	if !ok {
+		return false
+	}
+	select {
+	case s.out <- msg:
+		return true
+	case <-time.After(5 * time.Second):
+		h.logger.Warn("node not reading its stream, message dropped", "node_id", nodeID)
+		return false
+	}
+}
+
+// Push sends a node its desired state again, after an app on it changed. An offline node gets it when it
+// reconnects.
+func (h *Hub) Push(ctx context.Context, nodeID int64) error {
+	h.mu.Lock()
+	_, online := h.sessions[nodeID]
+	h.mu.Unlock()
+	if !online || h.Desired == nil {
+		return nil
+	}
+	d, err := h.Desired(ctx, nodeID)
+	if err != nil {
+		return err
+	}
+	h.send(nodeID, &agentpb.ServerMessage{Msg: &agentpb.ServerMessage_DesiredState{DesiredState: d}})
+	return nil
+}
+
+// ErrOffline means the node holding an app is not connected.
+var ErrOffline = errors.New("node offline")
+
+// Logs streams an app's container output from its node until ctx ends. The channel is closed when the
+// stream ends.
+func (h *Hub) Logs(ctx context.Context, nodeID, appID int64, tail int) (<-chan *agentpb.LogLine, error) {
+	id := randomID()
+	ch := make(chan *agentpb.LogLine, 256)
+	h.mu.Lock()
+	h.logStreams[id] = ch
+	h.mu.Unlock()
+	if !h.send(nodeID, &agentpb.ServerMessage{Msg: &agentpb.ServerMessage_StartLogs{
+		StartLogs: &agentpb.StartLogs{StreamId: id, AppId: appID, Tail: int32(tail)},
+	}}) {
+		h.closeLogStream(id)
+		return nil, ErrOffline
+	}
+	go func() {
+		<-ctx.Done()
+		h.send(nodeID, &agentpb.ServerMessage{Msg: &agentpb.ServerMessage_StopLogs{StopLogs: &agentpb.StopLogs{StreamId: id}}})
+		h.closeLogStream(id)
+	}()
+	return ch, nil
+}
+
+func (h *Hub) closeLogStream(id string) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if ch, ok := h.logStreams[id]; ok {
+		close(ch)
+		delete(h.logStreams, id)
+	}
+}
+
+func (h *Hub) deliverLog(line *agentpb.LogLine) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	ch, ok := h.logStreams[line.GetStreamId()]
+	if !ok {
+		return
+	}
+	select {
+	case ch <- line:
+	default: // the viewer is too slow: drop rather than block the node's stream
+	}
+}
+
+func randomID() string {
+	b := make([]byte, 12)
+	rand.Read(b)
+	return hex.EncodeToString(b)
 }
 
 // Live returns the state of a connected node; ok is false when it is offline.
@@ -112,6 +234,24 @@ func (h *Hub) Connect(stream agentpb.AgentService_ConnectServer) error {
 	defer h.unregister(node.ID, sess)
 	h.logger.Info("node connected", "node", node.Name, "hostname", info.GetHostname())
 
+	// The stream's only sender.
+	go func() {
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case m := <-sess.out:
+				if err := stream.Send(m); err != nil {
+					cancel()
+					return
+				}
+			}
+		}
+	}()
+	if err := h.Push(ctx, node.ID); err != nil {
+		h.logger.Error("computing the node's desired state failed", "node", node.Name, "err", err)
+	}
+
 	msgs := make(chan *agentpb.AgentMessage)
 	errc := make(chan error, 1)
 	go func() {
@@ -140,11 +280,19 @@ func (h *Hub) Connect(stream agentpb.AgentService_ConnectServer) error {
 			h.touch(node.ID)
 			return nil
 		case msg := <-msgs:
-			if m := msg.GetMetrics(); m != nil {
-				h.addMetrics(sess, m)
+			switch m := msg.GetMsg().(type) {
+			case *agentpb.AgentMessage_Metrics:
+				h.addMetrics(sess, m.Metrics)
 				if time.Since(lastTouch) > touchEvery {
 					h.touch(node.ID)
 					lastTouch = time.Now()
+				}
+			case *agentpb.AgentMessage_AppStatuses:
+				h.setStatuses(node.ID, m.AppStatuses.GetApps())
+			case *agentpb.AgentMessage_LogLine:
+				h.deliverLog(m.LogLine)
+				if m.LogLine.GetEnd() {
+					h.closeLogStream(m.LogLine.GetStreamId())
 				}
 			}
 		}
@@ -186,7 +334,7 @@ func (h *Hub) register(nodeID int64, cancel context.CancelFunc) *session {
 	if old, ok := h.sessions[nodeID]; ok {
 		old.cancel()
 	}
-	s := &session{cancel: cancel, connectedAt: time.Now()}
+	s := &session{cancel: cancel, connectedAt: time.Now(), out: make(chan *agentpb.ServerMessage, 64)}
 	h.sessions[nodeID] = s
 	return s
 }
@@ -196,6 +344,15 @@ func (h *Hub) unregister(nodeID int64, s *session) {
 	defer h.mu.Unlock()
 	if h.sessions[nodeID] == s {
 		delete(h.sessions, nodeID)
+	}
+}
+
+func (h *Hub) setStatuses(nodeID int64, list []*agentpb.AppStatus) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	now := time.Now()
+	for _, st := range list {
+		h.statuses[st.GetAppId()] = AppStatus{NodeID: nodeID, Status: st, ReportedAt: now}
 	}
 }
 

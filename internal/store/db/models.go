@@ -21,6 +21,22 @@ type AccountRequest struct {
 	DecidedAt   sql.NullInt64
 }
 
+type App struct {
+	ID         int64
+	Name       string
+	OwnerID    int64
+	NodeID     int64
+	Image      string
+	Port       int64
+	EnvSealed  string
+	Running    int64
+	MemoryMb   int64
+	Generation int64
+	DnsName    string
+	CreatedAt  int64
+	UpdatedAt  int64
+}
+
 type LoginLink struct {
 	TokenHash string
 	UserID    int64
@@ -28,22 +44,25 @@ type LoginLink struct {
 }
 
 type Node struct {
-	ID            int64
-	Name          string
-	Status        string
-	JoinTokenHash sql.NullString
-	JoinExpiresAt sql.NullInt64
-	CertSerial    sql.NullString
-	Hostname      string
-	Os            string
-	Arch          string
-	Cpus          int64
-	MemoryBytes   int64
-	DiskBytes     int64
-	DockerVersion string
-	AgentVersion  string
-	LastSeenAt    sql.NullInt64
-	CreatedAt     int64
+	ID              int64
+	Name            string
+	Status          string
+	JoinTokenHash   sql.NullString
+	JoinExpiresAt   sql.NullInt64
+	CertSerial      sql.NullString
+	Hostname        string
+	Os              string
+	Arch            string
+	Cpus            int64
+	MemoryBytes     int64
+	DiskBytes       int64
+	DockerVersion   string
+	AgentVersion    string
+	LastSeenAt      sql.NullInt64
+	CreatedAt       int64
+	PublicIp        string
+	IngressMode     string
+	IngressHttpPort int64
 }
 
 type Session struct {

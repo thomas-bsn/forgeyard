@@ -58,7 +58,7 @@ type Server struct {
 
 // NewServer returns a Server. setupToken must be non-empty while the setup wizard has not been completed.
 func NewServer(d Deps, setupToken string) *Server {
-	return &Server{
+	s := &Server{
 		store:     d.Store,
 		logger:    d.Logger,
 		ca:        d.CA,
@@ -75,6 +75,8 @@ func NewServer(d Deps, setupToken string) *Server {
 		newDNSProvider: dns.New,
 		lookupHost:     net.DefaultResolver.LookupHost,
 	}
+	d.Nodes.Desired = s.desiredState
+	return s
 }
 
 // Handler returns the HTTP handler for the API and the single-page web UI.
@@ -98,6 +100,14 @@ func (s *Server) Handler(webFS fs.FS) http.Handler {
 	mux.HandleFunc("POST /api/admin/requests/{id}/refuse", s.requireAdmin(s.handleRefuseRequest))
 	mux.HandleFunc("GET /api/admin/settings/discord", s.requireAdmin(s.handleGetDiscordSettings))
 	mux.HandleFunc("PUT /api/admin/settings/discord", s.requireAdmin(s.handlePutDiscordSettings))
+	mux.HandleFunc("GET /api/apps", s.requireUser(s.handleListApps))
+	mux.HandleFunc("POST /api/apps", s.requireUser(s.handleCreateApp))
+	mux.HandleFunc("GET /api/apps/{id}", s.requireUser(s.handleGetApp))
+	mux.HandleFunc("PUT /api/apps/{id}", s.requireUser(s.handleUpdateApp))
+	mux.HandleFunc("POST /api/apps/{id}/{action}", s.requireUser(s.handleAppAction))
+	mux.HandleFunc("DELETE /api/apps/{id}", s.requireUser(s.handleDeleteApp))
+	mux.HandleFunc("GET /api/apps/{id}/logs", s.requireUser(s.handleAppLogs))
+	mux.HandleFunc("PUT /api/admin/nodes/{id}/ingress", s.requireAdmin(s.handleNodeIngress))
 	mux.HandleFunc("GET /api/admin/nodes", s.requireAdmin(s.handleListNodes))
 	mux.HandleFunc("POST /api/admin/nodes", s.requireAdmin(s.handleCreateNode))
 	mux.HandleFunc("POST /api/admin/nodes/{id}/join-command", s.requireAdmin(s.handleNewJoinCommand))
