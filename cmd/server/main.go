@@ -16,6 +16,7 @@ import (
 
 	"github.com/thomas-bsn/forgeyard/internal/api"
 	"github.com/thomas-bsn/forgeyard/internal/auth"
+	"github.com/thomas-bsn/forgeyard/internal/secrets"
 	"github.com/thomas-bsn/forgeyard/internal/store"
 	"github.com/thomas-bsn/forgeyard/web"
 )
@@ -45,6 +46,11 @@ func run(addr, dataDir string, logger *slog.Logger) error {
 	}
 	defer st.Close()
 
+	box, err := secrets.LoadOrCreate(dataDir)
+	if err != nil {
+		return fmt.Errorf("load secret key: %w", err)
+	}
+
 	done, err := api.SetupCompleted(ctx, st.Queries)
 	if err != nil {
 		return err
@@ -59,7 +65,7 @@ func run(addr, dataDir string, logger *slog.Logger) error {
 
 	srv := &http.Server{
 		Addr:              addr,
-		Handler:           api.NewServer(st, logger, setupToken).Handler(web.Dist()),
+		Handler:           api.NewServer(st, logger, box, setupToken).Handler(web.Dist()),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 

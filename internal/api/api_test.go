@@ -13,6 +13,7 @@ import (
 	"testing"
 	"testing/fstest"
 
+	"github.com/thomas-bsn/forgeyard/internal/secrets"
 	"github.com/thomas-bsn/forgeyard/internal/store"
 )
 
@@ -35,7 +36,11 @@ func newTestServerWithHandle(t *testing.T) (*httptest.Server, *Server) {
 	t.Cleanup(func() { st.Close() })
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	webFS := fstest.MapFS{"index.html": {Data: []byte("<html></html>")}}
-	server := NewServer(st, logger, testToken)
+	box, err := secrets.LoadOrCreate(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := NewServer(st, logger, box, testToken)
 	ts := httptest.NewServer(server.Handler(webFS))
 	t.Cleanup(ts.Close)
 	return ts, server

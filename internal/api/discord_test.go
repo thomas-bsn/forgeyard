@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/cookiejar"
@@ -107,6 +108,11 @@ func TestDiscordSetupRequestsAndLogin(t *testing.T) {
 		t.Fatal(err)
 	}
 	resp.Body.Close()
+	stored, err := server.store.GetSetting(context.Background(), settingDiscordClientSecret)
+	if err != nil || strings.Contains(stored, "secret") {
+		t.Fatalf("client secret stored in clear: %q %v", stored, err)
+	}
+
 	var me userResponse
 	if code := get(t, owner, ts.URL+"/api/auth/me", &me); code != http.StatusOK || me.Role != "superadmin" || me.DisplayName != "thomas" {
 		t.Fatalf("owner after setup: code=%d %+v", code, me)

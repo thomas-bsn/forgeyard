@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from 'react'
 import { api, ApiError, errorMessage, type Instance } from './api'
-import { CopyField, DiscordIcon, Logo, ThemeToggle } from './ui'
+import { DiscordAppSteps, DiscordIcon, Logo, ThemeToggle } from './ui'
 
 const steps = ['Token', 'Méthode', 'Compte admin', 'Instance'] as const
 type Method = 'discord' | 'password'
@@ -139,30 +139,15 @@ export default function Setup({ instance, onDone }: { instance: Instance; onDone
           {step === 2 && method === 'discord' && (
             <>
               <h2>Application Discord</h2>
-              <p className="muted">Discord doit connaître votre PaaS avant de pouvoir y connecter quelqu'un. Ça prend 2 minutes, une seule fois.</p>
-              <ol className="steps-help">
-                <li>
-                  Ouvrez le{' '}
-                  <a href="https://discord.com/developers/applications" target="_blank" rel="noreferrer">
-                    portail développeur Discord
-                  </a>{' '}
-                  et cliquez sur <b>New Application</b>.
-                </li>
-                <li>
-                  Dans l'onglet <b>OAuth2</b>, ajoutez cette adresse dans <b>Redirects</b> :
-                  <CopyField value={instance.discordRedirectUrl} />
-                </li>
-                <li>
-                  Copiez le <b>Client ID</b> et le <b>Client Secret</b> ci-dessous.
-                </li>
-              </ol>
+              <DiscordAppSteps redirectUrl={instance.discordRedirectUrl} />
               <label className="field">
                 <span>Client ID</span>
-                <input value={clientId} onChange={(e) => setClientId(e.target.value)} inputMode="numeric" required autoFocus />
+                <input value={clientId} onChange={(e) => setClientId(e.target.value)} inputMode="numeric" placeholder="123456789012345678" required autoFocus />
               </label>
               <label className="field">
                 <span>Client Secret</span>
                 <input type="password" value={clientSecret} onChange={(e) => setClientSecret(e.target.value)} autoComplete="off" required />
+                <small>Il est chiffré avant d'être enregistré et ne sera plus jamais affiché.</small>
               </label>
             </>
           )}

@@ -172,15 +172,14 @@ func (s *Server) handlePutDiscordSettings(w http.ResponseWriter, r *http.Request
 			return q.DeleteSetting(r.Context(), settingDiscordClientSecret)
 		}
 		if secret == "" {
-			stored, err := q.GetSetting(r.Context(), settingDiscordClientSecret)
-			if errors.Is(err, sql.ErrNoRows) {
+			// Keep the stored secret, which the UI never receives back.
+			if _, err := q.GetSetting(r.Context(), settingDiscordClientSecret); errors.Is(err, sql.ErrNoRows) {
 				return errMissingSecret
 			} else if err != nil {
 				return err
 			}
-			secret = stored
 		}
-		return saveDiscordConfig(r.Context(), q, clientID, secret)
+		return s.saveDiscordConfig(r.Context(), q, clientID, secret)
 	})
 	if errors.Is(err, errMissingSecret) {
 		writeError(w, http.StatusBadRequest, "le Client Secret est obligatoire")

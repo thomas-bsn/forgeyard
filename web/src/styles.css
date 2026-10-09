@@ -609,3 +609,7 @@ code {
     padding-top: 24px;
   }
 }
+
+.steps-help .copy {
+  margin: 6px 0;
+}

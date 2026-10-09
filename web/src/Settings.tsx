@@ -1,6 +1,6 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import { api, errorMessage, type DiscordSettings } from './api'
-import { CopyField } from './ui'
+import { DiscordAppSteps } from './ui'
 
 export default function Settings() {
   const [settings, setSettings] = useState<DiscordSettings | null>(null)
@@ -49,17 +49,10 @@ export default function Settings() {
           {enabled ? 'Activée' : 'Désactivée'}
         </span>
       </div>
-      <p className="muted">
-        Créez une application sur le{' '}
-        <a href="https://discord.com/developers/applications" target="_blank" rel="noreferrer">
-          portail développeur Discord
-        </a>{' '}
-        et ajoutez cette adresse dans <b>OAuth2 › Redirects</b> :
-      </p>
-      <CopyField value={settings.redirectUrl} />
+      <DiscordAppSteps redirectUrl={settings.redirectUrl} />
       <label className="field">
         <span>Client ID</span>
-        <input value={clientId} onChange={(e) => setClientId(e.target.value)} inputMode="numeric" />
+        <input value={clientId} onChange={(e) => setClientId(e.target.value)} inputMode="numeric" placeholder="123456789012345678" />
         <small>Laissez vide pour désactiver la connexion Discord.</small>
       </label>
       <label className="field">
@@ -71,6 +64,7 @@ export default function Settings() {
           placeholder={settings.hasSecret ? '•••••••• (inchangé)' : ''}
           autoComplete="off"
         />
+        <small>Chiffré avant d'être enregistré, jamais réaffiché. Laissez vide pour garder l'actuel.</small>
       </label>
       {error && <p className="error">{error}</p>}
       <div className="panel-footer">

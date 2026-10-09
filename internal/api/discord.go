@@ -5,6 +5,7 @@ import (
 	"crypto/subtle"
 	"database/sql"
 	"errors"
+	"fmt"
 	"net/http"
 	"strings"
 	"time"
@@ -100,11 +101,15 @@ func (s *Server) discordConfig(ctx context.Context, r *http.Request) (cfg discor
 	} else if err != nil {
 		return cfg, false, err
 	}
-	secret, err := s.store.GetSetting(ctx, settingDiscordClientSecret)
+	sealed, err := s.store.GetSetting(ctx, settingDiscordClientSecret)
 	if errors.Is(err, sql.ErrNoRows) {
 		return cfg, false, nil
 	} else if err != nil {
 		return cfg, false, err
+	}
+	secret, err := s.secrets.Decrypt(sealed, settingDiscordClientSecret)
+	if err != nil {
+		return cfg, false, fmt.Errorf("discord client secret: %w", err)
 	}
 	redirect, err := s.discordRedirectURL(ctx, r)
 	if err != nil {
@@ -113,11 +118,19 @@ func (s *Server) discordConfig(ctx context.Context, r *http.Request) (cfg discor
 	return discord.Config{ClientID: id, ClientSecret: secret, RedirectURL: redirect}, true, nil
 }
 
-func saveDiscordConfig(ctx context.Context, q *db.Queries, clientID, clientSecret string) error {
+// saveDiscordConfig stores the client ID and, when not empty, the encrypted client secret.
+func (s *Server) saveDiscordConfig(ctx context.Context, q *db.Queries, clientID, clientSecret string) error {
 	if err := q.SetSetting(ctx, db.SetSettingParams{Key: settingDiscordClientID, Value: clientID}); err != nil {
 		return err
 	}
-	return q.SetSetting(ctx, db.SetSettingParams{Key: settingDiscordClientSecret, Value: clientSecret})
+	if clientSecret == "" {
+		return nil
+	}
+	sealed, err := s.secrets.Encrypt(clientSecret, settingDiscordClientSecret)
+	if err != nil {
+		return err
+	}
+	return q.SetSetting(ctx, db.SetSettingParams{Key: settingDiscordClientSecret, Value: sealed})
 }
 
 // handleDiscordStart sends the browser to Discord's consent page.
@@ -163,7 +176,7 @@ func (s *Server) handleSetupDiscord(w http.ResponseWriter, r *http.Request) {
 	}
 
 	err := s.store.InTx(r.Context(), func(q *db.Queries) error {
-		if err := saveDiscordConfig(r.Context(), q, req.ClientID, req.ClientSecret); err != nil {
+		if err := s.saveDiscordConfig(r.Context(), q, req.ClientID, req.ClientSecret); err != nil {
 			return err
 		}
 		if err := q.SetSetting(r.Context(), db.SetSettingParams{Key: settingInstanceName, Value: name}); err != nil {

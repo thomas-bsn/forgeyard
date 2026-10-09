@@ -91,3 +91,26 @@ export function ThemeToggle() {
     </button>
   )
 }
+
+/** How to register Forgeyard in a Discord application, shared by the setup wizard and the settings page. */
+export function DiscordAppSteps({ redirectUrl }: { redirectUrl: string }) {
+  return (
+    <ol className="steps-help">
+      <li>
+        Créez une application Discord sur{' '}
+        <a href="https://discord.com/developers/applications" target="_blank" rel="noopener noreferrer">
+          discord.com/developers/applications
+        </a>
+        .
+      </li>
+      <li>
+        Dans l'onglet <b>OAuth2</b>, section <b>Redirects</b>, ajoutez exactement cette adresse :
+        <CopyField value={redirectUrl} />
+        Ouvrez toujours Forgeyard avec cette même adresse : Discord refuse les autres.
+      </li>
+      <li>
+        Toujours dans <b>OAuth2</b>, copiez le <b>Client ID</b> et le <b>Client Secret</b> ici.
+      </li>
+    </ol>
+  )
+}

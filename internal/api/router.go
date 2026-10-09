@@ -11,6 +11,7 @@ import (
 
 	"github.com/thomas-bsn/forgeyard/internal/auth"
 	"github.com/thomas-bsn/forgeyard/internal/discord"
+	"github.com/thomas-bsn/forgeyard/internal/secrets"
 	"github.com/thomas-bsn/forgeyard/internal/store"
 )
 
@@ -20,6 +21,7 @@ type Server struct {
 	logger  *slog.Logger
 	limiter *auth.LoginLimiter
 	discord *discord.Client
+	secrets *secrets.Box
 
 	mu          sync.Mutex
 	setupToken  string                // empty once setup is completed
@@ -27,12 +29,13 @@ type Server struct {
 }
 
 // NewServer returns a Server. setupToken must be non-empty while the setup wizard has not been completed.
-func NewServer(st *store.Store, logger *slog.Logger, setupToken string) *Server {
+func NewServer(st *store.Store, logger *slog.Logger, box *secrets.Box, setupToken string) *Server {
 	return &Server{
 		store:       st,
 		logger:      logger,
 		limiter:     auth.NewLoginLimiter(10, 15*time.Minute),
 		discord:     discord.NewClient(),
+		secrets:     box,
 		setupToken:  setupToken,
 		oauthStates: make(map[string]oauthState),
 	}
