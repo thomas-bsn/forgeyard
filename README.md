@@ -12,6 +12,15 @@ docker logs forgeyard   # token de setup
 
 Puis ouvrez http://<serveur>:8080.
 
+## Mettre à jour
+
+```bash
+git pull
+docker compose up -d --build
+```
+
+Les données sont conservées dans le volume `forgeyard-data`.
+
 ## Modifier sans conflit
 
 Ne touchez ni à `docker-compose.yml` ni au `Dockerfile` : utilisez des copies ignorées par git.
