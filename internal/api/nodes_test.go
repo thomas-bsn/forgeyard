@@ -19,6 +19,8 @@ import (
 
 	"github.com/thomas-bsn/forgeyard/internal/agent"
 	"github.com/thomas-bsn/forgeyard/internal/agentpb"
+	"github.com/thomas-bsn/forgeyard/internal/dns"
+	"github.com/thomas-bsn/forgeyard/internal/dns/dnstest"
 )
 
 // flagValue extracts "--name value" from a command line.
@@ -187,5 +189,51 @@ func TestLocalNodeFromSetup(t *testing.T) {
 	get(t, admin, ts.URL+"/api/admin/nodes", &listed)
 	if listed[0].State == "pending" {
 		t.Fatalf("local node still pending: %+v", listed[0])
+	}
+}
+
+func TestSetupWithDomainAndProxy(t *testing.T) {
+	ts, server := newTestServerWithHandle(t)
+	server.joinDir = t.TempDir()
+	server.localServerURL = ts.URL
+	mem := dnstest.New("example.com.")
+	server.newDNSProvider = func(_ string, creds map[string]string) (dns.Provider, error) {
+		if creds["api_token"] != "good" {
+			return nil, errors.New("bad token")
+		}
+		return mem, nil
+	}
+	admin := newClient()
+	var inst instanceResponse
+	get(t, admin, ts.URL+"/api/instance", &inst)
+	if len(inst.DNSProviders) == 0 {
+		t.Fatal("the wizard needs the DNS providers")
+	}
+
+	req := setupRequest{Token: testToken, InstanceName: "F", Username: "boss", Password: "a-long-enough-password",
+		LocalNode: true, Ingress: setupIngress{Mode: "proxy", HTTPPort: 8090},
+		Domain: &domainChoice{Mode: "provider", Domain: "example.com", PublicIP: "203.0.113.1", Provider: "cloudflare",
+			Credentials: map[string]string{"api_token": "bad"}}}
+	// A wrong token stops the setup before anything is created.
+	if code := post(t, admin, ts.URL+"/api/setup", req).StatusCode; code != http.StatusBadRequest {
+		t.Fatalf("setup with a wrong token: %d", code)
+	}
+	if get(t, admin, ts.URL+"/api/instance", &inst); !inst.SetupRequired {
+		t.Fatal("setup completed despite the wrong token")
+	}
+
+	req.Domain.Credentials["api_token"] = "good"
+	if code := post(t, admin, ts.URL+"/api/setup", req).StatusCode; code != http.StatusCreated {
+		t.Fatalf("setup: %d", code)
+	}
+	var d domainSettings
+	get(t, admin, ts.URL+"/api/admin/settings/domain", &d)
+	if d.Mode != "provider" || d.Domain != "example.com" || d.Zone != "example.com" {
+		t.Fatalf("domain after setup: %+v", d)
+	}
+	var listed []nodeResponse
+	get(t, admin, ts.URL+"/api/admin/nodes", &listed)
+	if len(listed) != 1 || listed[0].IngressMode != "proxy" || listed[0].IngressPort != 8090 {
+		t.Fatalf("local node after setup: %+v", listed)
 	}
 }

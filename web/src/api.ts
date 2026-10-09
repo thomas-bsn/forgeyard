@@ -12,6 +12,7 @@ export type Instance = {
   setupRequired: boolean
   passwordLoginEnabled: boolean
   localNodeSupported: boolean
+  dnsProviders?: DNSProviderKind[]
   discordEnabled: boolean
   discordRedirectUrl: string
 }
@@ -111,6 +112,16 @@ export type JoinCommand = {
 
 export type DomainMode = 'none' | 'wildcard' | 'provider'
 
+export type DomainChoice = {
+  mode: DomainMode
+  domain: string
+  publicIp: string
+  provider: string
+  credentials: Record<string, string>
+}
+
+export type IngressChoice = { mode: 'traefik' | 'proxy'; httpPort: number }
+
 export type DNSProviderKind = {
   name: string
   label: string
@@ -172,6 +183,8 @@ export const api = {
     username: string
     password: string
     localNode: boolean
+    domain: DomainChoice
+    ingress: IngressChoice
   }) =>
     request<User>('POST', '/api/setup', body),
   setupDiscord: (body: {
@@ -181,6 +194,8 @@ export const api = {
     clientId: string
     clientSecret: string
     localNode: boolean
+    domain: DomainChoice
+    ingress: IngressChoice
   }) =>
     request<{ authorizeUrl: string }>('POST', '/api/setup/discord', body),
   login: (username: string, password: string) =>

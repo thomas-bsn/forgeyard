@@ -1,8 +1,9 @@
 import { useState, type FormEvent } from 'react'
-import { api, ApiError, errorMessage, type Instance } from './api'
-import { DiscordAppSteps, DiscordIcon, Logo, ThemeToggle } from './ui'
+import { api, ApiError, errorMessage, type DNSProviderKind, type DomainChoice, type IngressChoice, type Instance } from './api'
+import { CopyField, DiscordAppSteps, DiscordIcon, Logo, ThemeToggle } from './ui'
 
-const steps = ['Token', 'Instance', 'Méthode', 'Compte admin'] as const
+const steps = ['Token', 'Instance', 'Domaine', 'Méthode', 'Compte admin'] as const
+const DOMAIN_STEP = 2
 const CALLBACK_PATH = '/api/auth/discord/callback'
 type Method = 'discord' | 'password'
 
@@ -18,6 +19,14 @@ export default function Setup({ instance, onDone }: { instance: Instance; onDone
   const [instanceName, setInstanceName] = useState('Forgeyard')
   const [publicUrl, setPublicUrl] = useState(window.location.origin)
   const [localNode, setLocalNode] = useState(instance.localNodeSupported)
+  const [domain, setDomain] = useState<DomainChoice>({
+    mode: 'provider',
+    domain: '',
+    publicIp: '',
+    provider: instance.dnsProviders?.[0]?.name ?? 'cloudflare',
+    credentials: {},
+  })
+  const [ingress, setIngress] = useState<IngressChoice>({ mode: 'traefik', httpPort: 8090 })
   const cleanUrl = publicUrl.trim().replace(/\/+$/, '')
   const otherOrigin = cleanUrl !== window.location.origin
   const [error, setError] = useState('')
@@ -27,7 +36,7 @@ export default function Setup({ instance, onDone }: { instance: Instance; onDone
   function next(e: FormEvent) {
     e.preventDefault()
     setError('')
-    if (step === 3 && method === 'password') {
+    if (step === 4 && method === 'password') {
       if (password.length < 12) return setError('Le mot de passe doit faire au moins 12 caractères.')
       if (password !== confirm) return setError('Les mots de passe ne correspondent pas.')
     }
@@ -40,17 +49,19 @@ export default function Setup({ instance, onDone }: { instance: Instance; onDone
     setBusy(true)
     try {
       if (method === 'discord') {
-        const { authorizeUrl } = await api.setupDiscord({ token, instanceName, publicUrl: cleanUrl, clientId, clientSecret, localNode })
+        const { authorizeUrl } = await api.setupDiscord({ token, instanceName, publicUrl: cleanUrl, clientId, clientSecret, localNode, domain, ingress })
         // Discord sends the browser back to the server, which makes this account the superadmin.
         window.location.href = authorizeUrl
         return
       }
-      await api.setup({ token, instanceName, publicUrl: cleanUrl, username, password, localNode })
+      await api.setup({ token, instanceName, publicUrl: cleanUrl, username, password, localNode, domain, ingress })
       onDone()
     } catch (err) {
       setError(errorMessage(err))
       // A wrong token is only detected at the end: go back to the step that needs fixing.
       if (err instanceof ApiError && err.status === 403) setStep(0)
+      // Domain problems (wrong token, zone not found…) are fixed on the domain step.
+      else if (err instanceof ApiError && err.status === 400 && /domaine|IP|port|fournisseur|zone|token|Cloudflare|OVH|Gandi|Porkbun/i.test(err.message)) setStep(DOMAIN_STEP)
       setBusy(false)
     }
   }
@@ -111,7 +122,18 @@ export default function Setup({ instance, onDone }: { instance: Instance; onDone
             </>
           )}
 
-          {step === 2 && (
+          {step === DOMAIN_STEP && (
+            <DomainStep
+              providers={instance.dnsProviders ?? []}
+              domain={domain}
+              onDomain={setDomain}
+              localNode={localNode}
+              ingress={ingress}
+              onIngress={setIngress}
+            />
+          )}
+
+          {step === 3 && (
             <>
               <h2>Comment allez-vous vous connecter ?</h2>
               <p className="muted">Ce compte sera le superadmin de l'instance. Il garde cette méthode de connexion.</p>
@@ -138,7 +160,7 @@ export default function Setup({ instance, onDone }: { instance: Instance; onDone
             </>
           )}
 
-          {step === 3 && method === 'password' && (
+          {step === 4 && method === 'password' && (
             <>
               <h2>Compte admin</h2>
               <label className="field">
@@ -165,7 +187,7 @@ export default function Setup({ instance, onDone }: { instance: Instance; onDone
             </>
           )}
 
-          {step === 3 && method === 'discord' && (
+          {step === 4 && method === 'discord' && (
             <>
               <h2>Application Discord</h2>
               {otherOrigin && (
@@ -217,5 +239,124 @@ export default function Setup({ instance, onDone }: { instance: Instance; onDone
         </form>
       </div>
     </div>
+  )
+}
+
+/** The wizard's domain step: the DNS provider's API token, and which reverse proxy serves the apps. */
+function DomainStep({
+  providers,
+  domain,
+  onDomain,
+  localNode,
+  ingress,
+  onIngress,
+}: {
+  providers: DNSProviderKind[]
+  domain: DomainChoice
+  onDomain: (d: DomainChoice) => void
+  localNode: boolean
+  ingress: IngressChoice
+  onIngress: (i: IngressChoice) => void
+}) {
+  const kind = providers.find((p) => p.name === domain.provider)
+  const set = (patch: Partial<DomainChoice>) => onDomain({ ...domain, ...patch })
+  const host = domain.domain.trim().toLowerCase() || 'mondomaine.com'
+
+  return (
+    <>
+      <h2>Domaine de vos apps</h2>
+      <p className="muted">Chaque app aura son adresse, comme monapp.{host}. Forgeyard crée lui-même son DNS.</p>
+      <div className="auth-options">
+        <button type="button" className={`auth-option ${domain.mode === 'provider' ? 'selected' : ''}`} onClick={() => set({ mode: 'provider' })} aria-pressed={domain.mode === 'provider'}>
+          <strong>Mon domaine</strong>
+          <small>Avec un token API de mon fournisseur DNS (recommandé).</small>
+        </button>
+        <button type="button" className={`auth-option ${domain.mode === 'none' ? 'selected' : ''}`} onClick={() => set({ mode: 'none' })} aria-pressed={domain.mode === 'none'}>
+          <strong>Plus tard</strong>
+          <small>Les apps seront joignables par IP et port.</small>
+        </button>
+      </div>
+
+      {domain.mode === 'provider' && (
+        <>
+          <label className="field">
+            <span>Domaine</span>
+            <input value={domain.domain} onChange={(e) => set({ domain: e.target.value })} placeholder="mondomaine.com" required />
+          </label>
+          <label className="field">
+            <span>IP publique de ce serveur</span>
+            <input value={domain.publicIp} onChange={(e) => set({ publicIp: e.target.value })} placeholder="203.0.113.10" required />
+            <small>Celle vers laquelle pointeront les domaines des apps.</small>
+          </label>
+          <label className="field">
+            <span>Fournisseur DNS</span>
+            <select value={domain.provider} onChange={(e) => set({ provider: e.target.value, credentials: {} })}>
+              {providers.map((p) => (
+                <option key={p.name} value={p.name}>
+                  {p.label}
+                </option>
+              ))}
+            </select>
+            <small>Là où sont gérés les DNS du domaine, en général là où il a été acheté.</small>
+          </label>
+          {kind && (
+            <>
+              <p className="muted">
+                {kind.help}{' '}
+                <a href={kind.docsUrl} target="_blank" rel="noopener noreferrer">
+                  Ouvrir {kind.label}
+                </a>
+              </p>
+              {kind.fields.map((f) => (
+                <label className="field" key={f.key}>
+                  <span>{f.label}</span>
+                  <input
+                    type={f.secret ? 'password' : 'text'}
+                    value={domain.credentials[f.key] ?? ''}
+                    onChange={(e) => set({ credentials: { ...domain.credentials, [f.key]: e.target.value } })}
+                    placeholder={f.placeholder}
+                    autoComplete="off"
+                    required
+                  />
+                </label>
+              ))}
+              <small className="muted">Vérifié auprès de {kind.label} à la fin du wizard, puis chiffré.</small>
+            </>
+          )}
+        </>
+      )}
+
+      {localNode && (
+        <>
+          <h2>Reverse proxy de cette machine</h2>
+          <div className="auth-options">
+            <button type="button" className={`auth-option ${ingress.mode === 'traefik' ? 'selected' : ''}`} onClick={() => onIngress({ ...ingress, mode: 'traefik' })} aria-pressed={ingress.mode === 'traefik'}>
+              <strong>Celui de Forgeyard</strong>
+              <small>Forgeyard prend les ports 80 et 443 et gère le HTTPS.</small>
+            </button>
+            <button type="button" className={`auth-option ${ingress.mode === 'proxy' ? 'selected' : ''}`} onClick={() => onIngress({ ...ingress, mode: 'proxy' })} aria-pressed={ingress.mode === 'proxy'}>
+              <strong>Le mien</strong>
+              <small>J’ai déjà Caddy, Nginx… sur les ports 80 et 443.</small>
+            </button>
+          </div>
+          {ingress.mode === 'proxy' && (
+            <>
+              <label className="field">
+                <span>Port vers lequel votre proxy enverra les apps</span>
+                <input type="number" min={1} max={65535} value={ingress.httpPort} onChange={(e) => onIngress({ ...ingress, httpPort: Number(e.target.value) })} required />
+              </label>
+              <div className="field">
+                <span>À ajouter une seule fois dans votre Caddyfile</span>
+                <CopyField value={`*.${host} {\n    reverse_proxy IP_LOCALE:${ingress.httpPort}\n}`} />
+                <small>
+                  IP_LOCALE : l’IP de cette machine sur votre réseau (<code>hostname -I</code>). Il faut un Caddy avec le module
+                  DNS de votre fournisseur ; sinon, d’autres exemples sont dans Nodes › Réseau.
+                </small>
+              </div>
+            </>
+          )}
+        </>
+      )}
+    </>
   )
 }

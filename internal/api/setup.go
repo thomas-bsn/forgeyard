@@ -12,6 +12,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/thomas-bsn/forgeyard/internal/auth"
+	"github.com/thomas-bsn/forgeyard/internal/dns"
 	"github.com/thomas-bsn/forgeyard/internal/store/db"
 )
 
@@ -48,8 +49,10 @@ type instanceResponse struct {
 	SetupRequired      bool   `json:"setupRequired"`
 	PasswordLogin      bool   `json:"passwordLoginEnabled"`
 	LocalNodeSupported bool   `json:"localNodeSupported"`
-	DiscordEnabled     bool   `json:"discordEnabled"`
-	DiscordRedirectURL string `json:"discordRedirectUrl"`
+	// DNSProviders are listed during setup only, for the wizard's domain step.
+	DNSProviders       []dns.Kind `json:"dnsProviders,omitempty"`
+	DiscordEnabled     bool       `json:"discordEnabled"`
+	DiscordRedirectURL string     `json:"discordRedirectUrl"`
 }
 
 func (s *Server) handleInstance(w http.ResponseWriter, r *http.Request) {
@@ -70,7 +73,12 @@ func (s *Server) handleInstance(w http.ResponseWriter, r *http.Request) {
 		s.internalError(w, r, err)
 		return
 	}
+	var providers []dns.Kind
+	if s.setupRequired() {
+		providers = dns.Kinds
+	}
 	writeJSON(w, http.StatusOK, instanceResponse{
+		DNSProviders:       providers,
 		Name:               name,
 		SetupRequired:      s.setupRequired(),
 		PasswordLogin:      passwordLogin || s.setupRequired(),
@@ -134,6 +142,32 @@ type setupRequest struct {
 	Username     string `json:"username"`
 	Password     string `json:"password"`
 	LocalNode    bool   `json:"localNode"`
+	// Domain and Ingress are optional: without them, apps get no domain and the local node uses Traefik.
+	Domain  *domainChoice `json:"domain"`
+	Ingress setupIngress  `json:"ingress"`
+}
+
+// prepareSetupDomain validates the domain and ingress chosen in the wizard, checking DNS credentials.
+func (s *Server) prepareSetupDomain(ctx context.Context, w http.ResponseWriter, r *http.Request, d *domainChoice, in setupIngress) (map[string]string, setupIngress, bool) {
+	ingress, err := in.validate()
+	var bad badRequest
+	if errors.As(err, &bad) {
+		writeError(w, http.StatusBadRequest, bad.msg)
+		return nil, ingress, false
+	}
+	values := map[string]string{}
+	if d != nil {
+		values, err = s.prepareDomain(ctx, *d)
+		if errors.As(err, &bad) {
+			writeError(w, http.StatusBadRequest, bad.msg)
+			return nil, ingress, false
+		}
+		if err != nil {
+			s.internalError(w, r, err)
+			return nil, ingress, false
+		}
+	}
+	return values, ingress, true
 }
 
 // handleSetup completes the first-run wizard: it creates the superadmin and logs them in.
@@ -151,6 +185,10 @@ func (s *Server) handleSetup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	publicURL, ok := setupPublicURL(w, r, req.PublicURL)
+	if !ok {
+		return
+	}
+	domainValues, ingress, ok := s.prepareSetupDomain(r.Context(), w, r, req.Domain, req.Ingress)
 	if !ok {
 		return
 	}
@@ -199,8 +237,11 @@ func (s *Server) handleSetup(w http.ResponseWriter, r *http.Request) {
 		if err := q.SetSetting(r.Context(), db.SetSettingParams{Key: settingPasswordLogin, Value: "1"}); err != nil {
 			return err
 		}
+		if err := storeSettings(r.Context(), q, domainValues); err != nil {
+			return err
+		}
 		if req.LocalNode && s.localNodeSupported() {
-			if _, joinToken, _, err = s.newNode(r.Context(), q, localNodeName, true); err != nil {
+			if joinToken, err = s.createLocalNode(r.Context(), q, ingress); err != nil {
 				return err
 			}
 		}

@@ -28,8 +28,9 @@ const (
 // oauthState is a Discord sign-in in progress. The setup purpose makes the Discord account the superadmin;
 // it is only issued to someone who presented the setup token.
 type oauthState struct {
-	purpose   string // "login" or "setup"
-	localNode bool   // setup: also enable this machine as a node
+	purpose   string       // "login" or "setup"
+	localNode bool         // setup: also enable this machine as a node
+	ingress   setupIngress // setup: how that node receives web traffic
 	expires   time.Time
 }
 
@@ -150,12 +151,14 @@ func (s *Server) handleDiscordStart(w http.ResponseWriter, r *http.Request) {
 }
 
 type setupDiscordRequest struct {
-	Token        string `json:"token"`
-	InstanceName string `json:"instanceName"`
-	PublicURL    string `json:"publicUrl"`
-	ClientID     string `json:"clientId"`
-	ClientSecret string `json:"clientSecret"`
-	LocalNode    bool   `json:"localNode"`
+	Token        string        `json:"token"`
+	InstanceName string        `json:"instanceName"`
+	PublicURL    string        `json:"publicUrl"`
+	ClientID     string        `json:"clientId"`
+	ClientSecret string        `json:"clientSecret"`
+	LocalNode    bool          `json:"localNode"`
+	Domain       *domainChoice `json:"domain"`
+	Ingress      setupIngress  `json:"ingress"`
 }
 
 // handleSetupDiscord saves the Discord application during setup and returns the consent URL. The first
@@ -181,6 +184,10 @@ func (s *Server) handleSetupDiscord(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "pour configurer Discord, ouvrez le wizard depuis "+publicURL+" : Discord ne renvoie que vers cette adresse")
 		return
 	}
+	domainValues, ingress, ok := s.prepareSetupDomain(r.Context(), w, r, req.Domain, req.Ingress)
+	if !ok {
+		return
+	}
 	req.ClientID = strings.TrimSpace(req.ClientID)
 	req.ClientSecret = strings.TrimSpace(req.ClientSecret)
 	if req.ClientID == "" || req.ClientSecret == "" {
@@ -195,6 +202,9 @@ func (s *Server) handleSetupDiscord(w http.ResponseWriter, r *http.Request) {
 		if err := q.SetSetting(r.Context(), db.SetSettingParams{Key: settingInstanceName, Value: name}); err != nil {
 			return err
 		}
+		if err := storeSettings(r.Context(), q, domainValues); err != nil {
+			return err
+		}
 		return q.SetSetting(r.Context(), db.SetSettingParams{Key: settingPublicURL, Value: publicURL})
 	})
 	if err != nil {
@@ -207,7 +217,7 @@ func (s *Server) handleSetupDiscord(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{
-		"authorizeUrl": s.discord.AuthorizeURL(cfg, s.newOAuthState(w, r, oauthState{purpose: "setup", localNode: req.LocalNode && s.localNodeSupported()})),
+		"authorizeUrl": s.discord.AuthorizeURL(cfg, s.newOAuthState(w, r, oauthState{purpose: "setup", localNode: req.LocalNode && s.localNodeSupported(), ingress: ingress})),
 	})
 }
 
@@ -237,7 +247,7 @@ func (s *Server) handleDiscordCallback(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if st.purpose == "setup" {
-		s.completeDiscordSetup(w, r, dUser, st.localNode)
+		s.completeDiscordSetup(w, r, dUser, st.localNode, st.ingress)
 		return
 	}
 
@@ -271,7 +281,7 @@ func (s *Server) handleDiscordCallback(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (s *Server) completeDiscordSetup(w http.ResponseWriter, r *http.Request, dUser discord.User, localNode bool) {
+func (s *Server) completeDiscordSetup(w http.ResponseWriter, r *http.Request, dUser discord.User, localNode bool, ingress setupIngress) {
 	ctx := r.Context()
 	var user db.User
 	var joinToken string
@@ -297,7 +307,7 @@ func (s *Server) completeDiscordSetup(w http.ResponseWriter, r *http.Request, dU
 			return err
 		}
 		if localNode {
-			if _, joinToken, _, err = s.newNode(ctx, q, localNodeName, true); err != nil {
+			if joinToken, err = s.createLocalNode(ctx, q, ingress); err != nil {
 				return err
 			}
 		}

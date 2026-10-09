@@ -160,8 +160,10 @@ func (s *Server) handleGetDomainSettings(w http.ResponseWriter, r *http.Request)
 	writeJSON(w, http.StatusOK, d)
 }
 
-type putDomainSettings struct {
-	PublicURL   string            `json:"publicUrl"`
+// handlePutDomainSettings saves Forgeyard's address and how app domains are handled. With a DNS provider,
+// the credentials and the zone are checked with the provider before anything is saved.
+// domainChoice is how app domains are handled, as chosen in the wizard or the settings.
+type domainChoice struct {
 	Mode        string            `json:"mode"`
 	Domain      string            `json:"domain"`
 	PublicIP    string            `json:"publicIp"`
@@ -169,8 +171,86 @@ type putDomainSettings struct {
 	Credentials map[string]string `json:"credentials"` // an empty secret keeps the stored value
 }
 
-// handlePutDomainSettings saves Forgeyard's address and how app domains are handled. With a DNS provider,
-// the credentials and the zone are checked with the provider before anything is saved.
+// badRequest is a validation failure shown to the user as is.
+type badRequest struct{ msg string }
+
+func (e badRequest) Error() string { return e.msg }
+
+// prepareDomain validates a domain choice and returns the settings to store. With a DNS provider, the
+// credentials are checked against the zone first, so a wrong token never gets saved.
+func (s *Server) prepareDomain(ctx context.Context, c domainChoice) (map[string]string, error) {
+	domain := strings.Trim(strings.ToLower(strings.TrimSpace(c.Domain)), ".")
+	ip := strings.TrimSpace(c.PublicIP)
+	switch c.Mode {
+	case "none":
+	case "wildcard", "provider":
+		if !domainPattern.MatchString(domain) {
+			return nil, badRequest{"domaine invalide : par exemple mondomaine.com"}
+		}
+		if net.ParseIP(ip) == nil {
+			return nil, badRequest{"IP publique invalide : l'adresse vers laquelle pointent les apps"}
+		}
+	default:
+		return nil, badRequest{"mode de domaine inconnu"}
+	}
+	values := map[string]string{settingAppsDomainMode: c.Mode, settingAppsDomain: domain, settingAppsPublicIP: ip}
+	if c.Mode != "provider" {
+		return values, nil
+	}
+
+	kind, ok := dns.Lookup(c.Provider)
+	if !ok {
+		return nil, badRequest{"fournisseur DNS inconnu"}
+	}
+	saved, err := s.loadDNSConfig(ctx)
+	if err != nil {
+		return nil, err
+	}
+	creds := map[string]string{}
+	for _, f := range kind.Fields {
+		v := strings.TrimSpace(c.Credentials[f.Key])
+		if v == "" && f.Secret && saved.Provider == kind.Name {
+			v = saved.Creds[f.Key] // left empty in the form: keep the stored secret
+		}
+		creds[f.Key] = v
+	}
+	provider, err := s.newDNSProvider(kind.Name, creds)
+	if err != nil {
+		return nil, badRequest{err.Error()}
+	}
+	checkCtx, cancel := context.WithTimeout(ctx, 20*time.Second)
+	defer cancel()
+	zone, err := dns.FindZone(checkCtx, provider, domain)
+	if err != nil {
+		return nil, badRequest{kind.Label + " : " + err.Error()}
+	}
+	raw, _ := json.Marshal(creds)
+	sealed, err := s.secrets.Encrypt(string(raw), settingDNSCredentials)
+	if err != nil {
+		return nil, err
+	}
+	values[settingDNSProvider] = kind.Name
+	values[settingDNSCredentials] = sealed
+	values[settingDNSZone] = zone
+	return values, nil
+}
+
+func storeSettings(ctx context.Context, q *db.Queries, values map[string]string) error {
+	for k, v := range values {
+		if err := q.SetSetting(ctx, db.SetSettingParams{Key: k, Value: v}); err != nil {
+			return err
+		}
+	}
+	return q.DeleteSetting(ctx, legacyCloudflareToken)
+}
+
+type putDomainSettings struct {
+	PublicURL string `json:"publicUrl"`
+	domainChoice
+}
+
+// handlePutDomainSettings saves Forgeyard's address and how app domains are handled, then brings existing
+// apps in line.
 func (s *Server) handlePutDomainSettings(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	var body putDomainSettings
@@ -182,82 +262,22 @@ func (s *Server) handlePutDomainSettings(w http.ResponseWriter, r *http.Request)
 		writeError(w, http.StatusBadRequest, "adresse de Forgeyard invalide : par exemple https://forgeyard.mondomaine.com")
 		return
 	}
-	domain := strings.Trim(strings.ToLower(strings.TrimSpace(body.Domain)), ".")
-	ip := strings.TrimSpace(body.PublicIP)
-	switch body.Mode {
-	case "none":
-	case "wildcard", "provider":
-		if !domainPattern.MatchString(domain) {
-			writeError(w, http.StatusBadRequest, "domaine invalide : par exemple mondomaine.com")
-			return
-		}
-		if net.ParseIP(ip) == nil {
-			writeError(w, http.StatusBadRequest, "IP publique invalide : l'adresse vers laquelle pointent les apps")
-			return
-		}
-	default:
-		writeError(w, http.StatusBadRequest, "mode inconnu")
+	values, err := s.prepareDomain(ctx, body.domainChoice)
+	var bad badRequest
+	if errors.As(err, &bad) {
+		writeError(w, http.StatusBadRequest, bad.msg)
 		return
 	}
-
-	values := map[string]string{
-		settingPublicURL: publicURL, settingAppsDomainMode: body.Mode, settingAppsDomain: domain, settingAppsPublicIP: ip,
-	}
-	if body.Mode == "provider" {
-		kind, ok := dns.Lookup(body.Provider)
-		if !ok {
-			writeError(w, http.StatusBadRequest, "fournisseur DNS inconnu")
-			return
-		}
-		saved, err := s.loadDNSConfig(ctx)
-		if err != nil {
-			s.internalError(w, r, err)
-			return
-		}
-		creds := map[string]string{}
-		for _, f := range kind.Fields {
-			v := strings.TrimSpace(body.Credentials[f.Key])
-			if v == "" && f.Secret && saved.Provider == kind.Name {
-				v = saved.Creds[f.Key] // left empty in the form: keep the stored secret
-			}
-			creds[f.Key] = v
-		}
-		provider, err := s.newDNSProvider(kind.Name, creds)
-		if err != nil {
-			writeError(w, http.StatusBadRequest, err.Error())
-			return
-		}
-		checkCtx, cancel := context.WithTimeout(ctx, 20*time.Second)
-		defer cancel()
-		zone, err := dns.FindZone(checkCtx, provider, domain)
-		if err != nil {
-			writeError(w, http.StatusBadRequest, kind.Label+" : "+err.Error())
-			return
-		}
-		raw, _ := json.Marshal(creds)
-		sealed, err := s.secrets.Encrypt(string(raw), settingDNSCredentials)
-		if err != nil {
-			s.internalError(w, r, err)
-			return
-		}
-		values[settingDNSProvider] = kind.Name
-		values[settingDNSCredentials] = sealed
-		values[settingDNSZone] = zone
-	}
-
-	err := s.store.InTx(ctx, func(q *db.Queries) error {
-		for k, v := range values {
-			if err := q.SetSetting(ctx, db.SetSettingParams{Key: k, Value: v}); err != nil {
-				return err
-			}
-		}
-		return q.DeleteSetting(ctx, legacyCloudflareToken)
-	})
 	if err != nil {
 		s.internalError(w, r, err)
 		return
 	}
-	s.logger.Info("domain settings changed", "public_url", publicURL, "mode", body.Mode, "domain", domain,
+	values[settingPublicURL] = publicURL
+	if err := s.store.InTx(ctx, func(q *db.Queries) error { return storeSettings(ctx, q, values) }); err != nil {
+		s.internalError(w, r, err)
+		return
+	}
+	s.logger.Info("domain settings changed", "public_url", publicURL, "mode", body.Mode, "domain", values[settingAppsDomain],
 		"provider", values[settingDNSProvider], "by", currentUser(r).DisplayName)
 
 	// Existing apps follow: new records, new domains routed by their nodes.

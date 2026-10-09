@@ -34,6 +34,41 @@ func (s *Server) localNodeSupported() bool {
 	return s.joinDir != ""
 }
 
+// setupIngress is how Forgeyard's own machine receives web traffic, chosen in the wizard.
+type setupIngress struct {
+	Mode     string `json:"mode"` // "traefik" or "proxy"
+	HTTPPort int    `json:"httpPort"`
+}
+
+func (in setupIngress) validate() (setupIngress, error) {
+	switch in.Mode {
+	case "", "traefik":
+		return setupIngress{Mode: "traefik", HTTPPort: 8090}, nil
+	case "proxy":
+		if in.HTTPPort == 0 {
+			in.HTTPPort = 8090
+		}
+		if in.HTTPPort < 1 || in.HTTPPort > 65535 || in.HTTPPort == 8080 || in.HTTPPort == 8081 {
+			return in, badRequest{"port HTTP invalide (et 8080/8081 sont pris par Forgeyard)"}
+		}
+		return in, nil
+	}
+	return in, badRequest{"mode de reverse proxy inconnu"}
+}
+
+// createLocalNode creates the pending node of Forgeyard's own machine, with its ingress, and returns the
+// join token to hand to the local agent.
+func (s *Server) createLocalNode(ctx context.Context, q *db.Queries, in setupIngress) (string, error) {
+	node, token, _, err := s.newNode(ctx, q, localNodeName, true)
+	if err != nil {
+		return "", err
+	}
+	_, err = q.UpdateNodeIngress(ctx, db.UpdateNodeIngressParams{
+		IngressMode: in.Mode, IngressHttpPort: int64(in.HTTPPort), ID: node.ID,
+	})
+	return token, err
+}
+
 // newNode creates a pending node with a fresh join token.
 func (s *Server) newNode(ctx context.Context, q *db.Queries, name string, local bool) (db.Node, string, time.Time, error) {
 	token := auth.NewToken()
