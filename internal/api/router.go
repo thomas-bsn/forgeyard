@@ -11,17 +11,33 @@ import (
 
 	"github.com/thomas-bsn/forgeyard/internal/auth"
 	"github.com/thomas-bsn/forgeyard/internal/discord"
+	"github.com/thomas-bsn/forgeyard/internal/nodes"
+	"github.com/thomas-bsn/forgeyard/internal/pki"
 	"github.com/thomas-bsn/forgeyard/internal/secrets"
 	"github.com/thomas-bsn/forgeyard/internal/store"
 )
 
+// Deps are the services the HTTP handlers use.
+type Deps struct {
+	Store   *store.Store
+	Logger  *slog.Logger
+	Secrets *secrets.Box
+	CA      *pki.CA
+	Nodes   *nodes.Hub
+	// AgentPort is the port agents dial for their gRPC stream.
+	AgentPort string
+}
+
 // Server holds the dependencies of the HTTP handlers.
 type Server struct {
-	store   *store.Store
-	logger  *slog.Logger
-	limiter *auth.LoginLimiter
-	discord *discord.Client
-	secrets *secrets.Box
+	store     *store.Store
+	logger    *slog.Logger
+	limiter   *auth.LoginLimiter
+	discord   *discord.Client
+	secrets   *secrets.Box
+	ca        *pki.CA
+	nodes     *nodes.Hub
+	agentPort string
 
 	mu          sync.Mutex
 	setupToken  string                // empty once setup is completed
@@ -29,13 +45,16 @@ type Server struct {
 }
 
 // NewServer returns a Server. setupToken must be non-empty while the setup wizard has not been completed.
-func NewServer(st *store.Store, logger *slog.Logger, box *secrets.Box, setupToken string) *Server {
+func NewServer(d Deps, setupToken string) *Server {
 	return &Server{
-		store:       st,
-		logger:      logger,
+		store:       d.Store,
+		logger:      d.Logger,
+		ca:          d.CA,
+		nodes:       d.Nodes,
+		agentPort:   d.AgentPort,
 		limiter:     auth.NewLoginLimiter(10, 15*time.Minute),
 		discord:     discord.NewClient(),
-		secrets:     box,
+		secrets:     d.Secrets,
 		setupToken:  setupToken,
 		oauthStates: make(map[string]oauthState),
 	}
@@ -62,6 +81,12 @@ func (s *Server) Handler(webFS fs.FS) http.Handler {
 	mux.HandleFunc("POST /api/admin/requests/{id}/refuse", s.requireAdmin(s.handleRefuseRequest))
 	mux.HandleFunc("GET /api/admin/settings/discord", s.requireAdmin(s.handleGetDiscordSettings))
 	mux.HandleFunc("PUT /api/admin/settings/discord", s.requireAdmin(s.handlePutDiscordSettings))
+	mux.HandleFunc("GET /api/admin/nodes", s.requireAdmin(s.handleListNodes))
+	mux.HandleFunc("POST /api/admin/nodes", s.requireAdmin(s.handleCreateNode))
+	mux.HandleFunc("POST /api/admin/nodes/{id}/join-command", s.requireAdmin(s.handleNewJoinCommand))
+	mux.HandleFunc("DELETE /api/admin/nodes/{id}", s.requireAdmin(s.handleDeleteNode))
+	mux.HandleFunc("GET /api/nodes/ca", s.handleCACertificate)
+	mux.HandleFunc("POST /api/nodes/join", s.handleJoinNode)
 	mux.HandleFunc("GET /api/admin/settings/login", s.requireSuperadmin(s.handleGetLoginSettings))
 	mux.HandleFunc("PUT /api/admin/settings/login", s.requireSuperadmin(s.handlePutLoginSettings))
 	mux.Handle("/", spaHandler(webFS))

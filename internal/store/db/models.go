@@ -27,6 +27,25 @@ type LoginLink struct {
 	ExpiresAt int64
 }
 
+type Node struct {
+	ID            int64
+	Name          string
+	Status        string
+	JoinTokenHash sql.NullString
+	JoinExpiresAt sql.NullInt64
+	CertSerial    sql.NullString
+	Hostname      string
+	Os            string
+	Arch          string
+	Cpus          int64
+	MemoryBytes   int64
+	DiskBytes     int64
+	DockerVersion string
+	AgentVersion  string
+	LastSeenAt    sql.NullInt64
+	CreatedAt     int64
+}
+
 type Session struct {
 	TokenHash string
 	UserID    int64

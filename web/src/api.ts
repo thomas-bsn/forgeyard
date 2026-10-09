@@ -31,6 +31,36 @@ export type DiscordSettings = {
   redirectUrl: string
 }
 
+export type NodeState = 'pending' | 'online' | 'offline'
+
+export type Node = {
+  id: number
+  name: string
+  state: NodeState
+  hostname: string
+  os: string
+  arch: string
+  cpus: number
+  memoryBytes: number
+  diskBytes: number
+  dockerVersion: string
+  agentVersion: string
+  lastSeenAt?: number
+  metrics?: {
+    cpuPercent: number
+    memoryUsedBytes: number
+    diskUsedBytes: number
+    containersRunning: number
+  }
+  cpuHistory?: number[]
+}
+
+export type JoinCommand = {
+  node: Node
+  command: string
+  expiresAt: number
+}
+
 export class ApiError extends Error {
   constructor(
     public status: number,
@@ -70,6 +100,10 @@ export const api = {
   discordSettings: () => request<DiscordSettings>('GET', '/api/admin/settings/discord'),
   saveDiscordSettings: (clientId: string, clientSecret: string) =>
     request<DiscordSettings>('PUT', '/api/admin/settings/discord', { clientId, clientSecret }),
+  nodes: () => request<Node[]>('GET', '/api/admin/nodes'),
+  createNode: (name: string) => request<JoinCommand>('POST', '/api/admin/nodes', { name }),
+  newJoinCommand: (id: number) => request<JoinCommand>('POST', `/api/admin/nodes/${id}/join-command`, {}),
+  deleteNode: (id: number) => request<void>('DELETE', `/api/admin/nodes/${id}`, {}),
   loginSettings: () => request<{ passwordLogin: boolean }>('GET', '/api/admin/settings/login'),
   saveLoginSettings: (passwordLogin: boolean) =>
     request<{ passwordLogin: boolean }>('PUT', '/api/admin/settings/login', { passwordLogin }),

@@ -7,3 +7,4 @@ web/dist/*
 *.tsbuildinfo
 /data/
 /data.bak*/
+/forgeyard-agent-data/

@@ -1,0 +1,238 @@
+import { useEffect, useState, type FormEvent } from 'react'
+import { api, errorMessage, type JoinCommand, type Node } from './api'
+import { CopyField } from './ui'
+
+const POLL_MS = 5000
+
+export function formatBytes(n: number): string {
+  if (n >= 1e12) return `${(n / 1e12).toFixed(1)} To`
+  if (n >= 1e9) return `${(n / 1e9).toFixed(1)} Go`
+  if (n >= 1e6) return `${Math.round(n / 1e6)} Mo`
+  return `${Math.round(n / 1e3)} Ko`
+}
+
+function since(unix?: number): string {
+  if (!unix) return 'jamais'
+  const min = Math.round((Date.now() / 1000 - unix) / 60)
+  if (min < 1) return "à l'instant"
+  if (min < 60) return `il y a ${min} min`
+  if (min < 48 * 60) return `il y a ${Math.round(min / 60)} h`
+  return new Date(unix * 1000).toLocaleDateString('fr-FR')
+}
+
+export default function Nodes() {
+  const [nodes, setNodes] = useState<Node[] | null>(null)
+  const [error, setError] = useState('')
+  const [join, setJoin] = useState<JoinCommand | null>(null)
+
+  async function load() {
+    try {
+      setNodes(await api.nodes())
+      setError('')
+    } catch (err) {
+      setError(errorMessage(err))
+    }
+  }
+
+  useEffect(() => {
+    load()
+    const id = setInterval(load, POLL_MS)
+    return () => clearInterval(id)
+  }, [])
+
+  return (
+    <div className="section">
+      <AddNode
+        onCreated={(j) => {
+          setJoin(j)
+          load()
+        }}
+      />
+      {join && <JoinInstructions join={join} onClose={() => setJoin(null)} />}
+      {error && <p className="error">{error}</p>}
+      {nodes && nodes.length === 0 && (
+        <div className="empty-state">
+          <strong>Aucun node</strong>
+          <span>Un node est une machine qui fait tourner les conteneurs. Ajoutez-en un pour commencer.</span>
+        </div>
+      )}
+      {nodes && nodes.length > 0 && (
+        <div className="node-grid">
+          {nodes.map((n) => (
+            <NodeCard key={n.id} node={n} onJoin={setJoin} onChange={load} />
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function AddNode({ onCreated }: { onCreated: (j: JoinCommand) => void }) {
+  const [name, setName] = useState('')
+  const [error, setError] = useState('')
+  const [busy, setBusy] = useState(false)
+
+  async function submit(e: FormEvent) {
+    e.preventDefault()
+    setBusy(true)
+    setError('')
+    try {
+      onCreated(await api.createNode(name))
+      setName('')
+    } catch (err) {
+      setError(errorMessage(err))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <form className="panel add-node" onSubmit={submit}>
+      <label className="field">
+        <span>Ajouter un node</span>
+        <input
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          placeholder="node-a"
+          pattern="[a-zA-Z0-9][a-zA-Z0-9\-]{0,31}"
+          title="1 à 32 caractères : lettres, chiffres et -"
+          required
+        />
+      </label>
+      <button type="submit" className="btn btn-primary" disabled={busy}>
+        {busy ? 'Création…' : 'Créer'}
+      </button>
+      {error && <p className="error">{error}</p>}
+    </form>
+  )
+}
+
+function JoinInstructions({ join, onClose }: { join: JoinCommand; onClose: () => void }) {
+  return (
+    <div className="panel join-panel">
+      <div className="header">
+        <h2 className="header-title">Connecter « {join.node.name} »</h2>
+        <button type="button" className="btn btn-ghost" onClick={onClose}>
+          Fermer
+        </button>
+      </div>
+      <ol className="steps-help">
+        <li>Installez l'agent Forgeyard sur la machine, avec Docker.</li>
+        <li>
+          Lancez cette commande sur la machine :
+          <CopyField value={join.command} />
+        </li>
+        <li>Le node apparaît en ligne ci-dessous en quelques secondes.</li>
+      </ol>
+      <p className="muted">
+        Cette commande ne sert qu'une fois et expire à {new Date(join.expiresAt * 1000).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}.
+        Elle n'est plus jamais affichée : en cas de besoin, générez-en une nouvelle depuis la carte du node.
+      </p>
+    </div>
+  )
+}
+
+function Bar({ used, total, label }: { used: number; total: number; label: string }) {
+  const pct = total > 0 ? Math.min(100, (used / total) * 100) : 0
+  const tone = pct >= 90 ? 'down' : pct >= 75 ? 'warn' : 'ok'
+  return (
+    <div className="meter">
+      <div className="meter-label">
+        <span>{label}</span>
+        <span className="muted">
+          {formatBytes(used)} / {formatBytes(total)}
+        </span>
+      </div>
+      <div className="meter-track" role="meter" aria-label={label} aria-valuenow={Math.round(pct)} aria-valuemin={0} aria-valuemax={100}>
+        <div className={`meter-fill meter-${tone}`} style={{ width: `${pct}%` }} />
+      </div>
+    </div>
+  )
+}
+
+function NodeCard({ node, onJoin, onChange }: { node: Node; onJoin: (j: JoinCommand) => void; onChange: () => void }) {
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+  const m = node.metrics
+
+  async function run(action: () => Promise<void>) {
+    setBusy(true)
+    setError('')
+    try {
+      await action()
+    } catch (err) {
+      setError(errorMessage(err))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const stateLabel = { pending: 'En attente', online: 'En ligne', offline: 'Hors ligne' }[node.state]
+  const dot = { pending: '', online: 'dot-up', offline: 'dot-down' }[node.state]
+
+  return (
+    <div className="panel node-card">
+      <div className="node-head">
+        <span className={`dot ${dot}`} />
+        <strong className="node-name">{node.name}</strong>
+        <span className="muted">{stateLabel}</span>
+      </div>
+
+      {node.state === 'pending' ? (
+        <p className="muted">La machine n'a pas encore rejoint le PaaS.</p>
+      ) : (
+        <>
+          <p className="muted node-specs">
+            {node.hostname} · {node.os} · {node.arch} · {node.cpus} CPU
+            {node.dockerVersion ? ` · Docker ${node.dockerVersion}` : ' · Docker injoignable'}
+          </p>
+          {m ? (
+            <>
+              <div className="meter">
+                <div className="meter-label">
+                  <span>CPU</span>
+                  <span className="muted">{m.cpuPercent.toFixed(0)} %</span>
+                </div>
+                <div className="meter-track" role="meter" aria-label="CPU" aria-valuenow={Math.round(m.cpuPercent)} aria-valuemin={0} aria-valuemax={100}>
+                  <div className={`meter-fill meter-${m.cpuPercent >= 90 ? 'down' : m.cpuPercent >= 75 ? 'warn' : 'ok'}`} style={{ width: `${Math.min(100, m.cpuPercent)}%` }} />
+                </div>
+              </div>
+              <Bar label="RAM" used={m.memoryUsedBytes} total={node.memoryBytes} />
+              <Bar label="Disque" used={m.diskUsedBytes} total={node.diskBytes} />
+              <p className="muted">
+                {m.containersRunning} conteneur{m.containersRunning > 1 ? 's' : ''} en cours
+              </p>
+            </>
+          ) : (
+            <p className="muted">Vu pour la dernière fois {since(node.lastSeenAt)}.</p>
+          )}
+        </>
+      )}
+
+      {error && <p className="error">{error}</p>}
+      <div className="panel-footer">
+        {node.state === 'pending' && (
+          <button type="button" className="btn" disabled={busy} onClick={() => run(async () => onJoin(await api.newJoinCommand(node.id)))}>
+            Nouvelle commande
+          </button>
+        )}
+        <span className="spacer" />
+        <button
+          type="button"
+          className="btn btn-danger"
+          disabled={busy}
+          onClick={() => {
+            if (window.confirm(`Retirer le node « ${node.name} » ? Son agent sera déconnecté et ne pourra plus revenir.`)) {
+              run(async () => {
+                await api.deleteNode(node.id)
+                onChange()
+              })
+            }
+          }}
+        >
+          Retirer
+        </button>
+      </div>
+    </div>
+  )
+}

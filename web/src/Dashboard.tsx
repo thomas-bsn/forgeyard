@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react'
-import { api, type Instance, type User } from './api'
+import { api, type Instance, type Node, type User } from './api'
 import { Logo, ThemeToggle } from './ui'
 import Requests from './Requests'
 import Settings from './Settings'
+import Nodes from './Nodes'
 
 const roleLabels: Record<User['role'], string> = {
   superadmin: 'superadmin',
@@ -10,7 +11,7 @@ const roleLabels: Record<User['role'], string> = {
   user: 'utilisateur',
 }
 
-type Tab = 'apps' | 'requests' | 'settings'
+type Tab = 'apps' | 'nodes' | 'requests' | 'settings'
 
 export default function Dashboard({ instance, user, onLogout }: { instance: Instance; user: User; onLogout: () => void }) {
   const admin = user.role === 'admin' || user.role === 'superadmin'
@@ -53,18 +54,26 @@ export default function Dashboard({ instance, user, onLogout }: { instance: Inst
 
       <nav className="tabs" aria-label="Sections">
         {tabButton('apps', 'Apps')}
+        {admin && tabButton('nodes', 'Nodes')}
         {admin && tabButton('requests', 'Demandes', pending)}
         {admin && tabButton('settings', 'Réglages')}
       </nav>
 
-      {tab === 'apps' && <Apps />}
+      {tab === 'apps' && <Apps admin={admin} />}
+      {tab === 'nodes' && admin && <Nodes />}
       {tab === 'requests' && admin && <Requests onCountChange={setPending} />}
       {tab === 'settings' && admin && <Settings superadmin={user.role === 'superadmin'} />}
     </div>
   )
 }
 
-function Apps() {
+function Apps({ admin }: { admin: boolean }) {
+  const [nodes, setNodes] = useState<Node[] | null>(null)
+  useEffect(() => {
+    if (admin) api.nodes().then(setNodes).catch(() => {})
+  }, [admin])
+  const online = nodes?.filter((n) => n.state === 'online').length
+
   return (
     <>
       <div className="stats">
@@ -80,7 +89,15 @@ function Apps() {
         </div>
         <div className="stat">
           <div className="k">Nodes en ligne</div>
-          <div className="v">–</div>
+          <div className="v">
+            {nodes ? (
+              <>
+                {online} <small>/ {nodes.filter((n) => n.state !== 'pending').length}</small>
+              </>
+            ) : (
+              '–'
+            )}
+          </div>
         </div>
       </div>
       <div className="empty-state">

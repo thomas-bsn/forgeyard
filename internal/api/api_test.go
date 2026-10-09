@@ -14,6 +14,8 @@ import (
 	"testing"
 	"testing/fstest"
 
+	"github.com/thomas-bsn/forgeyard/internal/nodes"
+	"github.com/thomas-bsn/forgeyard/internal/pki"
 	"github.com/thomas-bsn/forgeyard/internal/secrets"
 	"github.com/thomas-bsn/forgeyard/internal/store"
 )
@@ -41,7 +43,13 @@ func newTestServerWithHandle(t *testing.T) (*httptest.Server, *Server) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	server := NewServer(st, logger, box, testToken)
+	ca, err := pki.LoadOrCreateCA(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := NewServer(Deps{
+		Store: st, Logger: logger, Secrets: box, CA: ca, Nodes: nodes.NewHub(st, logger), AgentPort: "8081",
+	}, testToken)
 	ts := httptest.NewServer(server.Handler(webFS))
 	t.Cleanup(ts.Close)
 	return ts, server

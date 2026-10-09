@@ -1,4 +1,4 @@
-.PHONY: web build run dev-web test clean
+.PHONY: web build run dev-web test clean generate
 
 web:
 	cd web && npm ci && npm run build
@@ -20,3 +20,11 @@ test:
 clean:
 	rm -rf bin
 	find web/dist -mindepth 1 ! -name .gitkeep -delete
+
+# Regenerate Go code from proto/ and SQL queries (tools are installed in bin/tools).
+generate:
+	GOBIN=$(CURDIR)/bin/tools go install github.com/bufbuild/buf/cmd/buf@v1.50.0
+	GOBIN=$(CURDIR)/bin/tools go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.36.5
+	GOBIN=$(CURDIR)/bin/tools go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@v1.5.1
+	bin/tools/buf generate
+	go run github.com/sqlc-dev/sqlc/cmd/sqlc@v1.29.0 generate

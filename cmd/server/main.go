@@ -7,6 +7,7 @@ import (
 	"flag"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -14,8 +15,15 @@ import (
 	"syscall"
 	"time"
 
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials"
+	"google.golang.org/grpc/keepalive"
+
+	"github.com/thomas-bsn/forgeyard/internal/agentpb"
 	"github.com/thomas-bsn/forgeyard/internal/api"
 	"github.com/thomas-bsn/forgeyard/internal/auth"
+	"github.com/thomas-bsn/forgeyard/internal/nodes"
+	"github.com/thomas-bsn/forgeyard/internal/pki"
 	"github.com/thomas-bsn/forgeyard/internal/secrets"
 	"github.com/thomas-bsn/forgeyard/internal/store"
 	"github.com/thomas-bsn/forgeyard/web"
@@ -31,11 +39,12 @@ func main() {
 	}
 
 	addr := flag.String("addr", ":8080", "HTTP listen address")
+	agentAddr := flag.String("agent-addr", ":8081", "listen address of the agents' gRPC port (mutual TLS)")
 	dataDir := flag.String("data-dir", "data", "directory holding the database")
 	flag.Parse()
 
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
-	if err := run(*addr, *dataDir, logger); err != nil {
+	if err := run(*addr, *agentAddr, *dataDir, logger); err != nil {
 		logger.Error("server failed", "err", err)
 		os.Exit(1)
 	}
@@ -64,7 +73,7 @@ func adminLogin(args []string) error {
 	return nil
 }
 
-func run(addr, dataDir string, logger *slog.Logger) error {
+func run(addr, agentAddr, dataDir string, logger *slog.Logger) error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
@@ -81,6 +90,15 @@ func run(addr, dataDir string, logger *slog.Logger) error {
 	if err != nil {
 		return fmt.Errorf("load secret key: %w", err)
 	}
+	ca, err := pki.LoadOrCreateCA(dataDir)
+	if err != nil {
+		return fmt.Errorf("load certificate authority: %w", err)
+	}
+	hub := nodes.NewHub(st, logger)
+	_, agentPort, err := net.SplitHostPort(agentAddr)
+	if err != nil {
+		return fmt.Errorf("agent-addr: %w", err)
+	}
 
 	done, err := api.SetupCompleted(ctx, st.Queries)
 	if err != nil {
@@ -95,14 +113,38 @@ func run(addr, dataDir string, logger *slog.Logger) error {
 	}
 
 	srv := &http.Server{
-		Addr:              addr,
-		Handler:           api.NewServer(st, logger, box, setupToken).Handler(web.Dist()),
+		Addr: addr,
+		Handler: api.NewServer(api.Deps{
+			Store: st, Logger: logger, Secrets: box, CA: ca, Nodes: hub, AgentPort: agentPort,
+		}, setupToken).Handler(web.Dist()),
 		ReadHeaderTimeout: 10 * time.Second,
+	}
+
+	tlsConfig, err := ca.ServerTLS()
+	if err != nil {
+		return err
+	}
+	grpcServer := grpc.NewServer(
+		grpc.Creds(credentials.NewTLS(tlsConfig)),
+		// Detect dead agents (and keep NAT mappings open) with pings.
+		grpc.KeepaliveParams(keepalive.ServerParameters{Time: 30 * time.Second, Timeout: 10 * time.Second}),
+		grpc.KeepaliveEnforcementPolicy(keepalive.EnforcementPolicy{MinTime: 10 * time.Second, PermitWithoutStream: true}),
+	)
+	agentpb.RegisterAgentServiceServer(grpcServer, hub)
+	agentListener, err := net.Listen("tcp", agentAddr)
+	if err != nil {
+		return fmt.Errorf("agent port: %w", err)
 	}
 
 	go cleanExpired(ctx, st, logger)
 
-	errc := make(chan error, 1)
+	errc := make(chan error, 2)
+	go func() {
+		logger.Info("agent port listening", "addr", agentAddr)
+		if err := grpcServer.Serve(agentListener); err != nil {
+			errc <- err
+		}
+	}()
 	go func() {
 		logger.Info("forgeyard server listening", "addr", addr)
 		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
@@ -116,6 +158,8 @@ func run(addr, dataDir string, logger *slog.Logger) error {
 	case <-ctx.Done():
 	}
 	logger.Info("shutting down")
+	// Agent streams never end on their own: drop them instead of waiting.
+	grpcServer.Stop()
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	return srv.Shutdown(shutdownCtx)

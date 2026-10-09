@@ -1,0 +1,55 @@
+syntax = "proto3";
+
+package forgeyard.agent.v1;
+
+option go_package = "github.com/thomas-bsn/forgeyard/internal/agentpb;agentpb";
+
+// AgentService is served by the control plane. Each agent opens one Connect stream and keeps it open:
+// the agent dials out, so nodes need no inbound port. The node is identified by its client certificate.
+service AgentService {
+  rpc Connect(stream AgentMessage) returns (stream ServerMessage);
+}
+
+message AgentMessage {
+  oneof msg {
+    Hello hello = 1;
+    Metrics metrics = 2;
+  }
+}
+
+message ServerMessage {
+  oneof msg {
+    Welcome welcome = 1;
+  }
+}
+
+// Hello is the first message of a stream.
+message Hello {
+  string agent_version = 1;
+  NodeInfo info = 2;
+}
+
+message NodeInfo {
+  string hostname = 1;
+  string os = 2;
+  string arch = 3;
+  int32 cpus = 4;
+  uint64 memory_bytes = 5;
+  uint64 disk_bytes = 6;
+  string docker_version = 7;
+}
+
+// Metrics is sent every few seconds.
+message Metrics {
+  int64 unix_time = 1;
+  double cpu_percent = 2;
+  uint64 memory_used_bytes = 3;
+  uint64 disk_used_bytes = 4;
+  int32 containers_running = 5;
+}
+
+// Welcome answers Hello once the node is recognized.
+message Welcome {
+  int64 node_id = 1;
+  string node_name = 2;
+}

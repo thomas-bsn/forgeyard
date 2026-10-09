@@ -223,7 +223,7 @@ Plus tard : messages privés Discord via un bot.
 - [x] Wizard : token de setup, admin identifiant / mot de passe, nom du PaaS
 - [x] Connexion par identifiant, sessions
 - [x] Commande `admin-login` de secours
-- [ ] Agent local : connexion gRPC, enregistrement par token, mTLS
+- [x] Agent local : connexion gRPC, enregistrement par token, mTLS
 - [ ] Déployer une image Docker existante sur le node local, avec ses variables d'environnement
 - [ ] Traefik : sous-domaine et HTTPS
 - [ ] Domaine de base et DNS Cloudflare automatique
