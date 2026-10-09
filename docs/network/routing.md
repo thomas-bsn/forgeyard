@@ -1,0 +1,60 @@
+# Traefik et reverse proxy
+
+Chaque node fait tourner un Traefik géré par l'agent (`forgeyard-traefik`, image `traefik:v3.6`). Il lit les labels des conteneurs d'apps via le socket Docker (lecture seule) : chaque app a un routeur ``Host(`<nom>.<domaine>`)`` vers son port. Rien n'est écrit dans des fichiers de configuration.
+
+Traefik n'existe que si le node a au moins une app.
+
+## Qui gère les ports 80 et 443 ?
+
+Une seule question, posée dans le wizard pour la machine de Forgeyard, et réglable par node dans Nodes › Réseau.
+
+### Forgeyard (mode `traefik`)
+
+Traefik prend les ports 80 et 443, redirige HTTP vers HTTPS et obtient un certificat Let's Encrypt par app (challenge TLS-ALPN, stocké dans le volume `forgeyard-traefik-acme`). Rien à configurer.
+
+### Mon reverse proxy (mode `proxy`)
+
+Votre proxy (Caddy, Nginx…) garde 80 et 443. Traefik écoute en HTTP sur un port de la machine (8090 par défaut ; 8080 et 8081 sont refusés), et votre proxy lui envoie tous les sous-domaines.
+
+Avant d'activer la machine, l'agent local teste si quelque chose répond sur les ports 80/443 de l'hôte : si oui, le wizard propose ce mode.
+
+À ajouter **une seule fois** dans le Caddyfile, avec l'IP locale de la machine (pas 127.0.0.1) :
+
+```
+*.mondomaine.com {
+    reverse_proxy 192.168.1.10:8090
+}
+```
+
+Le même bloc marche que Caddy tourne dans Docker ou directement sur la machine : l'IP locale est joignable des deux côtés. Ensuite chaque nouvelle app marche sans retoucher Caddy.
+
+Les blocs plus précis (`forgeyard.mondomaine.com`, vos autres sites) passent avant le wildcard.
+
+Le certificat wildcard demande un Caddy avec le module DNS de votre fournisseur (`acme_dns`). Sans ce module, utilisez les certificats à la demande :
+
+```
+{
+    on_demand_tls {
+        ask http://192.168.1.10:8080/api/caddy/ask
+    }
+}
+
+https:// {
+    tls {
+        on_demand
+    }
+    reverse_proxy 192.168.1.10:8090
+}
+```
+
+`/api/caddy/ask?domain=…` répond 200 seulement pour l'adresse de Forgeyard et les apps qui existent : personne ne peut faire générer des certificats pour n'importe quel nom.
+
+Avec un autre proxy : envoyez `*.mondomaine.com` vers `IP_LOCALE:8090`.
+
+## Pourquoi Forgeyard ne modifie pas votre proxy
+
+La configuration de votre proxy ne change jamais : le wildcard envoie tout à Traefik, et c'est Traefik que Forgeyard met à jour. Forgeyard n'a donc besoin d'aucun accès à votre proxy et ne peut pas casser vos autres sites.
+
+## L'adresse de Forgeyard
+
+Réglée dans le wizard puis dans Réglages › Domaine (`public_url`). Elle sert pour le retour Discord, les commandes d'ajout de node, le lien de secours et `/api/caddy/ask`. Le port 8081 doit rester joignable directement : avec Cloudflare, l'enregistrement de Forgeyard doit être « DNS only ».

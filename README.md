@@ -1,6 +1,6 @@
 # Forgeyard
 
-PaaS open source auto-hébergé.
+PaaS open source auto-hébergé. Fonctionnement : [docs/](docs/README.md).
 
 ## Lancer
 
