@@ -32,6 +32,8 @@ type Deps struct {
 	AgentPort string
 	// TrustedProxies may set X-Forwarded-For and X-Forwarded-Proto.
 	TrustedProxies []netip.Prefix
+	// AgentImage is the agent's container image shown in join commands.
+	AgentImage string
 }
 
 // Server holds the dependencies of the HTTP handlers.
@@ -46,6 +48,7 @@ type Server struct {
 	agentPort string
 
 	trustedProxies []netip.Prefix
+	agentImage     string
 
 	// Replaced in tests.
 	newDNSProvider func(name string, creds map[string]string) (dns.Provider, error)
@@ -66,6 +69,7 @@ func NewServer(d Deps, setupToken string) *Server {
 		agentPort: d.AgentPort,
 
 		trustedProxies: d.TrustedProxies,
+		agentImage:     d.AgentImage,
 		limiter:        auth.NewLoginLimiter(10, 15*time.Minute),
 		discord:        discord.NewClient(),
 		secrets:        d.Secrets,

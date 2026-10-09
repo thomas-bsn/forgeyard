@@ -65,6 +65,11 @@ func New(host string) (*Client, error) {
 type Info struct {
 	ServerVersion     string `json:"ServerVersion"`
 	ContainersRunning int    `json:"ContainersRunning"`
+	Name              string `json:"Name"`            // the host's name
+	OperatingSystem   string `json:"OperatingSystem"` // the host's OS, even when asked from a container
+	Architecture      string `json:"Architecture"`
+	NCPU              int    `json:"NCPU"`
+	MemTotal          uint64 `json:"MemTotal"`
 }
 
 // Info returns the daemon's version and container counts.

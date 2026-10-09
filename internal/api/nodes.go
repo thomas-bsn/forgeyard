@@ -96,10 +96,15 @@ type createNodeRequest struct {
 }
 
 type joinCommandResponse struct {
-	Node        nodeResponse `json:"node"`
-	Command     string       `json:"command"`
-	ExpiresAt   int64        `json:"expiresAt"`
-	AgentServer string       `json:"agentServer"`
+	Node nodeResponse `json:"node"`
+	// Command joins with the agent binary.
+	Command string `json:"command"`
+	// DockerCommand runs the agent as a container on another machine.
+	DockerCommand string `json:"dockerCommand"`
+	// ComposeService adds the agent to the server's own Docker Compose project, to use that machine as a node.
+	ComposeService string `json:"composeService"`
+	ExpiresAt      int64  `json:"expiresAt"`
+	AgentServer    string `json:"agentServer"`
 }
 
 func (s *Server) handleCreateNode(w http.ResponseWriter, r *http.Request) {
@@ -160,9 +165,39 @@ func (s *Server) writeJoinCommand(w http.ResponseWriter, r *http.Request, status
 		return
 	}
 	base = strings.TrimRight(base, "/")
-	cmd := "forgeyard-agent join --server " + base + " --token " + token + " --ca " + s.ca.Fingerprint()
+	joinArgs := "--token " + token + " --ca " + s.ca.Fingerprint()
+	docker := "docker run -d --name forgeyard-agent --restart unless-stopped \\\n" +
+		"  -v /var/run/docker.sock:/var/run/docker.sock \\\n" +
+		"  -v /:/host:ro -e FORGEYARD_HOST_ROOT=/host \\\n" +
+		"  -v forgeyard-agent:/state \\\n" +
+		"  " + s.agentImage + " \\\n" +
+		"  run --server " + base + " " + joinArgs
+	// In the server's Compose project the agent reaches the server by its service name, which avoids going
+	// out through the public address (and the proxy in front of it).
+	compose := "services:\n" +
+		"  agent:\n" +
+		"    build:\n" +
+		"      context: .\n" +
+		"      target: agent\n" +
+		"    container_name: forgeyard-agent\n" +
+		"    restart: unless-stopped\n" +
+		"    volumes:\n" +
+		"      - /var/run/docker.sock:/var/run/docker.sock\n" +
+		"      - /:/host:ro\n" +
+		"      - forgeyard-agent:/state\n" +
+		"    environment:\n" +
+		"      FORGEYARD_HOST_ROOT: /host\n" +
+		"    command: run --server http://forgeyard:8080 --agent-server forgeyard:8081 " + joinArgs + "\n" +
+		"\n" +
+		"volumes:\n" +
+		"  forgeyard-agent:\n"
 	writeJSON(w, status, joinCommandResponse{
-		Node: s.toNodeResponse(node), Command: cmd, ExpiresAt: expires.Unix(), AgentServer: s.agentAddress(base),
+		Node:           s.toNodeResponse(node),
+		Command:        "forgeyard-agent join --server " + base + " " + joinArgs,
+		DockerCommand:  docker,
+		ComposeService: compose,
+		ExpiresAt:      expires.Unix(),
+		AgentServer:    s.agentAddress(base),
 	})
 }
 

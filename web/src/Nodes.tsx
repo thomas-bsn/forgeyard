@@ -107,7 +107,17 @@ function AddNode({ onCreated }: { onCreated: (j: JoinCommand) => void }) {
   )
 }
 
+type JoinMethod = 'docker' | 'compose' | 'binary'
+
+const joinMethods: { value: JoinMethod; title: string; text: string }[] = [
+  { value: 'docker', title: 'Autre machine', text: 'Une commande docker run.' },
+  { value: 'compose', title: 'Machine de Forgeyard', text: 'Un service à ajouter au docker compose.' },
+  { value: 'binary', title: 'Sans Docker', text: 'Le binaire forgeyard-agent.' },
+]
+
 function JoinInstructions({ join, onClose }: { join: JoinCommand; onClose: () => void }) {
+  const [method, setMethod] = useState<JoinMethod>('docker')
+  const expires = new Date(join.expiresAt * 1000).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })
   return (
     <div className="panel join-panel">
       <div className="header">
@@ -116,17 +126,55 @@ function JoinInstructions({ join, onClose }: { join: JoinCommand; onClose: () =>
           Fermer
         </button>
       </div>
-      <ol className="steps-help">
-        <li>Installez l'agent Forgeyard sur la machine, avec Docker.</li>
-        <li>
-          Lancez cette commande sur la machine :
-          <CopyField value={join.command} />
-        </li>
-        <li>Le node apparaît en ligne ci-dessous en quelques secondes.</li>
-      </ol>
+      <div className="auth-options">
+        {joinMethods.map((m) => (
+          <button
+            key={m.value}
+            type="button"
+            className={`auth-option ${method === m.value ? 'selected' : ''}`}
+            onClick={() => setMethod(m.value)}
+            aria-pressed={method === m.value}
+          >
+            <strong>{m.title}</strong>
+            <small>{m.text}</small>
+          </button>
+        ))}
+      </div>
+
+      {method === 'docker' && (
+        <ol className="steps-help">
+          <li>
+            Sur la machine, avec Docker installé, lancez :
+            <CopyField value={join.dockerCommand} />
+          </li>
+          <li>Le node apparaît en ligne ci-dessous en quelques secondes. L’agent redémarre tout seul avec la machine.</li>
+        </ol>
+      )}
+      {method === 'compose' && (
+        <ol className="steps-help">
+          <li>
+            Dans le dossier de Forgeyard, ajoutez ceci à <code>docker-compose.override.yml</code> (en fusionnant avec ce qui
+            s’y trouve déjà) :
+            <CopyField value={join.composeService} />
+          </li>
+          <li>
+            Puis lancez <code>docker compose up -d --build</code>. L’agent parle au server directement, sans passer par
+            l’adresse publique.
+          </li>
+        </ol>
+      )}
+      {method === 'binary' && (
+        <ol className="steps-help">
+          <li>
+            Installez le binaire forgeyard-agent et Docker sur la machine, puis lancez :
+            <CopyField value={join.command} />
+          </li>
+        </ol>
+      )}
+
       <p className="muted">
-        Cette commande ne sert qu'une fois et expire à {new Date(join.expiresAt * 1000).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}.
-        Elle n'est plus jamais affichée : en cas de besoin, générez-en une nouvelle depuis la carte du node.
+        Le token de cette commande ne sert qu’une fois et expire à {expires}. Il n’est plus jamais affiché : en cas de
+        besoin, générez-en un nouveau depuis la carte du node.
       </p>
     </div>
   )

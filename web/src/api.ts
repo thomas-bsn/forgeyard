@@ -102,6 +102,8 @@ export type AppInput = {
 export type JoinCommand = {
   node: Node
   command: string
+  dockerCommand: string
+  composeService: string
   expiresAt: number
 }
 

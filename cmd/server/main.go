@@ -123,6 +123,7 @@ func run(addr, agentAddr, dataDir string, logger *slog.Logger) error {
 		Handler: api.NewServer(api.Deps{
 			Store: st, Logger: logger, Secrets: box, CA: ca, Nodes: hub, AgentPort: agentPort,
 			TrustedProxies: trustedProxies,
+			AgentImage:     envOr("FORGEYARD_AGENT_IMAGE", "ghcr.io/thomas-bsn/forgeyard-agent:latest"),
 		}, setupToken).Handler(web.Dist()),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
@@ -170,6 +171,13 @@ func run(addr, agentAddr, dataDir string, logger *slog.Logger) error {
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	return srv.Shutdown(shutdownCtx)
+}
+
+func envOr(key, fallback string) string {
+	if v := os.Getenv(key); v != "" {
+		return v
+	}
+	return fallback
 }
 
 func cleanExpired(ctx context.Context, st *store.Store, logger *slog.Logger) {

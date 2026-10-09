@@ -1,6 +1,8 @@
 services:
   forgeyard:
-    build: .
+    build:
+      context: .
+      target: server
     container_name: forgeyard
     ports:
       - "8080:8080" # web UI and API

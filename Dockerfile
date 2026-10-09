@@ -1,5 +1,10 @@
+# Two images from one Dockerfile:
+#   docker build .                  → the server (default, last stage)
+#   docker build --target agent .   → the node agent
+# Build stages run on the build machine and cross-compile, so multi-arch builds need no emulation.
+
 # --- Front ---
-FROM node:24-alpine AS web
+FROM --platform=$BUILDPLATFORM node:24-alpine AS web
 WORKDIR /src/web
 COPY web/package.json web/package-lock.json ./
 RUN npm ci
@@ -7,17 +12,28 @@ COPY web/ ./
 RUN npm run build
 
 # --- Binaries ---
-FROM golang:1.27-alpine AS build
+FROM --platform=$BUILDPLATFORM golang:1.27-alpine AS build
+ARG TARGETOS TARGETARCH
 WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
 COPY --from=web /src/web/dist ./web/dist
-RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/forgeyard ./cmd/server \
- && CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/forgeyard-agent ./cmd/agent
+RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath -ldflags="-s -w" -o /out/forgeyard ./cmd/server \
+ && CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath -ldflags="-s -w" -o /out/forgeyard-agent ./cmd/agent
 
-# --- Image ---
-FROM alpine:3.21
+# --- Agent image ---
+FROM alpine:3.21 AS agent
+COPY --from=build /out/forgeyard-agent /usr/local/bin/
+# The agent drives the host's Docker through its socket, which takes root anyway.
+# Its identity (key and certificate) lives in /state: mount it as a volume.
+ENV FORGEYARD_AGENT_STATE=/state
+VOLUME /state
+ENTRYPOINT ["forgeyard-agent"]
+CMD ["run"]
+
+# --- Server image ---
+FROM alpine:3.21 AS server
 RUN addgroup -S forgeyard && adduser -S -G forgeyard forgeyard \
  && mkdir -p /data && chown forgeyard:forgeyard /data
 COPY --from=build /out/forgeyard /out/forgeyard-agent /usr/local/bin/

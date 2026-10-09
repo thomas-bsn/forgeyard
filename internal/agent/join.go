@@ -23,6 +23,9 @@ type JoinOptions struct {
 	Token         string // one-time join token
 	CAFingerprint string // sha256:… of the control plane's CA, pinned before trusting it
 	StateDir      string
+	// AgentServer overrides the agent port address the server announces, e.g. "forgeyard:8081" when the
+	// agent runs in the same Docker Compose project as the server.
+	AgentServer string
 }
 
 // Join exchanges the token for a client certificate and saves the node identity in StateDir.
@@ -93,6 +96,9 @@ func Join(ctx context.Context, opts JoinOptions) (Config, error) {
 	}
 
 	cfg := Config{NodeID: joined.NodeID, NodeName: joined.NodeName, AgentServer: joined.AgentServer}
+	if opts.AgentServer != "" {
+		cfg.AgentServer = opts.AgentServer
+	}
 	if err := saveState(opts.StateDir, cfg, keyPEM, []byte(joined.Certificate), []byte(joined.CACertificate)); err != nil {
 		return Config{}, err
 	}

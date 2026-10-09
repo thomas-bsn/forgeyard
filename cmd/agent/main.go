@@ -1,7 +1,9 @@
 // Command agent runs on each node and executes the control plane's orders on the local Docker daemon.
 //
 //	forgeyard-agent join --server URL --token TOKEN --ca sha256:…   join once, then run
-//	forgeyard-agent run                                             run (e.g. as a service)
+//	forgeyard-agent run [--server URL --token TOKEN --ca sha256:…]  run, joining first if needed
+//
+// The second form suits containers: the same command works on first start and on every restart.
 package main
 
 import (
@@ -18,8 +20,6 @@ import (
 	"github.com/thomas-bsn/forgeyard/internal/docker"
 )
 
-const defaultStateDir = "forgeyard-agent-data"
-
 func main() {
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
 	if len(os.Args) < 2 {
@@ -31,9 +31,9 @@ func main() {
 	var err error
 	switch os.Args[1] {
 	case "join":
-		err = join(ctx, os.Args[2:], logger)
+		err = start(ctx, os.Args[2:], true, logger)
 	case "run":
-		err = run(ctx, os.Args[2:], logger)
+		err = start(ctx, os.Args[2:], false, logger)
 	default:
 		usage()
 	}
@@ -44,49 +44,62 @@ func main() {
 }
 
 func usage() {
-	fmt.Fprintln(os.Stderr, "usage : forgeyard-agent join --server URL --token TOKEN --ca FINGERPRINT | forgeyard-agent run")
+	fmt.Fprintln(os.Stderr, "usage : forgeyard-agent join|run [--server URL --token TOKEN --ca FINGERPRINT]")
 	os.Exit(2)
 }
 
-func join(ctx context.Context, args []string, logger *slog.Logger) error {
-	fs := flag.NewFlagSet("join", flag.ExitOnError)
+func defaultStateDir() string {
+	if dir := os.Getenv("FORGEYARD_AGENT_STATE"); dir != "" {
+		return dir
+	}
+	return "forgeyard-agent-data"
+}
+
+// start joins the server when asked to (join) or when the node has no identity yet and join flags are
+// given (run), then runs the agent.
+func start(ctx context.Context, args []string, mustJoin bool, logger *slog.Logger) error {
+	fs := flag.NewFlagSet(os.Args[1], flag.ExitOnError)
 	server := fs.String("server", "", "URL of the Forgeyard server")
 	token := fs.String("token", "", "one-time join token")
 	ca := fs.String("ca", "", "fingerprint of the server's CA (sha256:…)")
-	stateDir := fs.String("state-dir", defaultStateDir, "where the node identity is stored")
+	agentServer := fs.String("agent-server", "", "host:port of the agent port, when it differs from the server's public address (e.g. forgeyard:8081 in the same Docker Compose project)")
+	stateDir := fs.String("state-dir", defaultStateDir(), "where the node identity is stored")
 	dockerHost := fs.String("docker-host", docker.DefaultHost(), "Docker daemon socket")
 	fs.Parse(args)
-	if *server == "" || *token == "" || *ca == "" {
-		return errors.New("--server, --token and --ca are required: copy the command from the Nodes page")
+
+	_, err := agent.LoadState(*stateDir)
+	joined := err == nil
+	if err != nil && !errors.Is(err, agent.ErrNotJoined) {
+		return err
+	}
+	switch {
+	case mustJoin && joined:
+		return fmt.Errorf("this machine already joined a server (%s exists): remove it to join again", *stateDir)
+	case !joined && (*server == "" || *token == "" || *ca == ""):
+		if mustJoin {
+			return errors.New("--server, --token and --ca are required: copy the command from the Nodes page")
+		}
+		return agent.ErrNotJoined
+	case !joined:
+		cfg, err := agent.Join(ctx, agent.JoinOptions{
+			Server: *server, Token: *token, CAFingerprint: *ca, StateDir: *stateDir, AgentServer: *agentServer,
+		})
+		if err != nil {
+			return err
+		}
+		logger.Info("joined the server", "node", cfg.NodeName, "state_dir", *stateDir)
 	}
 
-	cfg, err := agent.Join(ctx, agent.JoinOptions{Server: *server, Token: *token, CAFingerprint: *ca, StateDir: *stateDir})
+	st, err := agent.LoadState(*stateDir)
 	if err != nil {
 		return err
 	}
-	logger.Info("joined the server", "node", cfg.NodeName, "state_dir", *stateDir)
-	return runWith(ctx, *stateDir, *dockerHost, logger)
-}
-
-func run(ctx context.Context, args []string, logger *slog.Logger) error {
-	fs := flag.NewFlagSet("run", flag.ExitOnError)
-	stateDir := fs.String("state-dir", defaultStateDir, "where the node identity is stored")
-	dockerHost := fs.String("docker-host", docker.DefaultHost(), "Docker daemon socket")
-	fs.Parse(args)
-	return runWith(ctx, *stateDir, *dockerHost, logger)
-}
-
-func runWith(ctx context.Context, stateDir, dockerHost string, logger *slog.Logger) error {
-	st, err := agent.LoadState(stateDir)
-	if err != nil {
-		return err
-	}
-	dc, err := docker.New(dockerHost)
+	dc, err := docker.New(*dockerHost)
 	if err != nil {
 		return err
 	}
 	if _, err := dc.Info(ctx); err != nil {
-		logger.Warn("Docker is unreachable: the node will report no containers", "host", dockerHost, "err", err)
+		logger.Warn("Docker is unreachable: the node cannot run apps", "host", *dockerHost, "err", err)
 	}
 	logger.Info("starting agent", "node", st.NodeName, "server", st.AgentServer)
 	return agent.Run(ctx, st, dc, logger)
