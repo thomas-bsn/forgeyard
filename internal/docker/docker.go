@@ -18,10 +18,24 @@ import (
 	"time"
 )
 
-// DefaultHost is $DOCKER_HOST, or the standard socket.
+// DefaultHost is $DOCKER_HOST, the standard socket, or the first socket found among the usual desktop
+// installations (OrbStack, Docker Desktop, Colima), which do not always link the standard path.
 func DefaultHost() string {
 	if h := os.Getenv("DOCKER_HOST"); h != "" {
 		return h
+	}
+	candidates := []string{"/var/run/docker.sock"}
+	if home, err := os.UserHomeDir(); err == nil {
+		candidates = append(candidates,
+			home+"/.orbstack/run/docker.sock",
+			home+"/.docker/run/docker.sock",
+			home+"/.colima/default/docker.sock",
+		)
+	}
+	for _, path := range candidates {
+		if _, err := os.Stat(path); err == nil {
+			return "unix://" + path
+		}
 	}
 	return "unix:///var/run/docker.sock"
 }

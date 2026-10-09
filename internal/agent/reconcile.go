@@ -261,11 +261,11 @@ func appContainerConfig(app *agentpb.AppSpec, hash, ingressMode string) map[stri
 	}
 }
 
-// ensureTraefik runs the ingress proxy that routes app domains to containers. It is only started once the
-// node has apps, so an empty node does not take ports 80/443.
+// ensureTraefik runs the ingress proxy that routes app domains to containers. It only runs while the node
+// has apps, so an empty node does not hold ports 80/443.
 func (r *Reconciler) ensureTraefik(ctx context.Context, ingress *agentpb.Ingress, needed bool) error {
 	if ingress == nil || !needed {
-		return nil
+		return r.dc.Remove(ctx, traefikName)
 	}
 	hash := specHash(ingress.GetMode(), strconv.Itoa(int(ingress.GetHttpPort())), traefikImage)
 	ct, err := r.dc.Inspect(ctx, traefikName)
