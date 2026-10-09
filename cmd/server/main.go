@@ -95,6 +95,12 @@ func run(addr, agentAddr, dataDir string, logger *slog.Logger) error {
 		return fmt.Errorf("load certificate authority: %w", err)
 	}
 	hub := nodes.NewHub(st, logger)
+	trustedProxies := api.DefaultTrustedProxies
+	if v, ok := os.LookupEnv("FORGEYARD_TRUSTED_PROXIES"); ok {
+		if trustedProxies, err = api.ParseTrustedProxies(v); err != nil {
+			return err
+		}
+	}
 	_, agentPort, err := net.SplitHostPort(agentAddr)
 	if err != nil {
 		return fmt.Errorf("agent-addr: %w", err)
@@ -116,6 +122,7 @@ func run(addr, agentAddr, dataDir string, logger *slog.Logger) error {
 		Addr: addr,
 		Handler: api.NewServer(api.Deps{
 			Store: st, Logger: logger, Secrets: box, CA: ca, Nodes: hub, AgentPort: agentPort,
+			TrustedProxies: trustedProxies,
 		}, setupToken).Handler(web.Dist()),
 		ReadHeaderTimeout: 10 * time.Second,
 	}

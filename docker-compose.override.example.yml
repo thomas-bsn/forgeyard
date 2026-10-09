@@ -10,20 +10,42 @@ services:
     #   - "9000:8080"
     #   - "9001:8081"
 
-    # Keep the key that encrypts secrets out of the data volume (32 bytes, base64:
-    # generate one with `openssl rand -base64 32`). Without it, the key is data/secret.key.
-    # environment:
-    #   FORGEYARD_SECRET_KEY: "..."
-
-    # Join a network shared with a reverse proxy:
+    # --- Behind Caddy running in Docker ---------------------------------------------------
+    # Caddyfile:
+    #   forgeyard.example.com {
+    #       reverse_proxy forgeyard:8080
+    #   }
+    # The web UI is then only reachable through Caddy. Port 8081 stays published: agents connect
+    # to it directly with mutual TLS, never through Caddy (and, with Cloudflare, the DNS record of
+    # Forgeyard's address must be "DNS only", since Cloudflare's proxy cannot carry it).
+    # ports: !override
+    #   - "8081:8081"
     # networks:
     #   - default
-    #   - proxy
+    #   - caddy
+
+    # --- Behind Caddy installed on the host ---------------------------------------------
+    # Caddyfile:
+    #   forgeyard.example.com {
+    #       reverse_proxy localhost:8080
+    #   }
+    # ports: !override
+    #   - "127.0.0.1:8080:8080"
+    #   - "8081:8081"
+
+    # environment:
+      # Proxies allowed to set X-Forwarded-For/-Proto (comma-separated IPs or CIDRs, or "none").
+      # Default: loopback and private networks, which covers Caddy on the host or in Docker.
+      # FORGEYARD_TRUSTED_PROXIES: "172.20.0.0/16"
+
+      # Keep the key that encrypts secrets out of the data volume (32 bytes, base64:
+      # generate one with `openssl rand -base64 32`). Without it, the key is data/secret.key.
+      # FORGEYARD_SECRET_KEY: "..."
 
     # Build from your own copy of the Dockerfile (e.g. to add a CA certificate):
     # build:
     #   dockerfile: Dockerfile.local
 
 # networks:
-#   proxy:
+#   caddy:
 #     external: true

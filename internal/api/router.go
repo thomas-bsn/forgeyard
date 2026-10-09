@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"net/netip"
 	"strings"
 	"sync"
 	"time"
@@ -29,6 +30,8 @@ type Deps struct {
 	Nodes   *nodes.Hub
 	// AgentPort is the port agents dial for their gRPC stream.
 	AgentPort string
+	// TrustedProxies may set X-Forwarded-For and X-Forwarded-Proto.
+	TrustedProxies []netip.Prefix
 }
 
 // Server holds the dependencies of the HTTP handlers.
@@ -42,6 +45,8 @@ type Server struct {
 	nodes     *nodes.Hub
 	agentPort string
 
+	trustedProxies []netip.Prefix
+
 	// Replaced in tests.
 	newCloudflare func(token string) *cloudflare.Client
 	lookupHost    func(ctx context.Context, host string) ([]string, error)
@@ -54,16 +59,18 @@ type Server struct {
 // NewServer returns a Server. setupToken must be non-empty while the setup wizard has not been completed.
 func NewServer(d Deps, setupToken string) *Server {
 	return &Server{
-		store:       d.Store,
-		logger:      d.Logger,
-		ca:          d.CA,
-		nodes:       d.Nodes,
-		agentPort:   d.AgentPort,
-		limiter:     auth.NewLoginLimiter(10, 15*time.Minute),
-		discord:     discord.NewClient(),
-		secrets:     d.Secrets,
-		setupToken:  setupToken,
-		oauthStates: make(map[string]oauthState),
+		store:     d.Store,
+		logger:    d.Logger,
+		ca:        d.CA,
+		nodes:     d.Nodes,
+		agentPort: d.AgentPort,
+
+		trustedProxies: d.TrustedProxies,
+		limiter:        auth.NewLoginLimiter(10, 15*time.Minute),
+		discord:        discord.NewClient(),
+		secrets:        d.Secrets,
+		setupToken:     setupToken,
+		oauthStates:    make(map[string]oauthState),
 
 		newCloudflare: cloudflare.New,
 		lookupHost:    net.DefaultResolver.LookupHost,
@@ -103,7 +110,7 @@ func (s *Server) Handler(webFS fs.FS) http.Handler {
 	mux.HandleFunc("GET /api/admin/settings/login", s.requireSuperadmin(s.handleGetLoginSettings))
 	mux.HandleFunc("PUT /api/admin/settings/login", s.requireSuperadmin(s.handlePutLoginSettings))
 	mux.Handle("/", spaHandler(webFS))
-	return requireJSONForWrites(mux)
+	return s.realClient(requireJSONForWrites(mux))
 }
 
 // spaHandler serves static files and falls back to index.html so client-side routes work.
