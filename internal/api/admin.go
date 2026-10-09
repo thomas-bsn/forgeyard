@@ -166,6 +166,12 @@ func (s *Server) handlePutDiscordSettings(w http.ResponseWriter, r *http.Request
 	secret := strings.TrimSpace(body.ClientSecret)
 	err := s.store.InTx(r.Context(), func(q *db.Queries) error {
 		if clientID == "" {
+			// Turning Discord off while password sign-in is off would leave no way to sign in.
+			if enabled, err := passwordLoginEnabled(r.Context(), q); err != nil {
+				return err
+			} else if !enabled {
+				return errLastLoginMethod
+			}
 			if err := q.DeleteSetting(r.Context(), settingDiscordClientID); err != nil {
 				return err
 			}
@@ -181,6 +187,10 @@ func (s *Server) handlePutDiscordSettings(w http.ResponseWriter, r *http.Request
 		}
 		return s.saveDiscordConfig(r.Context(), q, clientID, secret)
 	})
+	if errors.Is(err, errLastLoginMethod) {
+		writeError(w, http.StatusConflict, "réactivez d'abord la connexion par identifiant : Discord est la seule méthode de connexion active")
+		return
+	}
 	if errors.Is(err, errMissingSecret) {
 		writeError(w, http.StatusBadRequest, "le Client Secret est obligatoire")
 		return
@@ -192,7 +202,55 @@ func (s *Server) handlePutDiscordSettings(w http.ResponseWriter, r *http.Request
 	s.handleGetDiscordSettings(w, r)
 }
 
-var errMissingSecret = errors.New("missing client secret")
+var (
+	errMissingSecret   = errors.New("missing client secret")
+	errLastLoginMethod = errors.New("last sign-in method")
+)
+
+type loginSettings struct {
+	PasswordLogin bool `json:"passwordLogin"`
+}
+
+func (s *Server) handleGetLoginSettings(w http.ResponseWriter, r *http.Request) {
+	enabled, err := passwordLoginEnabled(r.Context(), s.store.Queries)
+	if err != nil {
+		s.internalError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, loginSettings{PasswordLogin: enabled})
+}
+
+// handlePutLoginSettings turns username and password sign-in on or off. Turning it off is refused when it
+// would lock people out: Discord must be configured and the superadmin must sign in with Discord.
+func (s *Server) handlePutLoginSettings(w http.ResponseWriter, r *http.Request) {
+	var body loginSettings
+	if !decodeJSON(w, r, &body) {
+		return
+	}
+	if !body.PasswordLogin {
+		if currentUser(r).DiscordID.String == "" {
+			writeError(w, http.StatusConflict, "votre compte se connecte par mot de passe : le désactiver vous enfermerait dehors")
+			return
+		}
+		if _, ok, err := s.discordConfig(r.Context(), r); err != nil {
+			s.internalError(w, r, err)
+			return
+		} else if !ok {
+			writeError(w, http.StatusConflict, "configurez d'abord la connexion Discord")
+			return
+		}
+	}
+	value := "0"
+	if body.PasswordLogin {
+		value = "1"
+	}
+	if err := s.store.SetSetting(r.Context(), db.SetSettingParams{Key: settingPasswordLogin, Value: value}); err != nil {
+		s.internalError(w, r, err)
+		return
+	}
+	s.logger.Info("password sign-in changed", "enabled", body.PasswordLogin, "by", currentUser(r).DisplayName)
+	writeJSON(w, http.StatusOK, body)
+}
 
 func nullInt(v int64) sql.NullInt64 {
 	return sql.NullInt64{Int64: v, Valid: true}

@@ -31,6 +31,15 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSON(w, r, &req) {
 		return
 	}
+	enabled, err := passwordLoginEnabled(r.Context(), s.store.Queries)
+	if err != nil {
+		s.internalError(w, r, err)
+		return
+	}
+	if !enabled {
+		writeError(w, http.StatusForbidden, "la connexion par identifiant est désactivée sur cette instance")
+		return
+	}
 	ip := clientIP(r)
 	if !s.limiter.Allowed(ip) {
 		writeError(w, http.StatusTooManyRequests, "trop de tentatives, réessayez dans quelques minutes")

@@ -2,7 +2,7 @@ import { useEffect, useState, type FormEvent } from 'react'
 import { api, errorMessage, type DiscordSettings } from './api'
 import { DiscordAppSteps } from './ui'
 
-export default function Settings() {
+function DiscordSettingsPanel() {
   const [settings, setSettings] = useState<DiscordSettings | null>(null)
   const [clientId, setClientId] = useState('')
   const [clientSecret, setClientSecret] = useState('')
@@ -75,5 +75,64 @@ export default function Settings() {
         </button>
       </div>
     </form>
+  )
+}
+
+export default function Settings({ superadmin }: { superadmin: boolean }) {
+  return (
+    <div className="section">
+      {superadmin && <LoginSettingsPanel />}
+      <DiscordSettingsPanel />
+    </div>
+  )
+}
+
+/** Superadmin only: whether people may sign in with a username and password. */
+function LoginSettingsPanel() {
+  const [enabled, setEnabled] = useState<boolean | null>(null)
+  const [error, setError] = useState('')
+  const [busy, setBusy] = useState(false)
+
+  useEffect(() => {
+    api
+      .loginSettings()
+      .then((s) => setEnabled(s.passwordLogin))
+      .catch((err) => setError(errorMessage(err)))
+  }, [])
+
+  async function toggle() {
+    if (enabled === null) return
+    setBusy(true)
+    setError('')
+    try {
+      setEnabled((await api.saveLoginSettings(!enabled)).passwordLogin)
+    } catch (err) {
+      setError(errorMessage(err))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  if (enabled === null) return error ? <p className="error">{error}</p> : null
+  return (
+    <div className="panel">
+      <div className="header">
+        <div className="header-title">
+          <h2>Connexion par identifiant</h2>
+          <p className="muted">Permet de se connecter avec un identifiant et un mot de passe, en plus de Discord.</p>
+        </div>
+        <span className={`banner ${enabled ? 'banner-up' : ''}`}>
+          <span className={`dot ${enabled ? 'dot-up' : ''}`} />
+          {enabled ? 'Activée' : 'Désactivée'}
+        </span>
+      </div>
+      {error && <p className="error">{error}</p>}
+      <div className="panel-footer">
+        <span className="spacer" />
+        <button type="button" className="btn" onClick={toggle} disabled={busy}>
+          {enabled ? 'Désactiver' : 'Activer'}
+        </button>
+      </div>
+    </div>
   )
 }

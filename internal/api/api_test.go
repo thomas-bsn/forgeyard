@@ -58,6 +58,19 @@ func post(t *testing.T, c *http.Client, url string, body any) *http.Response {
 	return resp
 }
 
+func put(t *testing.T, c *http.Client, url string, body any) int {
+	t.Helper()
+	b, _ := json.Marshal(body)
+	req, _ := http.NewRequest(http.MethodPut, url, bytes.NewReader(b))
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := c.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	return resp.StatusCode
+}
+
 func get(t *testing.T, c *http.Client, url string, out any) int {
 	t.Helper()
 	resp, err := c.Get(url)
@@ -103,6 +116,10 @@ func TestSetupAndLoginFlow(t *testing.T) {
 	var me userResponse
 	if code := get(t, c, ts.URL+"/api/auth/me", &me); code != http.StatusOK || me.Role != "superadmin" || me.Username != "thomas" {
 		t.Fatalf("me after setup: code=%d user=%+v", code, me)
+	}
+	// A password superadmin cannot turn password sign-in off.
+	if code := put(t, c, ts.URL+"/api/admin/settings/login", loginSettings{PasswordLogin: false}); code != http.StatusConflict {
+		t.Fatalf("password superadmin disabling password sign-in: %d", code)
 	}
 	get(t, c, ts.URL+"/api/instance", &inst)
 	if inst.SetupRequired || inst.Name != "Ma Forge" {

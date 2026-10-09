@@ -30,6 +30,7 @@ export default function Login({
   authStatus: string | null
   onDone: () => void
 }) {
+  const passwordLogin = instance.passwordLoginEnabled || !instance.discordEnabled
   const [showPassword, setShowPassword] = useState(!instance.discordEnabled)
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
@@ -70,7 +71,7 @@ export default function Login({
             </>
           )}
 
-          {showPassword ? (
+          {!passwordLogin ? null : showPassword ? (
             <>
               {instance.discordEnabled && <div className="separator">ou avec un identifiant</div>}
               <label className="field">

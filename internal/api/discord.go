@@ -279,6 +279,9 @@ func (s *Server) completeDiscordSetup(w http.ResponseWriter, r *http.Request, dU
 		if err != nil {
 			return err
 		}
+		if err := q.SetSetting(ctx, db.SetSettingParams{Key: settingPasswordLogin, Value: "0"}); err != nil {
+			return err
+		}
 		if err := q.SetSetting(ctx, db.SetSettingParams{Key: settingSetupCompleted, Value: "1"}); err != nil {
 			return err
 		}

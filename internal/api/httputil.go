@@ -90,6 +90,17 @@ func (s *Server) requireAdmin(next http.HandlerFunc) http.HandlerFunc {
 	})
 }
 
+// requireSuperadmin is requireUser restricted to the superadmin.
+func (s *Server) requireSuperadmin(next http.HandlerFunc) http.HandlerFunc {
+	return s.requireUser(func(w http.ResponseWriter, r *http.Request) {
+		if currentUser(r).Role != "superadmin" {
+			writeError(w, http.StatusForbidden, "réservé au superadmin")
+			return
+		}
+		next(w, r)
+	})
+}
+
 func isAdmin(u db.User) bool {
 	return u.Role == "admin" || u.Role == "superadmin"
 }

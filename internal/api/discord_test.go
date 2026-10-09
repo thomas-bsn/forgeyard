@@ -118,6 +118,26 @@ func TestDiscordSetupRequestsAndLogin(t *testing.T) {
 		t.Fatalf("owner after setup: code=%d %+v", code, me)
 	}
 
+	// A Discord setup turns password sign-in off; Discord cannot then be turned off too.
+	var inst instanceResponse
+	get(t, owner, ts.URL+"/api/instance", &inst)
+	if inst.PasswordLogin {
+		t.Fatal("password sign-in should be off after a Discord setup")
+	}
+	if code := post(t, owner, ts.URL+"/api/auth/login", loginRequest{"x", "y"}).StatusCode; code != http.StatusForbidden {
+		t.Fatalf("password login while disabled: %d", code)
+	}
+	if code := put(t, owner, ts.URL+"/api/admin/settings/discord", putDiscordSettings{}); code != http.StatusConflict {
+		t.Fatalf("disabling the last sign-in method: %d", code)
+	}
+	if code := put(t, owner, ts.URL+"/api/admin/settings/login", loginSettings{PasswordLogin: true}); code != http.StatusOK {
+		t.Fatalf("re-enabling password sign-in: %d", code)
+	}
+	get(t, owner, ts.URL+"/api/instance", &inst)
+	if !inst.PasswordLogin {
+		t.Fatal("password sign-in should be back on")
+	}
+
 	// An unknown Discord account gets a pending request, and keeps seeing it until an admin decides.
 	lea := newClient()
 	fd.as("2", "lea")

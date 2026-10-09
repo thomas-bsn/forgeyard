@@ -18,7 +18,10 @@ import (
 const (
 	settingSetupCompleted = "setup_completed"
 	settingInstanceName   = "instance_name"
-	defaultInstanceName   = "Forgeyard"
+	// settingPasswordLogin is "0" when signing in with a username and password is turned off.
+	// It is off after a Discord setup and on after a password setup; only the superadmin changes it.
+	settingPasswordLogin = "password_login"
+	defaultInstanceName  = "Forgeyard"
 )
 
 var usernamePattern = regexp.MustCompile(`^[a-z0-9_-]{3,32}$`)
@@ -43,6 +46,7 @@ func (s *Server) setupRequired() bool {
 type instanceResponse struct {
 	Name               string `json:"name"`
 	SetupRequired      bool   `json:"setupRequired"`
+	PasswordLogin      bool   `json:"passwordLoginEnabled"`
 	DiscordEnabled     bool   `json:"discordEnabled"`
 	DiscordRedirectURL string `json:"discordRedirectUrl"`
 }
@@ -60,12 +64,27 @@ func (s *Server) handleInstance(w http.ResponseWriter, r *http.Request) {
 		s.internalError(w, r, err)
 		return
 	}
+	passwordLogin, err := passwordLoginEnabled(r.Context(), s.store.Queries)
+	if err != nil {
+		s.internalError(w, r, err)
+		return
+	}
 	writeJSON(w, http.StatusOK, instanceResponse{
 		Name:               name,
 		SetupRequired:      s.setupRequired(),
+		PasswordLogin:      passwordLogin || s.setupRequired(),
 		DiscordEnabled:     enabled && !s.setupRequired(),
 		DiscordRedirectURL: redirectURL,
 	})
+}
+
+// passwordLoginEnabled reports whether username and password sign-in is allowed (true when never set).
+func passwordLoginEnabled(ctx context.Context, q *db.Queries) (bool, error) {
+	v, err := q.GetSetting(ctx, settingPasswordLogin)
+	if errors.Is(err, sql.ErrNoRows) {
+		return true, nil
+	}
+	return v != "0", err
 }
 
 // checkSetupToken writes an error and returns false unless token is the current setup token.
@@ -154,6 +173,9 @@ func (s *Server) handleSetup(w http.ResponseWriter, r *http.Request) {
 			return err
 		}
 		if err := q.SetSetting(r.Context(), db.SetSettingParams{Key: settingPublicURL, Value: requestOrigin(r)}); err != nil {
+			return err
+		}
+		if err := q.SetSetting(r.Context(), db.SetSettingParams{Key: settingPasswordLogin, Value: "1"}); err != nil {
 			return err
 		}
 		if err := q.SetSetting(r.Context(), db.SetSettingParams{Key: settingSetupCompleted, Value: "1"}); err != nil {

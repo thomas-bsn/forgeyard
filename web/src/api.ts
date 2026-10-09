@@ -10,6 +10,7 @@ export type User = {
 export type Instance = {
   name: string
   setupRequired: boolean
+  passwordLoginEnabled: boolean
   discordEnabled: boolean
   discordRedirectUrl: string
 }
@@ -69,6 +70,9 @@ export const api = {
   discordSettings: () => request<DiscordSettings>('GET', '/api/admin/settings/discord'),
   saveDiscordSettings: (clientId: string, clientSecret: string) =>
     request<DiscordSettings>('PUT', '/api/admin/settings/discord', { clientId, clientSecret }),
+  loginSettings: () => request<{ passwordLogin: boolean }>('GET', '/api/admin/settings/login'),
+  saveLoginSettings: (passwordLogin: boolean) =>
+    request<{ passwordLogin: boolean }>('PUT', '/api/admin/settings/login', { passwordLogin }),
 }
 
 export function errorMessage(err: unknown): string {
