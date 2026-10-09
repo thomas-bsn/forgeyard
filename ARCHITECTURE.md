@@ -224,15 +224,15 @@ Plus tard : messages privés Discord via un bot.
 - [x] Connexion par identifiant, sessions
 - [x] Commande `admin-login` de secours
 - [x] Agent local : connexion gRPC, enregistrement par token, mTLS
-- [ ] Déployer une image Docker existante sur le node local, avec ses variables d'environnement
-- [ ] Traefik : sous-domaine et HTTPS
-- [ ] Domaine de base et DNS Cloudflare automatique
-- [ ] Logs en direct, démarrer, arrêter, supprimer
+- [x] Déployer une image Docker existante, avec ses variables d'environnement
+- [x] Traefik : sous-domaine et HTTPS (80/443 ou derrière un proxy existant)
+- [x] Domaine de base et DNS automatique (Cloudflare, OVH, Gandi, Porkbun)
+- [x] Logs en direct, démarrer, arrêter, redéployer, supprimer
 
 ### v0.2 : comptes et multi-node
 - [x] Discord SSO (y compris comme méthode de l'admin dans le wizard), demandes de compte, rôles
 - [ ] Webhook Discord de notification
-- [ ] Ajout de nodes distants (script d'installation)
+- [x] Ajout de nodes distants (commande join) — reste : script d'installation et agent en conteneur
 - [ ] Capacité, placement automatique, métriques et graphiques
 - [ ] Gestion des crashs et suspension
 - [ ] Conteneurs externes : détection, gestion, adoption

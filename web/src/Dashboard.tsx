@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react'
-import { api, type Instance, type Node, type User } from './api'
+import { api, type Instance, type User } from './api'
 import { Logo, ThemeToggle } from './ui'
 import Requests from './Requests'
 import Settings from './Settings'
 import Nodes from './Nodes'
+import Apps from './Apps'
 
 const roleLabels: Record<User['role'], string> = {
   superadmin: 'superadmin',
@@ -64,46 +65,5 @@ export default function Dashboard({ instance, user, onLogout }: { instance: Inst
       {tab === 'requests' && admin && <Requests onCountChange={setPending} />}
       {tab === 'settings' && admin && <Settings superadmin={user.role === 'superadmin'} />}
     </div>
-  )
-}
-
-function Apps({ admin }: { admin: boolean }) {
-  const [nodes, setNodes] = useState<Node[] | null>(null)
-  useEffect(() => {
-    if (admin) api.nodes().then(setNodes).catch(() => {})
-  }, [admin])
-  const online = nodes?.filter((n) => n.state === 'online').length
-
-  return (
-    <>
-      <div className="stats">
-        <div className="stat">
-          <div className="k">Apps en ligne</div>
-          <div className="v">
-            0 <small>/ 0</small>
-          </div>
-        </div>
-        <div className="stat">
-          <div className="k">Suspendues</div>
-          <div className="v">0</div>
-        </div>
-        <div className="stat">
-          <div className="k">Nodes en ligne</div>
-          <div className="v">
-            {nodes ? (
-              <>
-                {online} <small>/ {nodes.filter((n) => n.state !== 'pending').length}</small>
-              </>
-            ) : (
-              '–'
-            )}
-          </div>
-        </div>
-      </div>
-      <div className="empty-state">
-        <strong>Aucune app pour le moment</strong>
-        <span>Le déploiement de conteneurs arrive avec l'agent, dans la prochaine étape.</span>
-      </div>
-    </>
   )
 }

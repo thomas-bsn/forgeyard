@@ -46,6 +46,9 @@ export type Node = {
   dockerVersion: string
   agentVersion: string
   lastSeenAt?: number
+  publicIp: string
+  ingressMode: 'traefik' | 'proxy'
+  ingressHttpPort: number
   metrics?: {
     cpuPercent: number
     memoryUsedBytes: number
@@ -53,6 +56,47 @@ export type Node = {
     containersRunning: number
   }
   cpuHistory?: number[]
+}
+
+export type AppState =
+  | 'pending'
+  | 'pulling'
+  | 'creating'
+  | 'running'
+  | 'restarting'
+  | 'stopped'
+  | 'exited'
+  | 'error'
+  | 'node-offline'
+
+export type App = {
+  id: number
+  name: string
+  ownerId: number
+  ownerName: string
+  nodeId: number
+  nodeName: string
+  image: string
+  port: number
+  memoryMb: number
+  running: boolean
+  url?: string
+  state: AppState
+  error?: string
+  exitCode?: number
+  oomKilled?: boolean
+  restartCount?: number
+  startedAt?: number
+  updatedAt: number
+  env?: Record<string, string>
+}
+
+export type AppInput = {
+  name?: string
+  image: string
+  port: number
+  memoryMb: number
+  env: Record<string, string>
 }
 
 export type JoinCommand = {
@@ -130,7 +174,15 @@ export const api = {
   discordSettings: () => request<DiscordSettings>('GET', '/api/admin/settings/discord'),
   saveDiscordSettings: (clientId: string, clientSecret: string) =>
     request<DiscordSettings>('PUT', '/api/admin/settings/discord', { clientId, clientSecret }),
+  apps: () => request<App[]>('GET', '/api/apps'),
+  app: (id: number) => request<App>('GET', `/api/apps/${id}`),
+  createApp: (input: AppInput) => request<App>('POST', '/api/apps', input),
+  updateApp: (id: number, input: AppInput) => request<App>('PUT', `/api/apps/${id}`, input),
+  appAction: (id: number, action: 'start' | 'stop' | 'redeploy') => request<App>('POST', `/api/apps/${id}/${action}`, {}),
+  deleteApp: (id: number) => request<void>('DELETE', `/api/apps/${id}`, {}),
   nodes: () => request<Node[]>('GET', '/api/admin/nodes'),
+  setNodeIngress: (id: number, body: { publicIp: string; ingressMode: 'traefik' | 'proxy'; ingressHttpPort: number }) =>
+    request<Node>('PUT', `/api/admin/nodes/${id}/ingress`, body),
   createNode: (name: string) => request<JoinCommand>('POST', '/api/admin/nodes', { name }),
   newJoinCommand: (id: number) => request<JoinCommand>('POST', `/api/admin/nodes/${id}/join-command`, {}),
   deleteNode: (id: number) => request<void>('DELETE', `/api/admin/nodes/${id}`, {}),

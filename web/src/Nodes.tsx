@@ -209,6 +209,8 @@ function NodeCard({ node, onJoin, onChange }: { node: Node; onJoin: (j: JoinComm
         </>
       )}
 
+      {node.state !== 'pending' && <IngressSettings node={node} onSaved={onChange} />}
+
       {error && <p className="error">{error}</p>}
       <div className="panel-footer">
         {node.state === 'pending' && (
@@ -234,5 +236,87 @@ function NodeCard({ node, onJoin, onChange }: { node: Node; onJoin: (j: JoinComm
         </button>
       </div>
     </div>
+  )
+}
+
+/** How the node receives the web traffic of its apps. */
+function IngressSettings({ node, onSaved }: { node: Node; onSaved: () => void }) {
+  const [open, setOpen] = useState(false)
+  const [ip, setIp] = useState(node.publicIp)
+  const [mode, setMode] = useState(node.ingressMode)
+  const [port, setPort] = useState(String(node.ingressHttpPort))
+  const [error, setError] = useState('')
+  const [busy, setBusy] = useState(false)
+
+  async function save(e: FormEvent) {
+    e.preventDefault()
+    setBusy(true)
+    setError('')
+    try {
+      await api.setNodeIngress(node.id, { publicIp: ip, ingressMode: mode, ingressHttpPort: Number(port) })
+      setOpen(false)
+      onSaved()
+    } catch (err) {
+      setError(errorMessage(err))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const summary =
+    node.ingressMode === 'traefik' ? 'Traefik sur 80/443, HTTPS automatique' : `Derrière un proxy, port ${node.ingressHttpPort}`
+
+  if (!open) {
+    return (
+      <div className="ingress-summary">
+        <span className="muted">
+          Réseau : {summary}
+          {node.publicIp ? ` · IP ${node.publicIp}` : ''}
+        </span>
+        <button type="button" className="btn btn-ghost" onClick={() => setOpen(true)}>
+          Modifier
+        </button>
+      </div>
+    )
+  }
+
+  return (
+    <form className="form" onSubmit={save}>
+      <label className="field">
+        <span>IP publique</span>
+        <input value={ip} onChange={(e) => setIp(e.target.value)} placeholder="Celle des Réglages par défaut" />
+        <small>L’adresse vers laquelle pointent les domaines des apps de ce node.</small>
+      </label>
+      <label className="field">
+        <span>Trafic web</span>
+        <select value={mode} onChange={(e) => setMode(e.target.value as Node['ingressMode'])}>
+          <option value="traefik">Traefik sur 80/443, HTTPS automatique</option>
+          <option value="proxy">Derrière mon proxy (Caddy, Nginx…)</option>
+        </select>
+      </label>
+      {mode === 'proxy' && (
+        <>
+          <label className="field">
+            <span>Port HTTP</span>
+            <input type="number" min={1} max={65535} value={port} onChange={(e) => setPort(e.target.value)} required />
+          </label>
+          <div className="field">
+            <span>À ajouter dans votre Caddyfile</span>
+            <CopyField value={`*.mondomaine.com {\n    reverse_proxy localhost:${port}\n}`} />
+            <small>Votre proxy fait le HTTPS et envoie tous les sous-domaines à Forgeyard.</small>
+          </div>
+        </>
+      )}
+      {error && <p className="error">{error}</p>}
+      <div className="panel-footer">
+        <span className="spacer" />
+        <button type="button" className="btn" onClick={() => setOpen(false)} disabled={busy}>
+          Annuler
+        </button>
+        <button type="submit" className="btn btn-primary" disabled={busy}>
+          Enregistrer
+        </button>
+      </div>
+    </form>
   )
 }
