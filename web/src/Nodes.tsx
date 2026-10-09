@@ -107,16 +107,15 @@ function AddNode({ onCreated }: { onCreated: (j: JoinCommand) => void }) {
   )
 }
 
-type JoinMethod = 'docker' | 'compose' | 'binary'
+type JoinMethod = 'compose' | 'docker'
 
 const joinMethods: { value: JoinMethod; title: string; text: string }[] = [
-  { value: 'docker', title: 'Autre machine', text: 'Une commande docker run.' },
-  { value: 'compose', title: 'Machine de Forgeyard', text: 'Un service à ajouter au docker compose.' },
-  { value: 'binary', title: 'Sans Docker', text: 'Le binaire forgeyard-agent.' },
+  { value: 'compose', title: 'La machine de Forgeyard', text: 'Le serveur où tourne déjà Forgeyard.' },
+  { value: 'docker', title: 'Une autre machine', text: 'Un autre serveur, avec Docker installé.' },
 ]
 
 function JoinInstructions({ join, onClose }: { join: JoinCommand; onClose: () => void }) {
-  const [method, setMethod] = useState<JoinMethod>('docker')
+  const [method, setMethod] = useState<JoinMethod>('compose')
   const expires = new Date(join.expiresAt * 1000).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })
   return (
     <div className="panel join-panel">
@@ -141,10 +140,14 @@ function JoinInstructions({ join, onClose }: { join: JoinCommand; onClose: () =>
         ))}
       </div>
 
+      <p className="muted">
+        Rien à installer à part Docker : l’agent Forgeyard est une image Docker, téléchargée et lancée automatiquement.
+      </p>
+
       {method === 'docker' && (
         <ol className="steps-help">
           <li>
-            Sur la machine, avec Docker installé, lancez :
+            Sur cette machine, lancez cette commande dans un terminal :
             <CopyField value={join.dockerCommand} />
           </li>
           <li>Le node apparaît en ligne ci-dessous en quelques secondes. L’agent redémarre tout seul avec la machine.</li>
@@ -158,17 +161,9 @@ function JoinInstructions({ join, onClose }: { join: JoinCommand; onClose: () =>
             <CopyField value={join.composeService} />
           </li>
           <li>
-            Puis lancez <code>docker compose up -d --build</code>. L’agent parle au server directement, sans passer par
-            l’adresse publique.
+            Puis lancez <code>docker compose up -d --build</code> dans ce même dossier.
           </li>
-        </ol>
-      )}
-      {method === 'binary' && (
-        <ol className="steps-help">
-          <li>
-            Installez le binaire forgeyard-agent et Docker sur la machine, puis lancez :
-            <CopyField value={join.command} />
-          </li>
+          <li>Le node apparaît en ligne ci-dessous en quelques secondes.</li>
         </ol>
       )}
 
