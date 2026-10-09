@@ -14,3 +14,13 @@ make build            # build du front React puis des binaires dans bin/
 ```
 
 Avec rechargement à chaud du front : `go run ./cmd/server` dans un terminal, `make dev-web` dans un autre, puis http://localhost:5173.
+
+## Accès perdu
+
+Discord en panne, app Discord mal configurée ou mot de passe oublié : sur le serveur, lancez
+
+```sh
+./bin/forgeyard-server admin-login
+```
+
+La commande affiche un lien qui connecte en superadmin. Il est valable 15 minutes et ne sert qu'une fois.

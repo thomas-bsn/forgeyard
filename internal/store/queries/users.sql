@@ -22,3 +22,6 @@ SELECT * FROM users WHERE discord_id = ?;
 
 -- name: UpdateDiscordProfile :exec
 UPDATE users SET display_name = ?, email = ? WHERE id = ?;
+
+-- name: GetSuperadmin :one
+SELECT * FROM users WHERE role = 'superadmin' ORDER BY id LIMIT 1;

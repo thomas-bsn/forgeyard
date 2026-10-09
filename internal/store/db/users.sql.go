@@ -95,6 +95,27 @@ func (q *Queries) CreateLocalUser(ctx context.Context, arg CreateLocalUserParams
 	return i, err
 }
 
+const getSuperadmin = `-- name: GetSuperadmin :one
+SELECT id, username, password_hash, discord_id, display_name, role, disabled, created_at, email FROM users WHERE role = 'superadmin' ORDER BY id LIMIT 1
+`
+
+func (q *Queries) GetSuperadmin(ctx context.Context) (User, error) {
+	row := q.db.QueryRowContext(ctx, getSuperadmin)
+	var i User
+	err := row.Scan(
+		&i.ID,
+		&i.Username,
+		&i.PasswordHash,
+		&i.DiscordID,
+		&i.DisplayName,
+		&i.Role,
+		&i.Disabled,
+		&i.CreatedAt,
+		&i.Email,
+	)
+	return i, err
+}
+
 const getUserByDiscordID = `-- name: GetUserByDiscordID :one
 SELECT id, username, password_hash, discord_id, display_name, role, disabled, created_at, email FROM users WHERE discord_id = ?
 `

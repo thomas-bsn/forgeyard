@@ -10,6 +10,7 @@ import (
 	"net/http/cookiejar"
 	"net/http/httptest"
 	"path/filepath"
+	"strings"
 	"testing"
 	"testing/fstest"
 
@@ -145,5 +146,49 @@ func TestWritesRequireJSON(t *testing.T) {
 	resp.Body.Close()
 	if resp.StatusCode != http.StatusUnsupportedMediaType {
 		t.Fatalf("form post: got %d", resp.StatusCode)
+	}
+}
+
+func TestLoginLink(t *testing.T) {
+	ts, server := newTestServerWithHandle(t)
+	c := newClient()
+	ctx := context.Background()
+
+	if _, _, err := CreateSuperadminLoginLink(ctx, server.store); err == nil {
+		t.Fatal("link created before setup")
+	}
+	post(t, c, ts.URL+"/api/setup", setupRequest{Token: testToken, InstanceName: "F", Username: "boss", Password: "a-long-enough-password"})
+	post(t, c, ts.URL+"/api/auth/logout", struct{}{})
+
+	link, user, err := CreateSuperadminLoginLink(ctx, server.store)
+	if err != nil || user.Role != "superadmin" {
+		t.Fatalf("create link: %v %+v", err, user)
+	}
+	// The link carries the address recorded at setup, which is the test server's.
+	if !strings.HasPrefix(link, ts.URL+"/api/auth/link?token=") {
+		t.Fatalf("link: %s", link)
+	}
+	resp, err := c.Get(link)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	var me userResponse
+	if code := get(t, c, ts.URL+"/api/auth/me", &me); code != http.StatusOK || me.Role != "superadmin" {
+		t.Fatalf("me after link: %d %+v", code, me)
+	}
+
+	// A link works only once.
+	other := newClient()
+	resp, err = other.Get(link)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.Request.URL.Query().Get("link") != "invalid" {
+		t.Fatalf("reused link landed on %s", resp.Request.URL)
+	}
+	if code := get(t, other, ts.URL+"/api/auth/me", nil); code != http.StatusUnauthorized {
+		t.Fatalf("reused link signed in: %d", code)
 	}
 }

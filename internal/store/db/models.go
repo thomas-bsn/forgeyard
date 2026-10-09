@@ -21,6 +21,12 @@ type AccountRequest struct {
 	DecidedAt   sql.NullInt64
 }
 
+type LoginLink struct {
+	TokenHash string
+	UserID    int64
+	ExpiresAt int64
+}
+
 type Session struct {
 	TokenHash string
 	UserID    int64

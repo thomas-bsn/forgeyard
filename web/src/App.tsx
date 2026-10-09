@@ -11,21 +11,25 @@ type State =
   | { kind: 'login'; instance: Instance }
   | { kind: 'ready'; instance: Instance; user: User }
 
-/** The result of a Discord sign-in, passed back by the server in ?discord=… and removed from the URL. */
-function takeDiscordStatus(): string | null {
+/**
+ * The result of a Discord sign-in (?discord=…) or of a recovery link (?link=…), passed back by the
+ * server in the URL. It is read once and removed from the address bar.
+ */
+function takeAuthStatus(): string | null {
   const params = new URLSearchParams(window.location.search)
-  const status = params.get('discord')
-  if (status) {
-    params.delete('discord')
-    const query = params.toString()
-    window.history.replaceState(null, '', window.location.pathname + (query ? `?${query}` : ''))
-  }
-  return status
+  const discord = params.get('discord')
+  const link = params.get('link')
+  if (!discord && !link) return null
+  params.delete('discord')
+  params.delete('link')
+  const query = params.toString()
+  window.history.replaceState(null, '', window.location.pathname + (query ? `?${query}` : ''))
+  return discord ?? `link-${link}`
 }
 
 export default function App() {
   const [state, setState] = useState<State>({ kind: 'loading' })
-  const [discordStatus] = useState(takeDiscordStatus)
+  const [authStatus] = useState(takeAuthStatus)
 
   async function load() {
     try {
@@ -65,7 +69,7 @@ export default function App() {
     case 'setup':
       return <Setup instance={state.instance} onDone={load} />
     case 'login':
-      return <Login instance={state.instance} discordStatus={discordStatus} onDone={load} />
+      return <Login instance={state.instance} authStatus={authStatus} onDone={load} />
     case 'ready':
       return <Dashboard instance={state.instance} user={state.user} onLogout={load} />
   }

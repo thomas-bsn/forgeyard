@@ -22,6 +22,14 @@ import (
 )
 
 func main() {
+	if len(os.Args) > 1 && os.Args[1] == "admin-login" {
+		if err := adminLogin(os.Args[2:]); err != nil {
+			fmt.Fprintln(os.Stderr, "erreur :", err)
+			os.Exit(1)
+		}
+		return
+	}
+
 	addr := flag.String("addr", ":8080", "HTTP listen address")
 	dataDir := flag.String("data-dir", "data", "directory holding the database")
 	flag.Parse()
@@ -31,6 +39,29 @@ func main() {
 		logger.Error("server failed", "err", err)
 		os.Exit(1)
 	}
+}
+
+// adminLogin prints a one-time link that signs in as the superadmin, for when the UI is out of reach
+// (Discord down or misconfigured, password forgotten). Running it requires access to the server.
+func adminLogin(args []string) error {
+	fs := flag.NewFlagSet("admin-login", flag.ExitOnError)
+	dataDir := fs.String("data-dir", "data", "directory holding the database")
+	fs.Parse(args)
+
+	ctx := context.Background()
+	st, err := store.Open(ctx, filepath.Join(*dataDir, "forgeyard.db"))
+	if err != nil {
+		return fmt.Errorf("open database: %w", err)
+	}
+	defer st.Close()
+
+	link, user, err := api.CreateSuperadminLoginLink(ctx, st)
+	if err != nil {
+		return err
+	}
+	fmt.Printf("\n  Lien de connexion pour %s (superadmin), valable %d minutes et utilisable une seule fois :\n\n    %s\n\n",
+		user.DisplayName, int(api.LoginLinkTTL.Minutes()), link)
+	return nil
 }
 
 func run(addr, dataDir string, logger *slog.Logger) error {
@@ -69,7 +100,7 @@ func run(addr, dataDir string, logger *slog.Logger) error {
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 
-	go cleanExpiredSessions(ctx, st, logger)
+	go cleanExpired(ctx, st, logger)
 
 	errc := make(chan error, 1)
 	go func() {
@@ -90,12 +121,16 @@ func run(addr, dataDir string, logger *slog.Logger) error {
 	return srv.Shutdown(shutdownCtx)
 }
 
-func cleanExpiredSessions(ctx context.Context, st *store.Store, logger *slog.Logger) {
+func cleanExpired(ctx context.Context, st *store.Store, logger *slog.Logger) {
 	ticker := time.NewTicker(time.Hour)
 	defer ticker.Stop()
 	for {
-		if err := st.DeleteExpiredSessions(ctx, time.Now().Unix()); err != nil && ctx.Err() == nil {
+		now := time.Now().Unix()
+		if err := st.DeleteExpiredSessions(ctx, now); err != nil && ctx.Err() == nil {
 			logger.Warn("cleaning expired sessions failed", "err", err)
+		}
+		if err := st.DeleteExpiredLoginLinks(ctx, now); err != nil && ctx.Err() == nil {
+			logger.Warn("cleaning expired login links failed", "err", err)
 		}
 		select {
 		case <-ctx.Done():

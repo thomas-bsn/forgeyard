@@ -2,7 +2,7 @@ import { useState, type FormEvent } from 'react'
 import { api, errorMessage, type Instance } from './api'
 import { DiscordIcon, Logo, ThemeToggle } from './ui'
 
-const discordMessages: Record<string, { tone: 'warn' | 'down'; title: string; text: string }> = {
+const authMessages: Record<string, { tone: 'warn' | 'down'; title: string; text: string }> = {
   pending: {
     tone: 'warn',
     title: 'Demande en attente',
@@ -14,15 +14,20 @@ const discordMessages: Record<string, { tone: 'warn' | 'down'; title: string; te
   expired: { tone: 'warn', title: 'Connexion expirée', text: 'Recommencez la connexion avec Discord.' },
   unavailable: { tone: 'warn', title: 'Discord indisponible', text: "La connexion Discord n'est pas configurée sur cette instance." },
   error: { tone: 'down', title: 'Échec de la connexion Discord', text: 'Réessayez. Si ça persiste, prévenez un admin.' },
+  'link-invalid': {
+    tone: 'down',
+    title: 'Lien de connexion invalide',
+    text: "Il a expiré ou a déjà servi. Relancez la commande admin-login sur le serveur.",
+  },
 }
 
 export default function Login({
   instance,
-  discordStatus,
+  authStatus,
   onDone,
 }: {
   instance: Instance
-  discordStatus: string | null
+  authStatus: string | null
   onDone: () => void
 }) {
   const [showPassword, setShowPassword] = useState(!instance.discordEnabled)
@@ -30,7 +35,7 @@ export default function Login({
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
-  const message = discordStatus ? discordMessages[discordStatus] : undefined
+  const message = authStatus ? authMessages[authStatus] : undefined
 
   async function submit(e: FormEvent) {
     e.preventDefault()

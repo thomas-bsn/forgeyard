@@ -53,6 +53,7 @@ func (s *Server) Handler(webFS fs.FS) http.Handler {
 	mux.HandleFunc("POST /api/auth/login", s.handleLogin)
 	mux.HandleFunc("POST /api/auth/logout", s.handleLogout)
 	mux.HandleFunc("GET /api/auth/me", s.requireUser(s.handleMe))
+	mux.HandleFunc("GET /api/auth/link", s.handleLoginLink)
 	mux.HandleFunc("GET /api/auth/discord", s.handleDiscordStart)
 	mux.HandleFunc("GET /api/auth/discord/callback", s.handleDiscordCallback)
 
