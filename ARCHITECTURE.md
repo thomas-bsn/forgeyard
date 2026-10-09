@@ -218,10 +218,11 @@ Plus tard : messages privés Discord via un bot.
 ## 9. Plan de développement
 
 ### v0.1 : un node, déploiement d'image
-- [ ] Structure du projet Go (`cmd/server`, `cmd/agent`, `internal/`), front React intégré
-- [ ] SQLite, migrations, `sqlc`
-- [ ] Wizard : token de setup, admin identifiant / mot de passe, nom du PaaS
-- [ ] Connexion par identifiant, sessions, commande `admin-login` de secours
+- [x] Structure du projet Go (`cmd/server`, `cmd/agent`, `internal/`), front React intégré
+- [x] SQLite, migrations, `sqlc`
+- [x] Wizard : token de setup, admin identifiant / mot de passe, nom du PaaS
+- [x] Connexion par identifiant, sessions
+- [ ] Commande `admin-login` de secours
 - [ ] Agent local : connexion gRPC, enregistrement par token, mTLS
 - [ ] Déployer une image Docker existante sur le node local, avec ses variables d'environnement
 - [ ] Traefik : sous-domaine et HTTPS

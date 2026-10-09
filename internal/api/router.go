@@ -2,21 +2,50 @@
 package api
 
 import (
-	"encoding/json"
 	"io/fs"
 	"log/slog"
 	"net/http"
 	"strings"
+	"sync"
+	"time"
+
+	"github.com/thomas-bsn/forgeyard/internal/auth"
+	"github.com/thomas-bsn/forgeyard/internal/store"
 )
 
-// NewRouter returns the HTTP handler for the API and the single-page web UI.
-func NewRouter(webFS fs.FS, logger *slog.Logger) http.Handler {
+// Server holds the dependencies of the HTTP handlers.
+type Server struct {
+	store   *store.Store
+	logger  *slog.Logger
+	limiter *auth.LoginLimiter
+
+	mu         sync.Mutex
+	setupToken string // empty once setup is completed
+}
+
+// NewServer returns a Server. setupToken must be non-empty while the setup wizard has not been completed.
+func NewServer(st *store.Store, logger *slog.Logger, setupToken string) *Server {
+	return &Server{
+		store:      st,
+		logger:     logger,
+		limiter:    auth.NewLoginLimiter(10, 15*time.Minute),
+		setupToken: setupToken,
+	}
+}
+
+// Handler returns the HTTP handler for the API and the single-page web UI.
+func (s *Server) Handler(webFS fs.FS) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/health", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 	})
+	mux.HandleFunc("GET /api/instance", s.handleInstance)
+	mux.HandleFunc("POST /api/setup", s.handleSetup)
+	mux.HandleFunc("POST /api/auth/login", s.handleLogin)
+	mux.HandleFunc("POST /api/auth/logout", s.handleLogout)
+	mux.HandleFunc("GET /api/auth/me", s.requireUser(s.handleMe))
 	mux.Handle("/", spaHandler(webFS))
-	return logRequests(mux, logger)
+	return requireJSONForWrites(mux)
 }
 
 // spaHandler serves static files and falls back to index.html so client-side routes work.
@@ -41,18 +70,5 @@ func spaHandler(webFS fs.FS) http.Handler {
 		}
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		w.Write(index)
-	})
-}
-
-func writeJSON(w http.ResponseWriter, status int, v any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(v)
-}
-
-func logRequests(next http.Handler, logger *slog.Logger) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		next.ServeHTTP(w, r)
-		logger.Debug("request", "method", r.Method, "path", r.URL.Path)
 	})
 }
