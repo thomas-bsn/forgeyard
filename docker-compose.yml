@@ -1,0 +1,15 @@
+services:
+  forgeyard:
+    build: .
+    container_name: forgeyard
+    ports:
+      - "8080:8080" # web UI and API
+      - "8081:8081" # agents
+    volumes:
+      - forgeyard-data:/data
+    restart: unless-stopped
+    # Server-specific settings (ports, networks, environment…) go in docker-compose.override.yml,
+    # not here: see docker-compose.override.example.yml.
+
+volumes:
+  forgeyard-data:

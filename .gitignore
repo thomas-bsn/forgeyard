@@ -8,3 +8,5 @@ web/dist/*
 /data/
 /data.bak*/
 /forgeyard-agent-data/
+docker-compose.override.yml
+Dockerfile.local

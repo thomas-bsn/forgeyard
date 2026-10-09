@@ -1,0 +1,29 @@
+# Your server-specific settings. Copy this file to docker-compose.override.yml:
+#   cp docker-compose.override.example.yml docker-compose.override.yml
+# Docker Compose merges it with docker-compose.yml automatically, and git ignores it,
+# so `git pull` never conflicts with your changes.
+
+services:
+  forgeyard:
+    # Use other ports on the host:
+    # ports: !override
+    #   - "9000:8080"
+    #   - "9001:8081"
+
+    # Keep the key that encrypts secrets out of the data volume (32 bytes, base64:
+    # generate one with `openssl rand -base64 32`). Without it, the key is data/secret.key.
+    # environment:
+    #   FORGEYARD_SECRET_KEY: "..."
+
+    # Join a network shared with a reverse proxy:
+    # networks:
+    #   - default
+    #   - proxy
+
+    # Build from your own copy of the Dockerfile (e.g. to add a CA certificate):
+    # build:
+    #   dockerfile: Dockerfile.local
+
+# networks:
+#   proxy:
+#     external: true
