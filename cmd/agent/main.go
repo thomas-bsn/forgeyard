@@ -83,6 +83,7 @@ func start(ctx context.Context, args []string, mustJoin bool, logger *slog.Logge
 		if *joinFile == "" {
 			return agent.ErrNotJoined
 		}
+		agent.WriteHostProbe(ctx, *joinFile, logger)
 		cfg, err := agent.WaitAndJoin(ctx, *joinFile, *stateDir, logger)
 		if errors.Is(err, context.Canceled) {
 			return nil

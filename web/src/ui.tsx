@@ -114,3 +114,50 @@ export function DiscordAppSteps({ redirectUrl }: { redirectUrl: string }) {
     </ol>
   )
 }
+
+/** The local IP Forgeyard was opened with, when it was opened by IP. */
+function guessLocalIp() {
+  const host = window.location.hostname
+  return /^\d{1,3}(\.\d{1,3}){3}$/.test(host) && host !== '127.0.0.1' ? host : ''
+}
+
+/**
+ * What to add once to the user's own reverse proxy: every subdomain goes to Forgeyard's Traefik on this
+ * machine, which then routes each app. The same block works whether the proxy runs in Docker or not.
+ */
+export function ProxySnippet({ domain, port }: { domain: string; port: number }) {
+  const [ip, setIp] = useState(guessLocalIp)
+  const target = `${ip.trim() || 'IP_LOCALE'}:${port}`
+  const host = domain || 'mondomaine.com'
+  return (
+    <>
+      <label className="field">
+        <span>IP locale de cette machine</span>
+        <input value={ip} onChange={(e) => setIp(e.target.value)} placeholder="192.168.1.10" />
+        <small>
+          Celle sur votre réseau (<code>hostname -I</code>), pas 127.0.0.1 : elle marche que votre proxy tourne dans Docker ou
+          non.
+        </small>
+      </label>
+      <div className="field">
+        <span>À ajouter une seule fois dans votre Caddyfile, puis rechargez Caddy</span>
+        <CopyField value={`*.${host} {\n    reverse_proxy ${target}\n}`} />
+        <small>
+          Ensuite chaque nouvelle app marche toute seule. Il faut un Caddy avec le module DNS de votre fournisseur (ligne{' '}
+          <code>acme_dns</code>) pour le certificat wildcard. Avec Nginx ou un autre proxy : envoyez <code>*.{host}</code> vers{' '}
+          <code>{target}</code>.
+        </small>
+      </div>
+      <details className="field">
+        <summary>Caddy sans module DNS ?</summary>
+        <CopyField
+          value={`{\n    on_demand_tls {\n        ask http://${ip.trim() || 'IP_LOCALE'}:8080/api/caddy/ask\n    }\n}\n\nhttps:// {\n    tls {\n        on_demand\n    }\n    reverse_proxy ${target}\n}`}
+        />
+        <small>
+          Un certificat par app, créé à sa première visite, seulement si c’est une vraie app. Si votre Caddyfile a déjà un bloc{' '}
+          <code>{'{ … }'}</code> tout en haut, mettez <code>on_demand_tls</code> dedans.
+        </small>
+      </details>
+    </>
+  )
+}

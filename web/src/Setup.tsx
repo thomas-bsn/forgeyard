@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from 'react'
 import { api, ApiError, errorMessage, type DNSProviderKind, type DomainChoice, type IngressChoice, type Instance } from './api'
-import { CopyField, DiscordAppSteps, DiscordIcon, Logo, ThemeToggle } from './ui'
+import { DiscordAppSteps, DiscordIcon, Logo, ProxySnippet, ThemeToggle } from './ui'
 
 const steps = ['Token', 'Instance', 'Domaine', 'Méthode', 'Compte admin'] as const
 const DOMAIN_STEP = 2
@@ -26,7 +26,9 @@ export default function Setup({ instance, onDone }: { instance: Instance; onDone
     provider: instance.dnsProviders?.[0]?.name ?? 'cloudflare',
     credentials: {},
   })
-  const [ingress, setIngress] = useState<IngressChoice>({ mode: 'traefik', httpPort: 8090 })
+  // When the local agent found ports 80/443 taken, another proxy already runs here: suggest putting apps behind it.
+  const [webPorts, setWebPorts] = useState(instance.localWebPorts)
+  const [ingress, setIngress] = useState<IngressChoice>({ mode: instance.localWebPorts === 'busy' ? 'proxy' : 'traefik', httpPort: 8090 })
   const cleanUrl = publicUrl.trim().replace(/\/+$/, '')
   const otherOrigin = cleanUrl !== window.location.origin
   const [error, setError] = useState('')
@@ -41,6 +43,13 @@ export default function Setup({ instance, onDone }: { instance: Instance; onDone
       if (password !== confirm) return setError('Les mots de passe ne correspondent pas.')
     }
     setStep(step + 1)
+    // The local agent checks the ports while the wizard is open: ask again if it had not answered yet.
+    if (step + 1 === DOMAIN_STEP && localNode && !webPorts) {
+      api.instance().then((i) => {
+        setWebPorts(i.localWebPorts)
+        if (i.localWebPorts === 'busy') setIngress((cur) => ({ ...cur, mode: 'proxy' }))
+      }, () => {})
+    }
   }
 
   async function finish(e: FormEvent) {
@@ -128,6 +137,7 @@ export default function Setup({ instance, onDone }: { instance: Instance; onDone
               domain={domain}
               onDomain={setDomain}
               localNode={localNode}
+              webPorts={webPorts}
               ingress={ingress}
               onIngress={setIngress}
             />
@@ -248,6 +258,7 @@ function DomainStep({
   domain,
   onDomain,
   localNode,
+  webPorts,
   ingress,
   onIngress,
 }: {
@@ -255,12 +266,14 @@ function DomainStep({
   domain: DomainChoice
   onDomain: (d: DomainChoice) => void
   localNode: boolean
+  webPorts?: 'busy' | 'free'
   ingress: IngressChoice
   onIngress: (i: IngressChoice) => void
 }) {
   const kind = providers.find((p) => p.name === domain.provider)
   const set = (patch: Partial<DomainChoice>) => onDomain({ ...domain, ...patch })
   const host = domain.domain.trim().toLowerCase() || 'mondomaine.com'
+  const typed = domain.mode === 'provider' ? domain.domain.trim().toLowerCase() : ''
 
   return (
     <>
@@ -328,31 +341,29 @@ function DomainStep({
 
       {localNode && (
         <>
-          <h2>Reverse proxy de cette machine</h2>
+          <h2>Qui gère les ports 80 et 443 de cette machine ?</h2>
+          {webPorts === 'busy' && (
+            <p className="muted">Un programme répond déjà sur ces ports (sûrement votre reverse proxy) : les apps passeront derrière lui.</p>
+          )}
+          {webPorts === 'free' && <p className="muted">Ces ports sont libres : Forgeyard peut les prendre.</p>}
           <div className="auth-options">
             <button type="button" className={`auth-option ${ingress.mode === 'traefik' ? 'selected' : ''}`} onClick={() => onIngress({ ...ingress, mode: 'traefik' })} aria-pressed={ingress.mode === 'traefik'}>
-              <strong>Celui de Forgeyard</strong>
-              <small>Forgeyard prend les ports 80 et 443 et gère le HTTPS.</small>
+              <strong>Forgeyard</strong>
+              <small>Il prend les ports 80 et 443 et gère le HTTPS. Rien à configurer.</small>
             </button>
             <button type="button" className={`auth-option ${ingress.mode === 'proxy' ? 'selected' : ''}`} onClick={() => onIngress({ ...ingress, mode: 'proxy' })} aria-pressed={ingress.mode === 'proxy'}>
-              <strong>Le mien</strong>
-              <small>J’ai déjà Caddy, Nginx… sur les ports 80 et 443.</small>
+              <strong>Mon reverse proxy</strong>
+              <small>Caddy, Nginx… les garde, et envoie les apps à Forgeyard.</small>
             </button>
           </div>
           {ingress.mode === 'proxy' && (
             <>
               <label className="field">
-                <span>Port vers lequel votre proxy enverra les apps</span>
+                <span>Port où Forgeyard reçoit les apps</span>
                 <input type="number" min={1} max={65535} value={ingress.httpPort} onChange={(e) => onIngress({ ...ingress, httpPort: Number(e.target.value) })} required />
+                <small>Laissez 8090 sauf s’il est déjà pris.</small>
               </label>
-              <div className="field">
-                <span>À ajouter une seule fois dans votre Caddyfile</span>
-                <CopyField value={`*.${host} {\n    reverse_proxy IP_LOCALE:${ingress.httpPort}\n}`} />
-                <small>
-                  IP_LOCALE : l’IP de cette machine sur votre réseau (<code>hostname -I</code>). Il faut un Caddy avec le module
-                  DNS de votre fournisseur ; sinon, d’autres exemples sont dans Nodes › Réseau.
-                </small>
-              </div>
+              <ProxySnippet domain={typed} port={ingress.httpPort} />
             </>
           )}
         </>

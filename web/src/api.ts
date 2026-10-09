@@ -12,6 +12,7 @@ export type Instance = {
   setupRequired: boolean
   passwordLoginEnabled: boolean
   localNodeSupported: boolean
+  localWebPorts?: 'busy' | 'free'
   dnsProviders?: DNSProviderKind[]
   discordEnabled: boolean
   discordRedirectUrl: string

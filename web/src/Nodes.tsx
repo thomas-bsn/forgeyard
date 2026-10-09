@@ -1,6 +1,6 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import { api, errorMessage, type JoinCommand, type Node } from './api'
-import { CopyField } from './ui'
+import { CopyField, ProxySnippet } from './ui'
 
 const POLL_MS = 5000
 
@@ -280,8 +280,13 @@ function IngressSettings({ node, onSaved }: { node: Node; onSaved: () => void })
   const [ip, setIp] = useState(node.publicIp)
   const [mode, setMode] = useState(node.ingressMode)
   const [port, setPort] = useState(String(node.ingressHttpPort))
+  const [domain, setDomain] = useState('')
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
+
+  useEffect(() => {
+    if (open && mode === 'proxy' && !domain) api.domainSettings().then((d) => setDomain(d.domain), () => {})
+  }, [open, mode, domain])
 
   async function save(e: FormEvent) {
     e.preventDefault()
@@ -325,8 +330,8 @@ function IngressSettings({ node, onSaved }: { node: Node; onSaved: () => void })
       <label className="field">
         <span>Trafic web</span>
         <select value={mode} onChange={(e) => setMode(e.target.value as Node['ingressMode'])}>
-          <option value="traefik">Traefik sur 80/443, HTTPS automatique</option>
-          <option value="proxy">Derrière mon proxy (Caddy, Nginx…)</option>
+          <option value="traefik">Forgeyard prend les ports 80/443 et gère le HTTPS</option>
+          <option value="proxy">Mon reverse proxy (Caddy, Nginx…) les garde</option>
         </select>
       </label>
       {mode === 'proxy' && (
@@ -335,26 +340,7 @@ function IngressSettings({ node, onSaved }: { node: Node; onSaved: () => void })
             <span>Port HTTP</span>
             <input type="number" min={1} max={65535} value={port} onChange={(e) => setPort(e.target.value)} required />
           </label>
-          <p className="muted">
-            À ajouter une seule fois dans votre Caddyfile : ensuite chaque nouvelle app marche toute seule. Remplacez{' '}
-            <code>IP</code> par l’IP locale de cette machine (<code>hostname -I</code>) et le domaine par le vôtre, puis
-            rechargez Caddy.
-          </p>
-          <div className="field">
-            <span>Si votre Caddy a le module DNS de votre fournisseur (ligne acme_dns)</span>
-            <CopyField value={`*.mondomaine.com {\n    reverse_proxy IP:${port}\n}`} />
-            <small>Un seul certificat wildcard pour toutes les apps.</small>
-          </div>
-          <div className="field">
-            <span>Sinon (Caddy standard)</span>
-            <CopyField
-              value={`{\n    on_demand_tls {\n        ask http://IP:8080/api/caddy/ask\n    }\n}\n\nhttps:// {\n    tls {\n        on_demand\n    }\n    reverse_proxy IP:${port}\n}`}
-            />
-            <small>
-              Un certificat par app, créé à sa première visite, seulement si c’est une vraie app. Si votre Caddyfile a déjà un
-              bloc <code>{'{ … }'}</code> tout en haut, mettez <code>on_demand_tls</code> dedans au lieu d’en créer un second.
-            </small>
-          </div>
+          <ProxySnippet domain={domain} port={Number(port) || 8090} />
         </>
       )}
       {error && <p className="error">{error}</p>}

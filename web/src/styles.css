@@ -186,6 +186,16 @@ code {
   font-size: 0.9rem;
 }
 
+.field > summary {
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+
+details.field[open] > summary {
+  margin-bottom: 6px;
+}
+
 .field small {
   color: var(--muted);
   font-size: 0.8rem;

@@ -10,43 +10,18 @@ services:
     #   - "9000:8080"
     #   - "9001:8081"
 
-    # --- Behind Caddy running in Docker ---------------------------------------------------
-    # Join Caddy's network, so Caddy reaches Forgeyard as forgeyard:8080. Port 8081 stays published:
-    # agents connect to it directly with mutual TLS, never through Caddy (with Cloudflare, the record of
-    # Forgeyard's address must be "DNS only": Cloudflare's proxy cannot carry it).
-    # ports: !override
-    #   - "8081:8081"
-    # networks:
-    #   - default
-    #   - caddy
-    #
-    # Caddyfile (Caddy's container must also join the external network "forgeyard", created by the agent,
-    # to reach Traefik). Each app gets its own certificate on its first visit; Caddy asks Forgeyard first,
-    # so it only does it for real apps:
-    #   {
-    #       on_demand_tls {
-    #           ask http://forgeyard:8080/api/caddy/ask
-    #       }
-    #   }
+    # --- Behind your own reverse proxy (Caddy, Nginx…), in Docker or not -----------------------
+    # Use the machine's LAN IP (not 127.0.0.1), which a proxy reaches from Docker or from the host alike.
+    # In the wizard, choose "Mon reverse proxy": apps are then served by Forgeyard's Traefik on port 8090.
+    # Caddyfile, written once (a wildcard certificate needs Caddy's module for your DNS provider):
     #   forgeyard.example.com {
-    #       reverse_proxy forgeyard:8080
+    #       reverse_proxy 192.168.1.10:8080
     #   }
-    #   https:// {
-    #       tls {
-    #           on_demand
-    #       }
-    #       reverse_proxy forgeyard-traefik:80
+    #   *.example.com {
+    #       reverse_proxy 192.168.1.10:8090
     #   }
-    # In Forgeyard, set the node's network to "behind my proxy".
-
-    # --- Behind Caddy installed on the host ---------------------------------------------
-    # Caddyfile:
-    #   forgeyard.example.com {
-    #       reverse_proxy localhost:8080
-    #   }
-    # ports: !override
-    #   - "127.0.0.1:8080:8080"
-    #   - "8081:8081"
+    # Port 8081 must stay reachable: agents connect to it directly with mutual TLS, never through the proxy
+    # (with Cloudflare, the record of Forgeyard's address must be "DNS only").
 
     # environment:
       # Proxies allowed to set X-Forwarded-For/-Proto (comma-separated IPs or CIDRs, or "none").
@@ -64,7 +39,3 @@ services:
   # Do not run apps on this machine (only on other nodes): leave the local agent out.
   # agent:
   #   profiles: ["disabled"]
-
-# networks:
-#   caddy:
-#     external: true

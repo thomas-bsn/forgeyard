@@ -17,6 +17,10 @@ import (
 // which Forgeyard enables its own machine as a node: the agent waits for it, joins with it and deletes it.
 const LocalJoinFile = "agent.json"
 
+// LocalHostProbeFile is where the local agent tells, before joining, whether this machine's ports 80 and 443
+// are already taken.
+const LocalHostProbeFile = "host.json"
+
 // localNodeName is the name given to Forgeyard's own machine.
 const localNodeName = "local"
 
@@ -32,6 +36,25 @@ type LocalJoin struct {
 // the agent of the Compose project next to it.
 func (s *Server) localNodeSupported() bool {
 	return s.joinDir != ""
+}
+
+// localWebPorts reports what the local agent found on this machine's ports 80 and 443: "busy", "free", or
+// "" when it does not know (or has not started yet).
+func (s *Server) localWebPorts() string {
+	if s.joinDir == "" {
+		return ""
+	}
+	raw, err := os.ReadFile(filepath.Join(s.joinDir, LocalHostProbeFile))
+	if err != nil {
+		return ""
+	}
+	var probe struct {
+		WebPorts string `json:"webPorts"`
+	}
+	if json.Unmarshal(raw, &probe) != nil || (probe.WebPorts != "busy" && probe.WebPorts != "free") {
+		return ""
+	}
+	return probe.WebPorts
 }
 
 // setupIngress is how Forgeyard's own machine receives web traffic, chosen in the wizard.
