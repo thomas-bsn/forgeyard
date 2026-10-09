@@ -389,35 +389,58 @@ function AppDetail({ app, onBack, onChange }: { app: App; onBack: () => void; on
 
 type LogLine = { text: string; stderr?: boolean }
 
-/** Live output of the app's container, through server-sent events. */
+const RECONNECT_MS = 2000
+
+/**
+ * Live output of the app's container, through server-sent events. While "live" is on, the stream comes
+ * back by itself when it ends (redeploy, crash, restart, network); off, the view freezes.
+ */
 function Logs({ appId }: { appId: number }) {
   const [lines, setLines] = useState<LogLine[]>([])
-  const [status, setStatus] = useState('Connexion…')
-  const [generation, setGeneration] = useState(0)
+  const [live, setLive] = useState(true)
+  const [connected, setConnected] = useState(false)
   const box = useRef<HTMLPreElement>(null)
   const stick = useRef(true)
 
   useEffect(() => {
-    setLines([])
-    setStatus('Connexion…')
-    const source = new EventSource(`/api/apps/${appId}/logs?tail=300`)
-    source.onopen = () => setStatus('')
-    source.onmessage = (e) => {
-      const line = JSON.parse(e.data) as LogLine & { end?: boolean }
-      if (line.end) {
-        if (line.text) setLines((prev) => [...prev, { text: line.text, stderr: true }])
-        setStatus('Flux terminé')
-        source.close()
-        return
+    if (!live) return
+    let source: EventSource | null = null
+    let retry: ReturnType<typeof setTimeout> | undefined
+    let stopped = false
+
+    const connect = () => {
+      // Each connection replays the last lines, so the view restarts from them instead of duplicating.
+      source = new EventSource(`/api/apps/${appId}/logs?tail=300`)
+      let fresh = true
+      source.onopen = () => setConnected(true)
+      source.onmessage = (e) => {
+        const line = JSON.parse(e.data) as LogLine & { end?: boolean }
+        // The end of a stream may carry why (e.g. no container yet): show it, then reconnect.
+        if (!line.end || line.text) {
+          setLines((prev) => {
+            const base = fresh ? [] : prev
+            fresh = false
+            return [...base.slice(-1999), { text: line.text, stderr: line.stderr || line.end }]
+          })
+        }
+        if (line.end) reconnect()
       }
-      setLines((prev) => [...prev.slice(-1999), line])
+      source.onerror = reconnect
     }
-    source.onerror = () => {
-      setStatus('Flux interrompu')
-      source.close()
+    const reconnect = () => {
+      source?.close()
+      setConnected(false)
+      if (!stopped) retry = setTimeout(connect, RECONNECT_MS)
     }
-    return () => source.close()
-  }, [appId, generation])
+
+    connect()
+    return () => {
+      stopped = true
+      clearTimeout(retry)
+      source?.close()
+      setConnected(false)
+    }
+  }, [appId, live])
 
   useEffect(() => {
     if (stick.current && box.current) box.current.scrollTop = box.current.scrollHeight
@@ -427,10 +450,16 @@ function Logs({ appId }: { appId: number }) {
     <div className="panel">
       <div className="header">
         <h2 className="header-title">Logs</h2>
-        {status && <span className="muted">{status}</span>}
-        <button type="button" className="btn" onClick={() => setGeneration((g) => g + 1)}>
-          Recharger
-        </button>
+        {live && (
+          <span className="live-status">
+            <span className={`dot ${connected ? 'dot-up' : 'dot-warn'}`} />
+            {connected ? 'En direct' : 'Reconnexion…'}
+          </span>
+        )}
+        <label className="toggle">
+          <input type="checkbox" checked={live} onChange={(e) => setLive(e.target.checked)} />
+          En direct
+        </label>
       </div>
       <pre
         className="logs"
