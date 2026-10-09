@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"database/sql"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"net"
 	"net/http"
@@ -14,17 +15,20 @@ import (
 	"strings"
 	"time"
 
-	"github.com/thomas-bsn/forgeyard/internal/cloudflare"
+	"github.com/thomas-bsn/forgeyard/internal/dns"
 	"github.com/thomas-bsn/forgeyard/internal/store/db"
 )
 
 const (
-	settingAppsDomainMode   = "apps_domain_mode" // none, wildcard or cloudflare
-	settingAppsDomain       = "apps_domain"
-	settingAppsPublicIP     = "apps_public_ip"
-	settingCloudflareToken  = "cloudflare_api_token" // encrypted
-	settingCloudflareZoneID = "cloudflare_zone_id"
-	settingCloudflareZone   = "cloudflare_zone_name"
+	settingAppsDomainMode = "apps_domain_mode" // none, wildcard or provider
+	settingAppsDomain     = "apps_domain"
+	settingAppsPublicIP   = "apps_public_ip"
+	settingDNSProvider    = "dns_provider"
+	settingDNSCredentials = "dns_credentials" // encrypted JSON object
+	settingDNSZone        = "dns_zone"
+
+	// Before several providers were supported, Cloudflare was a mode of its own.
+	legacyCloudflareToken = "cloudflare_api_token"
 )
 
 var domainPattern = regexp.MustCompile(`^([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$`)
@@ -47,18 +51,76 @@ func (s *Server) setting(ctx context.Context, q *db.Queries, key string) (string
 	return v, err
 }
 
+// dnsConfig is the saved DNS provider configuration, credentials decrypted.
+type dnsConfig struct {
+	Mode     string
+	Domain   string
+	PublicIP string
+	Provider string
+	Zone     string
+	Creds    map[string]string
+}
+
+func (s *Server) loadDNSConfig(ctx context.Context) (dnsConfig, error) {
+	var c dnsConfig
+	q := s.store.Queries
+	var err error
+	for key, dst := range map[string]*string{
+		settingAppsDomainMode: &c.Mode, settingAppsDomain: &c.Domain, settingAppsPublicIP: &c.PublicIP,
+		settingDNSProvider: &c.Provider, settingDNSZone: &c.Zone,
+	} {
+		if *dst, err = s.setting(ctx, q, key); err != nil {
+			return c, err
+		}
+	}
+	if c.Mode == "" {
+		c.Mode = "none"
+	}
+	sealed, err := s.setting(ctx, q, settingDNSCredentials)
+	if err != nil {
+		return c, err
+	}
+	if sealed != "" {
+		plain, err := s.secrets.Decrypt(sealed, settingDNSCredentials)
+		if err != nil {
+			return c, err
+		}
+		if err := json.Unmarshal([]byte(plain), &c.Creds); err != nil {
+			return c, err
+		}
+	}
+	if c.Mode == "cloudflare" { // saved before several providers were supported
+		c.Mode, c.Provider = "provider", "cloudflare"
+		if c.Creds == nil {
+			if sealed, err := s.setting(ctx, q, legacyCloudflareToken); err != nil {
+				return c, err
+			} else if sealed != "" {
+				token, err := s.secrets.Decrypt(sealed, legacyCloudflareToken)
+				if err != nil {
+					return c, err
+				}
+				c.Creds = map[string]string{"api_token": token}
+			}
+		}
+	}
+	return c, nil
+}
+
 type domainSettings struct {
-	PublicURL          string `json:"publicUrl"`
-	DiscordRedirectURL string `json:"discordRedirectUrl"`
-	Mode               string `json:"mode"`
-	Domain             string `json:"domain"`
-	PublicIP           string `json:"publicIp"`
-	CloudflareHasToken bool   `json:"cloudflareHasToken"`
-	CloudflareZone     string `json:"cloudflareZone,omitempty"`
+	PublicURL          string            `json:"publicUrl"`
+	DiscordRedirectURL string            `json:"discordRedirectUrl"`
+	Mode               string            `json:"mode"`
+	Domain             string            `json:"domain"`
+	PublicIP           string            `json:"publicIp"`
+	Provider           string            `json:"provider"`
+	Zone               string            `json:"zone,omitempty"`
+	Credentials        map[string]string `json:"credentials"` // non-secret fields only
+	SecretsSet         []string          `json:"secretsSet"`  // secret fields that have a stored value
+	Providers          []dns.Kind        `json:"providers"`
 }
 
 func (s *Server) loadDomainSettings(ctx context.Context, r *http.Request) (domainSettings, error) {
-	var d domainSettings
+	d := domainSettings{Credentials: map[string]string{}, SecretsSet: []string{}, Providers: dns.Kinds}
 	var err error
 	if d.PublicURL, err = s.publicURL(ctx, r); err != nil {
 		return d, err
@@ -66,21 +128,25 @@ func (s *Server) loadDomainSettings(ctx context.Context, r *http.Request) (domai
 	if d.DiscordRedirectURL, err = s.discordRedirectURL(ctx, r); err != nil {
 		return d, err
 	}
-	q := s.store.Queries
-	for key, dst := range map[string]*string{
-		settingAppsDomainMode: &d.Mode, settingAppsDomain: &d.Domain,
-		settingAppsPublicIP: &d.PublicIP, settingCloudflareZone: &d.CloudflareZone,
-	} {
-		if *dst, err = s.setting(ctx, q, key); err != nil {
-			return d, err
+	c, err := s.loadDNSConfig(ctx)
+	if err != nil {
+		return d, err
+	}
+	d.Mode, d.Domain, d.PublicIP, d.Provider, d.Zone = c.Mode, c.Domain, c.PublicIP, c.Provider, strings.TrimSuffix(c.Zone, ".")
+	// Secrets never leave the server: the UI only learns which ones are set.
+	if kind, ok := dns.Lookup(c.Provider); ok {
+		for _, f := range kind.Fields {
+			if c.Creds[f.Key] == "" {
+				continue
+			}
+			if f.Secret {
+				d.SecretsSet = append(d.SecretsSet, f.Key)
+			} else {
+				d.Credentials[f.Key] = c.Creds[f.Key]
+			}
 		}
 	}
-	if d.Mode == "" {
-		d.Mode = "none"
-	}
-	token, err := s.setting(ctx, q, settingCloudflareToken)
-	d.CloudflareHasToken = token != ""
-	return d, err
+	return d, nil
 }
 
 func (s *Server) handleGetDomainSettings(w http.ResponseWriter, r *http.Request) {
@@ -93,15 +159,16 @@ func (s *Server) handleGetDomainSettings(w http.ResponseWriter, r *http.Request)
 }
 
 type putDomainSettings struct {
-	PublicURL       string `json:"publicUrl"`
-	Mode            string `json:"mode"`
-	Domain          string `json:"domain"`
-	PublicIP        string `json:"publicIp"`
-	CloudflareToken string `json:"cloudflareToken"` // empty keeps the stored token
+	PublicURL   string            `json:"publicUrl"`
+	Mode        string            `json:"mode"`
+	Domain      string            `json:"domain"`
+	PublicIP    string            `json:"publicIp"`
+	Provider    string            `json:"provider"`
+	Credentials map[string]string `json:"credentials"` // an empty secret keeps the stored value
 }
 
-// handlePutDomainSettings saves Forgeyard's address and how app domains are handled. In Cloudflare mode the
-// token and the zone are checked with Cloudflare before anything is saved.
+// handlePutDomainSettings saves Forgeyard's address and how app domains are handled. With a DNS provider,
+// the credentials and the zone are checked with the provider before anything is saved.
 func (s *Server) handlePutDomainSettings(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	var body putDomainSettings
@@ -117,7 +184,7 @@ func (s *Server) handlePutDomainSettings(w http.ResponseWriter, r *http.Request)
 	ip := strings.TrimSpace(body.PublicIP)
 	switch body.Mode {
 	case "none":
-	case "wildcard", "cloudflare":
+	case "wildcard", "provider":
 		if !domainPattern.MatchString(domain) {
 			writeError(w, http.StatusBadRequest, "domaine invalide : par exemple mondomaine.com")
 			return
@@ -131,68 +198,66 @@ func (s *Server) handlePutDomainSettings(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	var sealedToken string
-	var zone cloudflare.Zone
-	if body.Mode == "cloudflare" {
-		token := strings.TrimSpace(body.CloudflareToken)
-		if token == "" {
-			var err error
-			if token, err = s.cloudflareToken(ctx); err != nil {
-				s.internalError(w, r, err)
-				return
-			}
-			if token == "" {
-				writeError(w, http.StatusBadRequest, "le token API Cloudflare est obligatoire")
-				return
-			}
-		}
-		cf := s.newCloudflare(token)
-		if err := cf.VerifyToken(ctx); err != nil {
-			writeError(w, http.StatusBadRequest, err.Error())
+	values := map[string]string{
+		settingPublicURL: publicURL, settingAppsDomainMode: body.Mode, settingAppsDomain: domain, settingAppsPublicIP: ip,
+	}
+	if body.Mode == "provider" {
+		kind, ok := dns.Lookup(body.Provider)
+		if !ok {
+			writeError(w, http.StatusBadRequest, "fournisseur DNS inconnu")
 			return
 		}
-		var err error
-		if zone, err = cf.FindZone(ctx, domain); err != nil {
-			writeError(w, http.StatusBadRequest, err.Error())
-			return
-		}
-		if sealedToken, err = s.secrets.Encrypt(token, settingCloudflareToken); err != nil {
+		saved, err := s.loadDNSConfig(ctx)
+		if err != nil {
 			s.internalError(w, r, err)
 			return
 		}
+		creds := map[string]string{}
+		for _, f := range kind.Fields {
+			v := strings.TrimSpace(body.Credentials[f.Key])
+			if v == "" && f.Secret && saved.Provider == kind.Name {
+				v = saved.Creds[f.Key] // left empty in the form: keep the stored secret
+			}
+			creds[f.Key] = v
+		}
+		provider, err := s.newDNSProvider(kind.Name, creds)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		checkCtx, cancel := context.WithTimeout(ctx, 20*time.Second)
+		defer cancel()
+		zone, err := dns.FindZone(checkCtx, provider, domain)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, kind.Label+" : "+err.Error())
+			return
+		}
+		raw, _ := json.Marshal(creds)
+		sealed, err := s.secrets.Encrypt(string(raw), settingDNSCredentials)
+		if err != nil {
+			s.internalError(w, r, err)
+			return
+		}
+		values[settingDNSProvider] = kind.Name
+		values[settingDNSCredentials] = sealed
+		values[settingDNSZone] = zone
 	}
 
 	err := s.store.InTx(ctx, func(q *db.Queries) error {
-		values := map[string]string{
-			settingPublicURL: publicURL, settingAppsDomainMode: body.Mode,
-			settingAppsDomain: domain, settingAppsPublicIP: ip,
-		}
-		if body.Mode == "cloudflare" {
-			values[settingCloudflareToken] = sealedToken
-			values[settingCloudflareZoneID] = zone.ID
-			values[settingCloudflareZone] = zone.Name
-		}
 		for k, v := range values {
 			if err := q.SetSetting(ctx, db.SetSettingParams{Key: k, Value: v}); err != nil {
 				return err
 			}
 		}
-		return nil
+		return q.DeleteSetting(ctx, legacyCloudflareToken)
 	})
 	if err != nil {
 		s.internalError(w, r, err)
 		return
 	}
-	s.logger.Info("domain settings changed", "public_url", publicURL, "mode", body.Mode, "domain", domain, "by", currentUser(r).DisplayName)
+	s.logger.Info("domain settings changed", "public_url", publicURL, "mode", body.Mode, "domain", domain,
+		"provider", values[settingDNSProvider], "by", currentUser(r).DisplayName)
 	s.handleGetDomainSettings(w, r)
-}
-
-func (s *Server) cloudflareToken(ctx context.Context) (string, error) {
-	sealed, err := s.setting(ctx, s.store.Queries, settingCloudflareToken)
-	if err != nil || sealed == "" {
-		return "", err
-	}
-	return s.secrets.Decrypt(sealed, settingCloudflareToken)
 }
 
 type domainCheckResponse struct {
@@ -203,49 +268,46 @@ type domainCheckResponse struct {
 }
 
 // handleCheckDomain tests the saved configuration: in wildcard mode, that a random subdomain resolves to the
-// public IP; in Cloudflare mode, that the token still reaches the zone.
+// public IP; with a provider, that the credentials still reach the zone.
 func (s *Server) handleCheckDomain(w http.ResponseWriter, r *http.Request) {
-	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(r.Context(), 20*time.Second)
 	defer cancel()
-	d, err := s.loadDomainSettings(ctx, r)
+	c, err := s.loadDNSConfig(ctx)
 	if err != nil {
 		s.internalError(w, r, err)
 		return
 	}
-	switch d.Mode {
+	switch c.Mode {
 	case "wildcard":
 		suffix := make([]byte, 4)
 		rand.Read(suffix)
-		name := "forgeyard-check-" + hex.EncodeToString(suffix) + "." + d.Domain
+		name := "forgeyard-check-" + hex.EncodeToString(suffix) + "." + c.Domain
 		ips, err := s.lookupHost(ctx, name)
 		switch {
 		case err != nil:
 			writeJSON(w, http.StatusOK, domainCheckResponse{Name: name,
-				Message: "aucune réponse DNS : l'enregistrement *." + d.Domain + " n'existe pas encore ou ne s'est pas propagé"})
-		case !slices.Contains(ips, d.PublicIP):
+				Message: "aucune réponse DNS : l'enregistrement *." + c.Domain + " n'existe pas encore ou ne s'est pas propagé"})
+		case !slices.Contains(ips, c.PublicIP):
 			writeJSON(w, http.StatusOK, domainCheckResponse{Name: name, Resolved: ips,
-				Message: "le wildcard répond, mais pas avec l'IP " + d.PublicIP})
+				Message: "le wildcard répond, mais pas avec l'IP " + c.PublicIP})
 		default:
 			writeJSON(w, http.StatusOK, domainCheckResponse{OK: true, Name: name, Resolved: ips,
-				Message: "le wildcard pointe bien vers " + d.PublicIP})
+				Message: "le wildcard pointe bien vers " + c.PublicIP})
 		}
-	case "cloudflare":
-		token, err := s.cloudflareToken(ctx)
-		if err != nil {
-			s.internalError(w, r, err)
-			return
-		}
-		cf := s.newCloudflare(token)
-		if err := cf.VerifyToken(ctx); err != nil {
-			writeJSON(w, http.StatusOK, domainCheckResponse{Message: err.Error()})
-			return
-		}
-		zone, err := cf.FindZone(ctx, d.Domain)
+	case "provider":
+		kind, _ := dns.Lookup(c.Provider)
+		provider, err := s.newDNSProvider(c.Provider, c.Creds)
 		if err != nil {
 			writeJSON(w, http.StatusOK, domainCheckResponse{Message: err.Error()})
 			return
 		}
-		writeJSON(w, http.StatusOK, domainCheckResponse{OK: true, Message: "token valide, zone " + zone.Name + " accessible"})
+		zone, err := dns.FindZone(ctx, provider, c.Domain)
+		if err != nil {
+			writeJSON(w, http.StatusOK, domainCheckResponse{Message: kind.Label + " : " + err.Error()})
+			return
+		}
+		writeJSON(w, http.StatusOK, domainCheckResponse{OK: true,
+			Message: kind.Label + " : identifiants valides, zone " + strings.TrimSuffix(zone, ".") + " accessible"})
 	default:
 		writeError(w, http.StatusBadRequest, "aucun domaine configuré")
 	}

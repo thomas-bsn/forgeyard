@@ -5,11 +5,11 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
-	"net/http/httptest"
 	"strings"
 	"testing"
 
-	"github.com/thomas-bsn/forgeyard/internal/cloudflare"
+	"github.com/thomas-bsn/forgeyard/internal/dns"
+	"github.com/thomas-bsn/forgeyard/internal/dns/dnstest"
 )
 
 func postJSON(t *testing.T, c *http.Client, url string, body, out any) int {
@@ -74,55 +74,45 @@ func TestDomainSettings(t *testing.T) {
 		t.Fatalf("wildcard pointing elsewhere passed: %+v", check)
 	}
 
-	// Cloudflare: the token and zone are checked before saving, and the token is stored encrypted.
-	mux := http.NewServeMux()
-	mux.HandleFunc("GET /user/tokens/verify", func(w http.ResponseWriter, r *http.Request) {
-		if r.Header.Get("Authorization") != "Bearer cf-token" {
-			w.WriteHeader(http.StatusUnauthorized)
-			return
+	// Provider: the credentials and zone are checked before saving, and stored encrypted.
+	mem := dnstest.New("example.com.")
+	server.newDNSProvider = func(name string, creds map[string]string) (dns.Provider, error) {
+		if creds["api_token"] != "cf-token" {
+			return nil, errors.New("bad token")
 		}
-		json.NewEncoder(w).Encode(map[string]any{"success": true, "result": map[string]string{"status": "active"}})
-	})
-	mux.HandleFunc("GET /zones", func(w http.ResponseWriter, r *http.Request) {
-		zones := []cloudflare.Zone{}
-		if r.URL.Query().Get("name") == "example.com" {
-			zones = append(zones, cloudflare.Zone{ID: "zone-1", Name: "example.com"})
-		}
-		json.NewEncoder(w).Encode(map[string]any{"success": true, "result": zones})
-	})
-	cf := httptest.NewServer(mux)
-	defer cf.Close()
-	server.newCloudflare = func(token string) *cloudflare.Client {
-		return &cloudflare.Client{BaseURL: cf.URL, Token: token, HTTP: cf.Client()}
+		return mem, nil
 	}
-
-	if code := put(t, admin, ts.URL+"/api/admin/settings/domain", putDomainSettings{
-		PublicURL: "https://forge.example.com", Mode: "cloudflare", Domain: "apps.example.com", PublicIP: "1.2.3.4", CloudflareToken: "wrong",
-	}); code != http.StatusBadRequest {
-		t.Fatalf("bad cloudflare token accepted: %d", code)
+	bad := putDomainSettings{PublicURL: "https://forge.example.com", Mode: "provider", Domain: "apps.example.com",
+		PublicIP: "1.2.3.4", Provider: "cloudflare", Credentials: map[string]string{"api_token": "wrong"}}
+	if code := put(t, admin, ts.URL+"/api/admin/settings/domain", bad); code != http.StatusBadRequest {
+		t.Fatalf("bad credentials accepted: %d", code)
 	}
-	if code := put(t, admin, ts.URL+"/api/admin/settings/domain", putDomainSettings{
-		PublicURL: "https://forge.example.com", Mode: "cloudflare", Domain: "apps.example.com", PublicIP: "1.2.3.4", CloudflareToken: "cf-token",
-	}); code != http.StatusOK {
-		t.Fatalf("cloudflare save: %d", code)
+	good := bad
+	good.Credentials = map[string]string{"api_token": "cf-token"}
+	if code := put(t, admin, ts.URL+"/api/admin/settings/domain", good); code != http.StatusOK {
+		t.Fatalf("provider save: %d", code)
 	}
 	get(t, admin, ts.URL+"/api/admin/settings/domain", &d)
-	if !d.CloudflareHasToken || d.CloudflareZone != "example.com" {
-		t.Fatalf("cloudflare settings: %+v", d)
+	if d.Provider != "cloudflare" || d.Zone != "example.com" || len(d.SecretsSet) != 1 || d.Credentials["api_token"] != "" {
+		t.Fatalf("provider settings: %+v", d)
 	}
-	stored, _ := server.store.GetSetting(context.Background(), settingCloudflareToken)
+	stored, _ := server.store.GetSetting(context.Background(), settingDNSCredentials)
 	if strings.Contains(stored, "cf-token") {
-		t.Fatal("cloudflare token stored in clear")
+		t.Fatal("DNS credentials stored in clear")
 	}
-	// Saving again without a token keeps the stored one.
-	if code := put(t, admin, ts.URL+"/api/admin/settings/domain", putDomainSettings{
-		PublicURL: "https://forge.example.com", Mode: "cloudflare", Domain: "apps.example.com", PublicIP: "1.2.3.4",
-	}); code != http.StatusOK {
-		t.Fatalf("cloudflare save without token: %d", code)
+	// Saving again with the secret left empty keeps the stored one.
+	good.Credentials = map[string]string{}
+	if code := put(t, admin, ts.URL+"/api/admin/settings/domain", good); code != http.StatusOK {
+		t.Fatalf("provider save without secret: %d", code)
 	}
 	postJSON(t, admin, ts.URL+"/api/admin/settings/domain/check", struct{}{}, &check)
 	if !check.OK {
-		t.Fatalf("cloudflare check: %+v", check)
+		t.Fatalf("provider check: %+v", check)
+	}
+	// A zone the credentials cannot reach is refused.
+	good.Domain = "other.org"
+	if code := put(t, admin, ts.URL+"/api/admin/settings/domain", good); code != http.StatusBadRequest {
+		t.Fatalf("unreachable zone accepted: %d", code)
 	}
 }
 

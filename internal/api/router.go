@@ -13,8 +13,8 @@ import (
 	"time"
 
 	"github.com/thomas-bsn/forgeyard/internal/auth"
-	"github.com/thomas-bsn/forgeyard/internal/cloudflare"
 	"github.com/thomas-bsn/forgeyard/internal/discord"
+	"github.com/thomas-bsn/forgeyard/internal/dns"
 	"github.com/thomas-bsn/forgeyard/internal/nodes"
 	"github.com/thomas-bsn/forgeyard/internal/pki"
 	"github.com/thomas-bsn/forgeyard/internal/secrets"
@@ -48,8 +48,8 @@ type Server struct {
 	trustedProxies []netip.Prefix
 
 	// Replaced in tests.
-	newCloudflare func(token string) *cloudflare.Client
-	lookupHost    func(ctx context.Context, host string) ([]string, error)
+	newDNSProvider func(name string, creds map[string]string) (dns.Provider, error)
+	lookupHost     func(ctx context.Context, host string) ([]string, error)
 
 	mu          sync.Mutex
 	setupToken  string                // empty once setup is completed
@@ -72,8 +72,8 @@ func NewServer(d Deps, setupToken string) *Server {
 		setupToken:     setupToken,
 		oauthStates:    make(map[string]oauthState),
 
-		newCloudflare: cloudflare.New,
-		lookupHost:    net.DefaultResolver.LookupHost,
+		newDNSProvider: dns.New,
+		lookupHost:     net.DefaultResolver.LookupHost,
 	}
 }
 

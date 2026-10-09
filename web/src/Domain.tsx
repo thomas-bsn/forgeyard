@@ -5,7 +5,7 @@ import { CopyField } from './ui'
 const modes: { value: DomainMode; title: string; text: string }[] = [
   { value: 'none', title: 'Aucun', text: 'Les apps sont accessibles par IP et port.' },
   { value: 'wildcard', title: 'Wildcard manuel', text: 'Un seul enregistrement DNS, chez n’importe quel fournisseur.' },
-  { value: 'cloudflare', title: 'Cloudflare', text: 'Forgeyard crée lui-même les enregistrements via l’API.' },
+  { value: 'provider', title: 'API du fournisseur', text: 'Forgeyard crée lui-même un enregistrement par app.' },
 ]
 
 /** Superadmin only: Forgeyard's address and how app subdomains reach the servers. */
@@ -15,7 +15,8 @@ export default function DomainPanel() {
   const [mode, setMode] = useState<DomainMode>('none')
   const [domain, setDomain] = useState('')
   const [publicIp, setPublicIp] = useState('')
-  const [token, setToken] = useState('')
+  const [provider, setProvider] = useState('cloudflare')
+  const [creds, setCreds] = useState<Record<string, string>>({})
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
   const [check, setCheck] = useState<DomainCheck | null>(null)
@@ -27,7 +28,8 @@ export default function DomainPanel() {
     setMode(s.mode)
     setDomain(s.domain)
     setPublicIp(s.publicIp)
-    setToken('')
+    setProvider(s.provider || 'cloudflare')
+    setCreds(s.credentials)
   }
 
   useEffect(() => {
@@ -42,7 +44,7 @@ export default function DomainPanel() {
     setNotice('')
     setCheck(null)
     try {
-      const s = await api.saveDomainSettings({ publicUrl, mode, domain, publicIp, cloudflareToken: token })
+      const s = await api.saveDomainSettings({ publicUrl, mode, domain, publicIp, provider, credentials: creds })
       const addressChanged = s.publicUrl !== saved.publicUrl
       apply(s)
       setNotice(
@@ -70,8 +72,15 @@ export default function DomainPanel() {
   }
 
   if (!saved) return error ? <p className="error">{error}</p> : null
+  const kind = saved.providers.find((p) => p.name === provider)
+  const sameProvider = provider === saved.provider
+  const credsChanged = JSON.stringify(creds) !== JSON.stringify(sameProvider ? saved.credentials : {})
   const dirty =
-    publicUrl !== saved.publicUrl || mode !== saved.mode || domain !== saved.domain || publicIp !== saved.publicIp || token !== ''
+    publicUrl !== saved.publicUrl ||
+    mode !== saved.mode ||
+    domain !== saved.domain ||
+    publicIp !== saved.publicIp ||
+    (mode === 'provider' && (!sameProvider || credsChanged))
   const host = domain.trim().toLowerCase() || 'mondomaine.com'
 
   return (
@@ -124,35 +133,55 @@ export default function DomainPanel() {
         </div>
       )}
 
-      {mode === 'cloudflare' && (
+      {mode === 'provider' && (
         <>
-          <ol className="steps-help">
-            <li>
-              Les DNS du domaine doivent être gérés par Cloudflare (le domaine peut être acheté ailleurs).
-            </li>
-            <li>
-              Créez un token sur{' '}
-              <a href="https://dash.cloudflare.com/profile/api-tokens" target="_blank" rel="noopener noreferrer">
-                dash.cloudflare.com/profile/api-tokens
-              </a>{' '}
-              avec le modèle <b>Edit zone DNS</b>, limité à votre domaine.
-            </li>
-          </ol>
           <label className="field">
-            <span>Token API Cloudflare</span>
-            <input
-              type="password"
-              value={token}
-              onChange={(e) => setToken(e.target.value)}
-              placeholder={saved.cloudflareHasToken ? '•••••••• (inchangé)' : ''}
-              autoComplete="off"
-              required={!saved.cloudflareHasToken}
-            />
-            <small>
-              Chiffré avant d’être enregistré, jamais réaffiché.
-              {saved.cloudflareZone ? ` Zone actuelle : ${saved.cloudflareZone}.` : ''}
-            </small>
+            <span>Fournisseur DNS</span>
+            <select
+              value={provider}
+              onChange={(e) => {
+                setProvider(e.target.value)
+                setCreds(e.target.value === saved.provider ? saved.credentials : {})
+              }}
+            >
+              {saved.providers.map((p) => (
+                <option key={p.name} value={p.name}>
+                  {p.label}
+                </option>
+              ))}
+            </select>
+            <small>Là où sont gérés les DNS du domaine, en général là où il a été acheté.</small>
           </label>
+          {kind && (
+            <>
+              <p className="muted">
+                {kind.help}{' '}
+                <a href={kind.docsUrl} target="_blank" rel="noopener noreferrer">
+                  Ouvrir {kind.label}
+                </a>
+              </p>
+              {kind.fields.map((f) => {
+                const stored = sameProvider && f.secret && saved.secretsSet.includes(f.key)
+                return (
+                  <label className="field" key={f.key}>
+                    <span>{f.label}</span>
+                    <input
+                      type={f.secret ? 'password' : 'text'}
+                      value={creds[f.key] ?? ''}
+                      onChange={(e) => setCreds({ ...creds, [f.key]: e.target.value })}
+                      placeholder={stored ? '•••••••• (inchangé)' : f.placeholder}
+                      autoComplete="off"
+                      required={!stored}
+                    />
+                  </label>
+                )
+              })}
+              <small className="muted">
+                Les identifiants sont chiffrés avant d’être enregistrés et jamais réaffichés.
+                {saved.zone && sameProvider ? ` Zone actuelle : ${saved.zone}.` : ''}
+              </small>
+            </>
+          )}
         </>
       )}
 

@@ -61,7 +61,15 @@ export type JoinCommand = {
   expiresAt: number
 }
 
-export type DomainMode = 'none' | 'wildcard' | 'cloudflare'
+export type DomainMode = 'none' | 'wildcard' | 'provider'
+
+export type DNSProviderKind = {
+  name: string
+  label: string
+  docsUrl: string
+  help: string
+  fields: { key: string; label: string; secret: boolean; placeholder?: string }[]
+}
 
 export type DomainSettings = {
   publicUrl: string
@@ -69,8 +77,11 @@ export type DomainSettings = {
   mode: DomainMode
   domain: string
   publicIp: string
-  cloudflareHasToken: boolean
-  cloudflareZone?: string
+  provider: string
+  zone?: string
+  credentials: Record<string, string>
+  secretsSet: string[]
+  providers: DNSProviderKind[]
 }
 
 export type DomainCheck = {
@@ -124,7 +135,14 @@ export const api = {
   newJoinCommand: (id: number) => request<JoinCommand>('POST', `/api/admin/nodes/${id}/join-command`, {}),
   deleteNode: (id: number) => request<void>('DELETE', `/api/admin/nodes/${id}`, {}),
   domainSettings: () => request<DomainSettings>('GET', '/api/admin/settings/domain'),
-  saveDomainSettings: (body: { publicUrl: string; mode: DomainMode; domain: string; publicIp: string; cloudflareToken: string }) =>
+  saveDomainSettings: (body: {
+    publicUrl: string
+    mode: DomainMode
+    domain: string
+    publicIp: string
+    provider: string
+    credentials: Record<string, string>
+  }) =>
     request<DomainSettings>('PUT', '/api/admin/settings/domain', body),
   checkDomain: () => request<DomainCheck>('POST', '/api/admin/settings/domain/check', {}),
   loginSettings: () => request<{ passwordLogin: boolean }>('GET', '/api/admin/settings/login'),
