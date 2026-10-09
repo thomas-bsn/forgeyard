@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/thomas-bsn/forgeyard/internal/auth"
+	"github.com/thomas-bsn/forgeyard/internal/discord"
 	"github.com/thomas-bsn/forgeyard/internal/store"
 )
 
@@ -18,18 +19,22 @@ type Server struct {
 	store   *store.Store
 	logger  *slog.Logger
 	limiter *auth.LoginLimiter
+	discord *discord.Client
 
-	mu         sync.Mutex
-	setupToken string // empty once setup is completed
+	mu          sync.Mutex
+	setupToken  string                // empty once setup is completed
+	oauthStates map[string]oauthState // pending Discord sign-ins, by state value
 }
 
 // NewServer returns a Server. setupToken must be non-empty while the setup wizard has not been completed.
 func NewServer(st *store.Store, logger *slog.Logger, setupToken string) *Server {
 	return &Server{
-		store:      st,
-		logger:     logger,
-		limiter:    auth.NewLoginLimiter(10, 15*time.Minute),
-		setupToken: setupToken,
+		store:       st,
+		logger:      logger,
+		limiter:     auth.NewLoginLimiter(10, 15*time.Minute),
+		discord:     discord.NewClient(),
+		setupToken:  setupToken,
+		oauthStates: make(map[string]oauthState),
 	}
 }
 
@@ -41,9 +46,18 @@ func (s *Server) Handler(webFS fs.FS) http.Handler {
 	})
 	mux.HandleFunc("GET /api/instance", s.handleInstance)
 	mux.HandleFunc("POST /api/setup", s.handleSetup)
+	mux.HandleFunc("POST /api/setup/discord", s.handleSetupDiscord)
 	mux.HandleFunc("POST /api/auth/login", s.handleLogin)
 	mux.HandleFunc("POST /api/auth/logout", s.handleLogout)
 	mux.HandleFunc("GET /api/auth/me", s.requireUser(s.handleMe))
+	mux.HandleFunc("GET /api/auth/discord", s.handleDiscordStart)
+	mux.HandleFunc("GET /api/auth/discord/callback", s.handleDiscordCallback)
+
+	mux.HandleFunc("GET /api/admin/requests", s.requireAdmin(s.handleListRequests))
+	mux.HandleFunc("POST /api/admin/requests/{id}/accept", s.requireAdmin(s.handleAcceptRequest))
+	mux.HandleFunc("POST /api/admin/requests/{id}/refuse", s.requireAdmin(s.handleRefuseRequest))
+	mux.HandleFunc("GET /api/admin/settings/discord", s.requireAdmin(s.handleGetDiscordSettings))
+	mux.HandleFunc("PUT /api/admin/settings/discord", s.requireAdmin(s.handlePutDiscordSettings))
 	mux.Handle("/", spaHandler(webFS))
 	return requireJSONForWrites(mux)
 }

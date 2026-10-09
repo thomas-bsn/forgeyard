@@ -230,7 +230,7 @@ Plus tard : messages privés Discord via un bot.
 - [ ] Logs en direct, démarrer, arrêter, supprimer
 
 ### v0.2 : comptes et multi-node
-- [ ] Discord SSO (y compris comme méthode de l'admin dans le wizard), demandes de compte, rôles
+- [x] Discord SSO (y compris comme méthode de l'admin dans le wizard), demandes de compte, rôles
 - [ ] Webhook Discord de notification
 - [ ] Ajout de nodes distants (script d'installation)
 - [ ] Capacité, placement automatique, métriques et graphiques

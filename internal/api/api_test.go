@@ -20,6 +20,14 @@ const testToken = "setup-token"
 
 func newTestServer(t *testing.T) (*httptest.Server, *http.Client) {
 	t.Helper()
+	ts, _ := newTestServerWithHandle(t)
+	jar, _ := cookiejar.New(nil)
+	return ts, &http.Client{Jar: jar}
+}
+
+// newTestServerWithHandle also returns the Server, so tests can swap its dependencies.
+func newTestServerWithHandle(t *testing.T) (*httptest.Server, *Server) {
+	t.Helper()
 	st, err := store.Open(context.Background(), filepath.Join(t.TempDir(), "test.db"))
 	if err != nil {
 		t.Fatal(err)
@@ -27,10 +35,10 @@ func newTestServer(t *testing.T) (*httptest.Server, *http.Client) {
 	t.Cleanup(func() { st.Close() })
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	webFS := fstest.MapFS{"index.html": {Data: []byte("<html></html>")}}
-	ts := httptest.NewServer(NewServer(st, logger, testToken).Handler(webFS))
+	server := NewServer(st, logger, testToken)
+	ts := httptest.NewServer(server.Handler(webFS))
 	t.Cleanup(ts.Close)
-	jar, _ := cookiejar.New(nil)
-	return ts, &http.Client{Jar: jar}
+	return ts, server
 }
 
 func post(t *testing.T, c *http.Client, url string, body any) *http.Response {

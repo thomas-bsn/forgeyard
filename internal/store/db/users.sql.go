@@ -21,10 +21,47 @@ func (q *Queries) CountUsers(ctx context.Context) (int64, error) {
 	return count, err
 }
 
+const createDiscordUser = `-- name: CreateDiscordUser :one
+INSERT INTO users (discord_id, display_name, email, role, created_at)
+VALUES (?, ?, ?, ?, ?)
+RETURNING id, username, password_hash, discord_id, display_name, role, disabled, created_at, email
+`
+
+type CreateDiscordUserParams struct {
+	DiscordID   sql.NullString
+	DisplayName string
+	Email       sql.NullString
+	Role        string
+	CreatedAt   int64
+}
+
+func (q *Queries) CreateDiscordUser(ctx context.Context, arg CreateDiscordUserParams) (User, error) {
+	row := q.db.QueryRowContext(ctx, createDiscordUser,
+		arg.DiscordID,
+		arg.DisplayName,
+		arg.Email,
+		arg.Role,
+		arg.CreatedAt,
+	)
+	var i User
+	err := row.Scan(
+		&i.ID,
+		&i.Username,
+		&i.PasswordHash,
+		&i.DiscordID,
+		&i.DisplayName,
+		&i.Role,
+		&i.Disabled,
+		&i.CreatedAt,
+		&i.Email,
+	)
+	return i, err
+}
+
 const createLocalUser = `-- name: CreateLocalUser :one
 INSERT INTO users (username, password_hash, display_name, role, created_at)
 VALUES (?, ?, ?, ?, ?)
-RETURNING id, username, password_hash, discord_id, display_name, role, disabled, created_at
+RETURNING id, username, password_hash, discord_id, display_name, role, disabled, created_at, email
 `
 
 type CreateLocalUserParams struct {
@@ -53,12 +90,34 @@ func (q *Queries) CreateLocalUser(ctx context.Context, arg CreateLocalUserParams
 		&i.Role,
 		&i.Disabled,
 		&i.CreatedAt,
+		&i.Email,
+	)
+	return i, err
+}
+
+const getUserByDiscordID = `-- name: GetUserByDiscordID :one
+SELECT id, username, password_hash, discord_id, display_name, role, disabled, created_at, email FROM users WHERE discord_id = ?
+`
+
+func (q *Queries) GetUserByDiscordID(ctx context.Context, discordID sql.NullString) (User, error) {
+	row := q.db.QueryRowContext(ctx, getUserByDiscordID, discordID)
+	var i User
+	err := row.Scan(
+		&i.ID,
+		&i.Username,
+		&i.PasswordHash,
+		&i.DiscordID,
+		&i.DisplayName,
+		&i.Role,
+		&i.Disabled,
+		&i.CreatedAt,
+		&i.Email,
 	)
 	return i, err
 }
 
 const getUserByID = `-- name: GetUserByID :one
-SELECT id, username, password_hash, discord_id, display_name, role, disabled, created_at FROM users WHERE id = ?
+SELECT id, username, password_hash, discord_id, display_name, role, disabled, created_at, email FROM users WHERE id = ?
 `
 
 func (q *Queries) GetUserByID(ctx context.Context, id int64) (User, error) {
@@ -73,12 +132,13 @@ func (q *Queries) GetUserByID(ctx context.Context, id int64) (User, error) {
 		&i.Role,
 		&i.Disabled,
 		&i.CreatedAt,
+		&i.Email,
 	)
 	return i, err
 }
 
 const getUserByUsername = `-- name: GetUserByUsername :one
-SELECT id, username, password_hash, discord_id, display_name, role, disabled, created_at FROM users WHERE username = ?
+SELECT id, username, password_hash, discord_id, display_name, role, disabled, created_at, email FROM users WHERE username = ?
 `
 
 func (q *Queries) GetUserByUsername(ctx context.Context, username sql.NullString) (User, error) {
@@ -93,6 +153,22 @@ func (q *Queries) GetUserByUsername(ctx context.Context, username sql.NullString
 		&i.Role,
 		&i.Disabled,
 		&i.CreatedAt,
+		&i.Email,
 	)
 	return i, err
+}
+
+const updateDiscordProfile = `-- name: UpdateDiscordProfile :exec
+UPDATE users SET display_name = ?, email = ? WHERE id = ?
+`
+
+type UpdateDiscordProfileParams struct {
+	DisplayName string
+	Email       sql.NullString
+	ID          int64
+}
+
+func (q *Queries) UpdateDiscordProfile(ctx context.Context, arg UpdateDiscordProfileParams) error {
+	_, err := q.db.ExecContext(ctx, updateDiscordProfile, arg.DisplayName, arg.Email, arg.ID)
+	return err
 }

@@ -8,6 +8,19 @@ import (
 	"database/sql"
 )
 
+type AccountRequest struct {
+	ID          int64
+	DiscordID   string
+	Username    string
+	DisplayName string
+	Email       sql.NullString
+	Avatar      sql.NullString
+	Status      string
+	Reason      sql.NullString
+	CreatedAt   int64
+	DecidedAt   sql.NullInt64
+}
+
 type Session struct {
 	TokenHash string
 	UserID    int64
@@ -29,4 +42,5 @@ type User struct {
 	Role         string
 	Disabled     int64
 	CreatedAt    int64
+	Email        sql.NullString
 }

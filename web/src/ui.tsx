@@ -1,0 +1,93 @@
+import { useState } from 'react'
+
+export function Logo({ size = 32 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 32 32" aria-hidden="true">
+      <rect width="32" height="32" rx="7" fill="#4f46e5" />
+      <g fill="#fff">
+        <rect x="7" y="7" width="7" height="7" rx="1.5" />
+        <rect x="18" y="7" width="7" height="7" rx="1.5" />
+        <rect x="7" y="18" width="7" height="7" rx="1.5" />
+        <rect x="18" y="18" width="7" height="7" rx="1.5" />
+      </g>
+    </svg>
+  )
+}
+
+export function DiscordIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12z" />
+    </svg>
+  )
+}
+
+/** A value the user has to paste somewhere else, copied on click. */
+export function CopyField({ value }: { value: string }) {
+  const [copied, setCopied] = useState(false)
+  return (
+    <button
+      type="button"
+      className="copy"
+      onClick={() => {
+        navigator.clipboard?.writeText(value)
+        setCopied(true)
+        setTimeout(() => setCopied(false), 1500)
+      }}
+    >
+      <code>{value}</code>
+      <span className="muted">{copied ? 'Copié' : 'Copier'}</span>
+    </button>
+  )
+}
+
+type Theme = 'light' | 'dark' | null
+
+function readTheme(): Theme {
+  try {
+    const t = localStorage.getItem('theme')
+    return t === 'light' || t === 'dark' ? t : null
+  } catch {
+    return null
+  }
+}
+
+export function applyStoredTheme() {
+  const t = readTheme()
+  if (t) document.documentElement.dataset.theme = t
+}
+
+/** Toggles between light and dark, starting from the system preference. */
+export function ThemeToggle() {
+  const [, force] = useState(0)
+  const current =
+    readTheme() ?? (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')
+  const next = current === 'dark' ? 'light' : 'dark'
+  return (
+    <button
+      type="button"
+      className="icon-btn"
+      aria-label={next === 'dark' ? 'Passer en thème sombre' : 'Passer en thème clair'}
+      onClick={() => {
+        document.documentElement.dataset.theme = next
+        try {
+          localStorage.setItem('theme', next)
+        } catch {
+          // Private browsing: the choice just isn't remembered.
+        }
+        force((n) => n + 1)
+      }}
+    >
+      {next === 'dark' ? (
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z" />
+        </svg>
+      ) : (
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
+          <circle cx="12" cy="12" r="4" />
+          <path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4" />
+        </svg>
+      )}
+    </button>
+  )
+}

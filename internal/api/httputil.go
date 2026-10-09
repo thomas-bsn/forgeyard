@@ -79,8 +79,32 @@ func (s *Server) requireUser(next http.HandlerFunc) http.HandlerFunc {
 	}
 }
 
+// requireAdmin is requireUser restricted to the admin and superadmin roles.
+func (s *Server) requireAdmin(next http.HandlerFunc) http.HandlerFunc {
+	return s.requireUser(func(w http.ResponseWriter, r *http.Request) {
+		if !isAdmin(currentUser(r)) {
+			writeError(w, http.StatusForbidden, "réservé aux admins")
+			return
+		}
+		next(w, r)
+	})
+}
+
+func isAdmin(u db.User) bool {
+	return u.Role == "admin" || u.Role == "superadmin"
+}
+
 func currentUser(r *http.Request) db.User {
 	return r.Context().Value(userKey{}).(db.User)
+}
+
+// requestOrigin returns the scheme and host the browser used to reach the server.
+func requestOrigin(r *http.Request) string {
+	scheme := "http"
+	if r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https" {
+		scheme = "https"
+	}
+	return scheme + "://" + r.Host
 }
 
 // clientIP returns the direct peer address. Proxy headers are not trusted yet.

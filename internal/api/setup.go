@@ -41,8 +41,10 @@ func (s *Server) setupRequired() bool {
 }
 
 type instanceResponse struct {
-	Name          string `json:"name"`
-	SetupRequired bool   `json:"setupRequired"`
+	Name               string `json:"name"`
+	SetupRequired      bool   `json:"setupRequired"`
+	DiscordEnabled     bool   `json:"discordEnabled"`
+	DiscordRedirectURL string `json:"discordRedirectUrl"`
 }
 
 func (s *Server) handleInstance(w http.ResponseWriter, r *http.Request) {
@@ -53,7 +55,43 @@ func (s *Server) handleInstance(w http.ResponseWriter, r *http.Request) {
 		s.internalError(w, r, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, instanceResponse{Name: name, SetupRequired: s.setupRequired()})
+	enabled, redirectURL, err := s.discordInfo(r.Context(), r)
+	if err != nil {
+		s.internalError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, instanceResponse{
+		Name:               name,
+		SetupRequired:      s.setupRequired(),
+		DiscordEnabled:     enabled && !s.setupRequired(),
+		DiscordRedirectURL: redirectURL,
+	})
+}
+
+// checkSetupToken writes an error and returns false unless token is the current setup token.
+func (s *Server) checkSetupToken(w http.ResponseWriter, token string) bool {
+	s.mu.Lock()
+	expected := s.setupToken
+	s.mu.Unlock()
+	if expected == "" {
+		writeError(w, http.StatusConflict, "l'installation est déjà terminée")
+		return false
+	}
+	if subtle.ConstantTimeCompare([]byte(strings.TrimSpace(token)), []byte(expected)) != 1 {
+		writeError(w, http.StatusForbidden, "token de setup invalide")
+		return false
+	}
+	return true
+}
+
+// validInstanceName trims the name and writes an error unless it is 1 to 64 characters long.
+func validInstanceName(w http.ResponseWriter, name string) (string, bool) {
+	name = strings.TrimSpace(name)
+	if name == "" || utf8.RuneCountInString(name) > 64 {
+		writeError(w, http.StatusBadRequest, "le nom doit faire entre 1 et 64 caractères")
+		return "", false
+	}
+	return name, true
 }
 
 type setupRequest struct {
@@ -70,24 +108,15 @@ func (s *Server) handleSetup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	s.mu.Lock()
-	expected := s.setupToken
-	s.mu.Unlock()
-	if expected == "" {
-		writeError(w, http.StatusConflict, "l'installation est déjà terminée")
+	if !s.checkSetupToken(w, req.Token) {
 		return
 	}
-	if subtle.ConstantTimeCompare([]byte(strings.TrimSpace(req.Token)), []byte(expected)) != 1 {
-		writeError(w, http.StatusForbidden, "token de setup invalide")
+	name, ok := validInstanceName(w, req.InstanceName)
+	if !ok {
 		return
 	}
-
-	req.InstanceName = strings.TrimSpace(req.InstanceName)
 	req.Username = strings.ToLower(strings.TrimSpace(req.Username))
 	switch {
-	case req.InstanceName == "" || utf8.RuneCountInString(req.InstanceName) > 64:
-		writeError(w, http.StatusBadRequest, "le nom doit faire entre 1 et 64 caractères")
-		return
 	case !usernamePattern.MatchString(req.Username):
 		writeError(w, http.StatusBadRequest, "identifiant : 3 à 32 caractères parmi a-z, 0-9, _ et -")
 		return
@@ -121,7 +150,10 @@ func (s *Server) handleSetup(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			return err
 		}
-		if err := q.SetSetting(r.Context(), db.SetSettingParams{Key: settingInstanceName, Value: req.InstanceName}); err != nil {
+		if err := q.SetSetting(r.Context(), db.SetSettingParams{Key: settingInstanceName, Value: name}); err != nil {
+			return err
+		}
+		if err := q.SetSetting(r.Context(), db.SetSettingParams{Key: settingPublicURL, Value: requestOrigin(r)}); err != nil {
 			return err
 		}
 		if err := q.SetSetting(r.Context(), db.SetSettingParams{Key: settingSetupCompleted, Value: "1"}); err != nil {
