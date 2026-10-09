@@ -234,3 +234,37 @@ func TestAppLifecycle(t *testing.T) {
 		t.Fatalf("apps after deletion: %+v", list)
 	}
 }
+
+func TestDomainConfiguredAfterApps(t *testing.T) {
+	ts, server := newTestServerWithHandle(t)
+	admin := newClient()
+	post(t, admin, ts.URL+"/api/setup", setupRequest{Token: testToken, InstanceName: "F", Username: "boss",
+		Password: "a-long-enough-password", PublicURL: "https://forgeyard.example.com"})
+	fa := connectFakeAgent(t, ts.URL, server, admin, "node-a")
+	fa.desired(t)
+
+	// Without a domain the app has no hostname.
+	var app appResponse
+	if code := postJSON(t, admin, ts.URL+"/api/apps", appInput{Name: "whoami", Image: "traefik/whoami", Port: 80}, &app); code != http.StatusCreated {
+		t.Fatalf("create app: %d", code)
+	}
+	if h := fa.desired(t).GetApps()[0].GetHostname(); h != "" || app.URL != "" {
+		t.Fatalf("hostname without domain: %q %q", h, app.URL)
+	}
+
+	// Configuring the domain afterwards creates the record and routes the new domain.
+	mem := dnstest.New("example.com.")
+	server.newDNSProvider = func(string, map[string]string) (dns.Provider, error) { return mem, nil }
+	if code := put(t, admin, ts.URL+"/api/admin/settings/domain", putDomainSettings{
+		PublicURL: "https://forgeyard.example.com", Mode: "provider", Domain: "example.com", PublicIP: "203.0.113.1",
+		Provider: "cloudflare", Credentials: map[string]string{"api_token": "x"},
+	}); code != http.StatusOK {
+		t.Fatalf("domain settings: %d", code)
+	}
+	if h := fa.desired(t).GetApps()[0].GetHostname(); h != "whoami.example.com" {
+		t.Fatalf("hostname after domain: %q", h)
+	}
+	if ip := mem.Lookup("example.com.", "whoami", "A"); ip != "203.0.113.1" {
+		t.Fatalf("record after domain: %q", ip)
+	}
+}

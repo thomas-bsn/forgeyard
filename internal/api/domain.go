@@ -117,6 +117,8 @@ type domainSettings struct {
 	Credentials        map[string]string `json:"credentials"` // non-secret fields only
 	SecretsSet         []string          `json:"secretsSet"`  // secret fields that have a stored value
 	Providers          []dns.Kind        `json:"providers"`
+	// Warning reports apps the last save could not update (e.g. a DNS record the provider refused).
+	Warning string `json:"warning,omitempty"`
 }
 
 func (s *Server) loadDomainSettings(ctx context.Context, r *http.Request) (domainSettings, error) {
@@ -257,7 +259,18 @@ func (s *Server) handlePutDomainSettings(w http.ResponseWriter, r *http.Request)
 	}
 	s.logger.Info("domain settings changed", "public_url", publicURL, "mode", body.Mode, "domain", domain,
 		"provider", values[settingDNSProvider], "by", currentUser(r).DisplayName)
-	s.handleGetDomainSettings(w, r)
+
+	// Existing apps follow: new records, new domains routed by their nodes.
+	d, err := s.loadDomainSettings(ctx, r)
+	if err != nil {
+		s.internalError(w, r, err)
+		return
+	}
+	if err := s.syncApps(ctx); err != nil {
+		s.logger.Warn("updating apps after a domain change failed", "err", err)
+		d.Warning = err.Error()
+	}
+	writeJSON(w, http.StatusOK, d)
 }
 
 type domainCheckResponse struct {

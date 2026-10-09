@@ -89,6 +89,7 @@ export type App = {
   oomKilled?: boolean
   restartCount?: number
   startedAt?: number
+  hostPort?: number
   updatedAt: number
   env?: Record<string, string>
 }
@@ -129,6 +130,7 @@ export type DomainSettings = {
   credentials: Record<string, string>
   secretsSet: string[]
   providers: DNSProviderKind[]
+  warning?: string
 }
 
 export type DomainCheck = {

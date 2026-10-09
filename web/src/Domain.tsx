@@ -48,9 +48,9 @@ export default function DomainPanel() {
       const addressChanged = s.publicUrl !== saved.publicUrl
       apply(s)
       setNotice(
-        addressChanged
+        (addressChanged
           ? 'Enregistré. L’adresse a changé : mettez à jour la redirection de votre application Discord (ci-dessous) et ouvrez désormais Forgeyard depuis la nouvelle adresse.'
-          : 'Enregistré.',
+          : 'Enregistré. Les apps existantes ont été mises à jour.') + (s.warning ? ` Attention : ${s.warning}` : ''),
       )
     } catch (err) {
       setError(errorMessage(err))

@@ -154,7 +154,7 @@ export default function Apps({ admin }: { admin: boolean }) {
                 <strong>{a.name}</strong>
                 {admin && <small className="muted"> · {a.ownerName}</small>}
               </span>
-              <span className="muted cell-ellipsis">{a.url ?? '—'}</span>
+              <span className="muted cell-ellipsis">{a.url ?? (a.hostPort ? `port ${a.hostPort}` : '—')}</span>
               <span className="cell-state">
                 <StateDot state={a.state} />
                 {stateText(a)}
@@ -324,11 +324,17 @@ function AppDetail({ app, onBack, onChange }: { app: App; onBack: () => void; on
             {stateText(app)}
           </span>
         </div>
-        {app.url && (
+        {app.url ? (
           <p>
             <a href={app.url} target="_blank" rel="noopener noreferrer">
               {app.url}
             </a>
+          </p>
+        ) : (
+          <p className="muted">
+            {app.hostPort
+              ? `Publiée sur le port ${app.hostPort} du node ${app.nodeName}. Renseignez l’IP du node (Nodes › Réseau) pour avoir un lien, ou configurez un domaine dans Réglages.`
+              : 'Pas encore d’adresse : configurez un domaine dans Réglages › Adresse et domaine.'}
           </p>
         )}
         {app.error && <p className="error">{app.error}</p>}

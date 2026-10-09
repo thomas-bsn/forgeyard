@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
 	"net/http"
 	"net/netip"
 	"net/url"
@@ -218,11 +219,14 @@ type appResponse struct {
 	OOMKilled    bool              `json:"oomKilled,omitempty"`
 	RestartCount int32             `json:"restartCount,omitempty"`
 	StartedAt    int64             `json:"startedAt,omitempty"`
+	HostPort     int32             `json:"hostPort,omitempty"`
 	UpdatedAt    int64             `json:"updatedAt"`
 	Env          map[string]string `json:"env,omitempty"`
 }
 
-func (s *Server) toAppResponse(a db.App, ownerName, nodeName string, c dnsConfig, node *db.Node) appResponse {
+// toAppResponse describes an app. localHost is the host Forgeyard is reached at, used as the address of its
+// own machine when that node has no public IP set.
+func (s *Server) toAppResponse(a db.App, ownerName, nodeName string, c dnsConfig, node *db.Node, localHost string) appResponse {
 	resp := appResponse{
 		ID: a.ID, Name: a.Name, OwnerID: a.OwnerID, OwnerName: ownerName, NodeID: a.NodeID, NodeName: nodeName,
 		Image: a.Image, Port: a.Port, MemoryMB: a.MemoryMb, Running: a.Running != 0, UpdatedAt: a.UpdatedAt,
@@ -240,13 +244,76 @@ func (s *Server) toAppResponse(a db.App, ownerName, nodeName string, c dnsConfig
 		}
 		resp.Error, resp.ExitCode, resp.OOMKilled = st.Status.GetError(), st.Status.GetExitCode(), st.Status.GetOomKilled()
 		resp.RestartCount, resp.StartedAt = st.Status.GetRestartCount(), st.Status.GetStartedAt()
-		if resp.URL == "" && st.Status.GetHostPort() > 0 && node != nil {
-			if ip := nodeIP(*node, c); ip != "" {
-				resp.URL = "http://" + ip + ":" + strconv.Itoa(int(st.Status.GetHostPort()))
+		resp.HostPort = st.Status.GetHostPort()
+		if resp.URL == "" && resp.HostPort > 0 && node != nil {
+			host := nodeIP(*node, c)
+			if host == "" && node.IsLocal != 0 {
+				host = localHost
+			}
+			if host != "" {
+				resp.URL = "http://" + net.JoinHostPort(host, strconv.Itoa(int(resp.HostPort)))
 			}
 		}
 	}
 	return resp
+}
+
+// publicHost is the host name of Forgeyard's address.
+func (s *Server) publicHost(ctx context.Context, r *http.Request) string {
+	base, err := s.publicURL(ctx, r)
+	if err != nil {
+		return ""
+	}
+	u, err := url.Parse(base)
+	if err != nil {
+		return ""
+	}
+	return u.Hostname()
+}
+
+// syncApps brings every app in line with the current domain settings: their DNS records at the provider and
+// the domains their nodes route. It runs after the domain settings change.
+func (s *Server) syncApps(ctx context.Context) error {
+	c, err := s.loadDNSConfig(ctx)
+	if err != nil {
+		return err
+	}
+	provider, err := s.dnsProvider(c)
+	if err != nil {
+		return err
+	}
+	nodeList, err := s.store.ListNodes(ctx)
+	if err != nil {
+		return err
+	}
+	var failed []string
+	for _, node := range nodeList {
+		apps, err := s.store.ListAppsByNode(ctx, node.ID)
+		if err != nil {
+			return err
+		}
+		for _, a := range apps {
+			host := appHostname(c, a.Name)
+			if provider != nil && host != "" {
+				if err := s.setAppRecord(ctx, c, provider, host, nodeIP(node, c)); err != nil {
+					failed = append(failed, host+" ("+err.Error()+")")
+					continue
+				}
+			} else {
+				host = "" // records are not managed by Forgeyard
+			}
+			if host != a.DnsName {
+				if err := s.store.SetAppDNSName(ctx, db.SetAppDNSNameParams{DnsName: host, ID: a.ID}); err != nil {
+					return err
+				}
+			}
+		}
+		s.push(ctx, node.ID)
+	}
+	if len(failed) > 0 {
+		return fmt.Errorf("enregistrements DNS non créés : %s", strings.Join(failed, ", "))
+	}
+	return nil
 }
 
 func canManage(u db.User, a db.App) bool {
@@ -290,7 +357,7 @@ func (s *Server) handleListApps(w http.ResponseWriter, r *http.Request) {
 		a := db.App{ID: row.ID, Name: row.Name, OwnerID: row.OwnerID, NodeID: row.NodeID, Image: row.Image,
 			Port: row.Port, EnvSealed: row.EnvSealed, Running: row.Running, MemoryMb: row.MemoryMb,
 			Generation: row.Generation, DnsName: row.DnsName, CreatedAt: row.CreatedAt, UpdatedAt: row.UpdatedAt}
-		out = append(out, s.toAppResponse(a, row.OwnerName, row.NodeName, c, byID[row.NodeID]))
+		out = append(out, s.toAppResponse(a, row.OwnerName, row.NodeName, c, byID[row.NodeID], s.publicHost(ctx, r)))
 	}
 	writeJSON(w, http.StatusOK, out)
 }
@@ -331,7 +398,7 @@ func (s *Server) writeApp(w http.ResponseWriter, r *http.Request, status int, a 
 		s.internalError(w, r, err)
 		return
 	}
-	resp := s.toAppResponse(a, owner.DisplayName, node.Name, c, &node)
+	resp := s.toAppResponse(a, owner.DisplayName, node.Name, c, &node, s.publicHost(ctx, r))
 	if withEnv {
 		if resp.Env, err = s.openEnv(a.EnvSealed); err != nil {
 			s.internalError(w, r, err)
