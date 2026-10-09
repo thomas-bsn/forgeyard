@@ -35,7 +35,7 @@ CMD ["run"]
 # --- Server image ---
 FROM alpine:3.21 AS server
 RUN addgroup -S forgeyard && adduser -S -G forgeyard forgeyard \
- && mkdir -p /data && chown forgeyard:forgeyard /data
+ && mkdir -p /data /join && chown forgeyard:forgeyard /data /join
 COPY --from=build /out/forgeyard /out/forgeyard-agent /usr/local/bin/
 # Database, secret key and CA live in /data: mount it as a volume.
 VOLUME /data

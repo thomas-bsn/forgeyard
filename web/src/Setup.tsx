@@ -6,7 +6,7 @@ const steps = ['Token', 'Instance', 'Méthode', 'Compte admin'] as const
 const CALLBACK_PATH = '/api/auth/discord/callback'
 type Method = 'discord' | 'password'
 
-export default function Setup({ onDone }: { instance: Instance; onDone: () => void }) {
+export default function Setup({ instance, onDone }: { instance: Instance; onDone: () => void }) {
   const [step, setStep] = useState(0)
   const [token, setToken] = useState('')
   const [method, setMethod] = useState<Method>('discord')
@@ -17,6 +17,7 @@ export default function Setup({ onDone }: { instance: Instance; onDone: () => vo
   const [clientSecret, setClientSecret] = useState('')
   const [instanceName, setInstanceName] = useState('Forgeyard')
   const [publicUrl, setPublicUrl] = useState(window.location.origin)
+  const [localNode, setLocalNode] = useState(instance.localNodeSupported)
   const cleanUrl = publicUrl.trim().replace(/\/+$/, '')
   const otherOrigin = cleanUrl !== window.location.origin
   const [error, setError] = useState('')
@@ -39,12 +40,12 @@ export default function Setup({ onDone }: { instance: Instance; onDone: () => vo
     setBusy(true)
     try {
       if (method === 'discord') {
-        const { authorizeUrl } = await api.setupDiscord({ token, instanceName, publicUrl: cleanUrl, clientId, clientSecret })
+        const { authorizeUrl } = await api.setupDiscord({ token, instanceName, publicUrl: cleanUrl, clientId, clientSecret, localNode })
         // Discord sends the browser back to the server, which makes this account the superadmin.
         window.location.href = authorizeUrl
         return
       }
-      await api.setup({ token, instanceName, publicUrl: cleanUrl, username, password })
+      await api.setup({ token, instanceName, publicUrl: cleanUrl, username, password, localNode })
       onDone()
     } catch (err) {
       setError(errorMessage(err))
@@ -98,6 +99,15 @@ export default function Setup({ onDone }: { instance: Instance; onDone: () => vo
                 <input type="url" value={publicUrl} onChange={(e) => setPublicUrl(e.target.value)} placeholder="https://forgeyard.mondomaine.com" required />
                 <small>L'adresse à laquelle vous et vos utilisateurs ouvrirez Forgeyard. Modifiable plus tard dans Réglages.</small>
               </label>
+              {instance.localNodeSupported && (
+                <label className="check">
+                  <input type="checkbox" checked={localNode} onChange={(e) => setLocalNode(e.target.checked)} />
+                  <span>
+                    <b>Faire tourner les apps sur cette machine</b>
+                    <small>Cette machine devient un node, sans rien à installer. D’autres machines pourront s’ajouter plus tard.</small>
+                  </span>
+                </label>
+              )}
             </>
           )}
 

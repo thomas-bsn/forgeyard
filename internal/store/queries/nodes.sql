@@ -1,7 +1,10 @@
 -- name: CreateNode :one
-INSERT INTO nodes (name, status, join_token_hash, join_expires_at, created_at)
-VALUES (?, 'pending', ?, ?, ?)
+INSERT INTO nodes (name, status, join_token_hash, join_expires_at, is_local, created_at)
+VALUES (?, 'pending', ?, ?, ?, ?)
 RETURNING *;
+
+-- name: HasLocalNode :one
+SELECT EXISTS (SELECT 1 FROM nodes WHERE is_local = 1);
 
 -- name: ListNodes :many
 SELECT * FROM nodes ORDER BY name;

@@ -20,7 +20,7 @@ function since(unix?: number): string {
   return new Date(unix * 1000).toLocaleDateString('fr-FR')
 }
 
-export default function Nodes() {
+export default function Nodes({ localSupported }: { localSupported: boolean }) {
   const [nodes, setNodes] = useState<Node[] | null>(null)
   const [error, setError] = useState('')
   const [join, setJoin] = useState<JoinCommand | null>(null)
@@ -42,12 +42,15 @@ export default function Nodes() {
 
   return (
     <div className="section">
-      <AddNode
-        onCreated={(j) => {
-          setJoin(j)
-          load()
-        }}
-      />
+      {nodes && (
+        <AddNode
+          localAvailable={localSupported && !nodes.some((n) => n.isLocal)}
+          onCreated={(j) => {
+            setJoin(j)
+            load()
+          }}
+        />
+      )}
       {join && <JoinInstructions join={join} onClose={() => setJoin(null)} />}
       {error && <p className="error">{error}</p>}
       {nodes && nodes.length === 0 && (
@@ -67,7 +70,9 @@ export default function Nodes() {
   )
 }
 
-function AddNode({ onCreated }: { onCreated: (j: JoinCommand) => void }) {
+function AddNode({ localAvailable, onCreated }: { localAvailable: boolean; onCreated: (j: JoinCommand) => void }) {
+  const [where, setWhere] = useState<'local' | 'remote'>(localAvailable ? 'local' : 'remote')
+  const local = localAvailable && where === 'local'
   const [name, setName] = useState('')
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
@@ -77,7 +82,7 @@ function AddNode({ onCreated }: { onCreated: (j: JoinCommand) => void }) {
     setBusy(true)
     setError('')
     try {
-      onCreated(await api.createNode(name))
+      onCreated(await api.createNode(local ? 'local' : name, local))
       setName('')
     } catch (err) {
       setError(errorMessage(err))
@@ -87,90 +92,76 @@ function AddNode({ onCreated }: { onCreated: (j: JoinCommand) => void }) {
   }
 
   return (
-    <form className="panel add-node" onSubmit={submit}>
-      <label className="field">
-        <span>Ajouter un node</span>
-        <input
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          placeholder="node-a"
-          pattern="[a-zA-Z0-9][a-zA-Z0-9\-]{0,31}"
-          title="1 à 32 caractères : lettres, chiffres et -"
-          required
-        />
-      </label>
-      <button type="submit" className="btn btn-primary" disabled={busy}>
-        {busy ? 'Création…' : 'Créer'}
-      </button>
+    <form className="panel" onSubmit={submit}>
+      <h2>Ajouter un node</h2>
+      {localAvailable && (
+        <div className="auth-options">
+          <button type="button" className={`auth-option ${where === 'local' ? 'selected' : ''}`} onClick={() => setWhere('local')} aria-pressed={where === 'local'}>
+            <strong>Cette machine</strong>
+            <small>Celle où tourne Forgeyard. Rien à installer.</small>
+          </button>
+          <button type="button" className={`auth-option ${where === 'remote' ? 'selected' : ''}`} onClick={() => setWhere('remote')} aria-pressed={where === 'remote'}>
+            <strong>Une autre machine</strong>
+            <small>Un autre serveur avec Docker.</small>
+          </button>
+        </div>
+      )}
+      <div className="add-node">
+        {!local && (
+          <label className="field">
+            <span>Nom du node</span>
+            <input
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="serveur-b"
+              pattern="[a-zA-Z0-9][a-zA-Z0-9\-]{0,31}"
+              title="1 à 32 caractères : lettres, chiffres et -"
+              required
+            />
+          </label>
+        )}
+        <button type="submit" className="btn btn-primary" disabled={busy}>
+          {busy ? 'Création…' : local ? 'Activer cette machine' : 'Créer'}
+        </button>
+      </div>
       {error && <p className="error">{error}</p>}
     </form>
   )
 }
 
-type JoinMethod = 'compose' | 'docker'
-
-const joinMethods: { value: JoinMethod; title: string; text: string }[] = [
-  { value: 'compose', title: 'La machine de Forgeyard', text: 'Le serveur où tourne déjà Forgeyard.' },
-  { value: 'docker', title: 'Une autre machine', text: 'Un autre serveur, avec Docker installé.' },
-]
-
 function JoinInstructions({ join, onClose }: { join: JoinCommand; onClose: () => void }) {
-  const [method, setMethod] = useState<JoinMethod>('compose')
   const expires = new Date(join.expiresAt * 1000).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })
   return (
     <div className="panel join-panel">
       <div className="header">
-        <h2 className="header-title">Connecter « {join.node.name} »</h2>
+        <h2 className="header-title">{join.node.isLocal ? 'Cette machine' : `Connecter « ${join.node.name} »`}</h2>
         <button type="button" className="btn btn-ghost" onClick={onClose}>
           Fermer
         </button>
       </div>
-      <div className="auth-options">
-        {joinMethods.map((m) => (
-          <button
-            key={m.value}
-            type="button"
-            className={`auth-option ${method === m.value ? 'selected' : ''}`}
-            onClick={() => setMethod(m.value)}
-            aria-pressed={method === m.value}
-          >
-            <strong>{m.title}</strong>
-            <small>{m.text}</small>
-          </button>
-        ))}
-      </div>
-
-      <p className="muted">
-        Rien à installer à part Docker : l’agent Forgeyard est une image Docker, téléchargée et lancée automatiquement.
-      </p>
-
-      {method === 'docker' && (
-        <ol className="steps-help">
-          <li>
-            Sur cette machine, lancez cette commande dans un terminal :
-            <CopyField value={join.dockerCommand} />
-          </li>
-          <li>Le node apparaît en ligne ci-dessous en quelques secondes. L’agent redémarre tout seul avec la machine.</li>
-        </ol>
+      {join.node.isLocal ? (
+        <p>
+          L’agent de cette machine va se connecter tout seul dans quelques secondes : rien à faire. S’il n’apparaît pas en
+          ligne, vérifiez qu’il tourne avec <code>docker compose ps</code>.
+        </p>
+      ) : (
+        <>
+          <p className="muted">
+            Rien à installer à part Docker : l’agent Forgeyard est une image Docker, téléchargée et lancée automatiquement.
+          </p>
+          <ol className="steps-help">
+            <li>
+              Sur la machine à ajouter, lancez cette commande dans un terminal :
+              <CopyField value={join.dockerCommand} />
+            </li>
+            <li>Le node apparaît en ligne ci-dessous en quelques secondes. L’agent redémarre tout seul avec la machine.</li>
+          </ol>
+          <p className="muted">
+            Cette commande ne sert qu’une fois et expire à {expires}. Elle n’est plus jamais affichée : en cas de besoin,
+            générez-en une nouvelle depuis la carte du node.
+          </p>
+        </>
       )}
-      {method === 'compose' && (
-        <ol className="steps-help">
-          <li>
-            Dans le dossier de Forgeyard, ajoutez ceci à <code>docker-compose.override.yml</code> (en fusionnant avec ce qui
-            s’y trouve déjà) :
-            <CopyField value={join.composeService} />
-          </li>
-          <li>
-            Puis lancez <code>docker compose up -d --build</code> dans ce même dossier.
-          </li>
-          <li>Le node apparaît en ligne ci-dessous en quelques secondes.</li>
-        </ol>
-      )}
-
-      <p className="muted">
-        Le token de cette commande ne sert qu’une fois et expire à {expires}. Il n’est plus jamais affiché : en cas de
-        besoin, générez-en un nouveau depuis la carte du node.
-      </p>
     </div>
   )
 }
@@ -218,6 +209,7 @@ function NodeCard({ node, onJoin, onChange }: { node: Node; onJoin: (j: JoinComm
       <div className="node-head">
         <span className={`dot ${dot}`} />
         <strong className="node-name">{node.name}</strong>
+        {node.isLocal && <span className="muted">cette machine</span>}
         <span className="muted">{stateLabel}</span>
       </div>
 
@@ -258,7 +250,7 @@ function NodeCard({ node, onJoin, onChange }: { node: Node; onJoin: (j: JoinComm
       <div className="panel-footer">
         {node.state === 'pending' && (
           <button type="button" className="btn" disabled={busy} onClick={() => run(async () => onJoin(await api.newJoinCommand(node.id)))}>
-            Nouvelle commande
+            {node.isLocal ? 'Relancer la connexion' : 'Nouvelle commande'}
           </button>
         )}
         <span className="spacer" />

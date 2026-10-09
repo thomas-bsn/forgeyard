@@ -28,22 +28,24 @@ const (
 // oauthState is a Discord sign-in in progress. The setup purpose makes the Discord account the superadmin;
 // it is only issued to someone who presented the setup token.
 type oauthState struct {
-	purpose string // "login" or "setup"
-	expires time.Time
+	purpose   string // "login" or "setup"
+	localNode bool   // setup: also enable this machine as a node
+	expires   time.Time
 }
 
 // newOAuthState registers a state value and binds it to the browser with a cookie, so a callback
 // cannot be replayed in someone else's browser (login CSRF).
-func (s *Server) newOAuthState(w http.ResponseWriter, r *http.Request, purpose string) string {
+func (s *Server) newOAuthState(w http.ResponseWriter, r *http.Request, st oauthState) string {
 	state := auth.NewToken()
 	now := time.Now()
+	st.expires = now.Add(oauthStateTTL)
 	s.mu.Lock()
 	for k, v := range s.oauthStates {
 		if now.After(v.expires) {
 			delete(s.oauthStates, k)
 		}
 	}
-	s.oauthStates[state] = oauthState{purpose: purpose, expires: now.Add(oauthStateTTL)}
+	s.oauthStates[state] = st
 	s.mu.Unlock()
 
 	http.SetCookie(w, &http.Cookie{
@@ -144,7 +146,7 @@ func (s *Server) handleDiscordStart(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/?discord=unavailable", http.StatusFound)
 		return
 	}
-	http.Redirect(w, r, s.discord.AuthorizeURL(cfg, s.newOAuthState(w, r, "login")), http.StatusFound)
+	http.Redirect(w, r, s.discord.AuthorizeURL(cfg, s.newOAuthState(w, r, oauthState{purpose: "login"})), http.StatusFound)
 }
 
 type setupDiscordRequest struct {
@@ -153,6 +155,7 @@ type setupDiscordRequest struct {
 	PublicURL    string `json:"publicUrl"`
 	ClientID     string `json:"clientId"`
 	ClientSecret string `json:"clientSecret"`
+	LocalNode    bool   `json:"localNode"`
 }
 
 // handleSetupDiscord saves the Discord application during setup and returns the consent URL. The first
@@ -204,7 +207,7 @@ func (s *Server) handleSetupDiscord(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{
-		"authorizeUrl": s.discord.AuthorizeURL(cfg, s.newOAuthState(w, r, "setup")),
+		"authorizeUrl": s.discord.AuthorizeURL(cfg, s.newOAuthState(w, r, oauthState{purpose: "setup", localNode: req.LocalNode && s.localNodeSupported()})),
 	})
 }
 
@@ -234,7 +237,7 @@ func (s *Server) handleDiscordCallback(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if st.purpose == "setup" {
-		s.completeDiscordSetup(w, r, dUser)
+		s.completeDiscordSetup(w, r, dUser, st.localNode)
 		return
 	}
 
@@ -268,9 +271,10 @@ func (s *Server) handleDiscordCallback(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (s *Server) completeDiscordSetup(w http.ResponseWriter, r *http.Request, dUser discord.User) {
+func (s *Server) completeDiscordSetup(w http.ResponseWriter, r *http.Request, dUser discord.User, localNode bool) {
 	ctx := r.Context()
 	var user db.User
+	var joinToken string
 	err := s.store.InTx(ctx, func(q *db.Queries) error {
 		done, err := SetupCompleted(ctx, q)
 		if err != nil {
@@ -292,6 +296,11 @@ func (s *Server) completeDiscordSetup(w http.ResponseWriter, r *http.Request, dU
 		if err := q.SetSetting(ctx, db.SetSettingParams{Key: settingPasswordLogin, Value: "0"}); err != nil {
 			return err
 		}
+		if localNode {
+			if _, joinToken, _, err = s.newNode(ctx, q, localNodeName, true); err != nil {
+				return err
+			}
+		}
 		if err := q.SetSetting(ctx, db.SetSettingParams{Key: settingSetupCompleted, Value: "1"}); err != nil {
 			return err
 		}
@@ -308,7 +317,12 @@ func (s *Server) completeDiscordSetup(w http.ResponseWriter, r *http.Request, dU
 	s.mu.Lock()
 	s.setupToken = ""
 	s.mu.Unlock()
-	s.logger.Info("setup completed", "superadmin", user.DisplayName, "discord_id", dUser.ID)
+	if joinToken != "" {
+		if err := s.writeLocalJoin(joinToken); err != nil {
+			s.logger.Error("enabling this machine as a node failed", "err", err)
+		}
+	}
+	s.logger.Info("setup completed", "superadmin", user.DisplayName, "discord_id", dUser.ID, "local_node", localNode)
 	http.Redirect(w, r, "/", http.StatusFound)
 }
 

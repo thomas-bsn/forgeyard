@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -141,5 +142,50 @@ func TestNodeJoinConnectAndRemove(t *testing.T) {
 		}
 	case <-time.After(10 * time.Second):
 		t.Fatal("agent kept running after its node was removed")
+	}
+}
+
+func TestLocalNodeFromSetup(t *testing.T) {
+	ts, server := newTestServerWithHandle(t)
+	server.joinDir = t.TempDir()
+	server.localServerURL = ts.URL // in Compose: http://forgeyard:8080
+
+	admin := newClient()
+	var inst instanceResponse
+	get(t, admin, ts.URL+"/api/instance", &inst)
+	if !inst.LocalNodeSupported {
+		t.Fatal("local node should be supported with a join directory")
+	}
+	post(t, admin, ts.URL+"/api/setup", setupRequest{Token: testToken, InstanceName: "F", Username: "boss",
+		Password: "a-long-enough-password", LocalNode: true})
+
+	var listed []nodeResponse
+	get(t, admin, ts.URL+"/api/admin/nodes", &listed)
+	if len(listed) != 1 || !listed[0].IsLocal || listed[0].State != "pending" {
+		t.Fatalf("nodes after setup: %+v", listed)
+	}
+	// A second local node is refused.
+	if code := postJSON(t, admin, ts.URL+"/api/admin/nodes", createNodeRequest{Name: "x", Local: true}, nil); code != http.StatusConflict {
+		t.Fatalf("second local node: %d", code)
+	}
+
+	// The local agent joins with the file the server dropped, then deletes it.
+	joinFile := filepath.Join(server.joinDir, LocalJoinFile)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	stateDir := filepath.Join(t.TempDir(), "agent")
+	cfg, err := agent.WaitAndJoin(ctx, joinFile, stateDir, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.NodeName != "local" {
+		t.Fatalf("joined as %q", cfg.NodeName)
+	}
+	if _, err := os.Stat(joinFile); !os.IsNotExist(err) {
+		t.Fatal("join file left behind")
+	}
+	get(t, admin, ts.URL+"/api/admin/nodes", &listed)
+	if listed[0].State == "pending" {
+		t.Fatalf("local node still pending: %+v", listed[0])
 	}
 }

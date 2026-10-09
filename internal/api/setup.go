@@ -47,6 +47,7 @@ type instanceResponse struct {
 	Name               string `json:"name"`
 	SetupRequired      bool   `json:"setupRequired"`
 	PasswordLogin      bool   `json:"passwordLoginEnabled"`
+	LocalNodeSupported bool   `json:"localNodeSupported"`
 	DiscordEnabled     bool   `json:"discordEnabled"`
 	DiscordRedirectURL string `json:"discordRedirectUrl"`
 }
@@ -73,6 +74,7 @@ func (s *Server) handleInstance(w http.ResponseWriter, r *http.Request) {
 		Name:               name,
 		SetupRequired:      s.setupRequired(),
 		PasswordLogin:      passwordLogin || s.setupRequired(),
+		LocalNodeSupported: s.localNodeSupported(),
 		DiscordEnabled:     enabled && !s.setupRequired(),
 		DiscordRedirectURL: redirectURL,
 	})
@@ -131,6 +133,7 @@ type setupRequest struct {
 	PublicURL    string `json:"publicUrl"`
 	Username     string `json:"username"`
 	Password     string `json:"password"`
+	LocalNode    bool   `json:"localNode"`
 }
 
 // handleSetup completes the first-run wizard: it creates the superadmin and logs them in.
@@ -168,6 +171,7 @@ func (s *Server) handleSetup(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var user db.User
+	var joinToken string
 	err = s.store.InTx(r.Context(), func(q *db.Queries) error {
 		done, err := SetupCompleted(r.Context(), q)
 		if err != nil {
@@ -195,6 +199,11 @@ func (s *Server) handleSetup(w http.ResponseWriter, r *http.Request) {
 		if err := q.SetSetting(r.Context(), db.SetSettingParams{Key: settingPasswordLogin, Value: "1"}); err != nil {
 			return err
 		}
+		if req.LocalNode && s.localNodeSupported() {
+			if _, joinToken, _, err = s.newNode(r.Context(), q, localNodeName, true); err != nil {
+				return err
+			}
+		}
 		if err := q.SetSetting(r.Context(), db.SetSettingParams{Key: settingSetupCompleted, Value: "1"}); err != nil {
 			return err
 		}
@@ -212,6 +221,11 @@ func (s *Server) handleSetup(w http.ResponseWriter, r *http.Request) {
 	s.mu.Lock()
 	s.setupToken = ""
 	s.mu.Unlock()
-	s.logger.Info("setup completed", "superadmin", user.Username.String)
+	if joinToken != "" {
+		if err := s.writeLocalJoin(joinToken); err != nil {
+			s.logger.Error("enabling this machine as a node failed", "err", err)
+		}
+	}
+	s.logger.Info("setup completed", "superadmin", user.Username.String, "local_node", joinToken != "")
 	writeJSON(w, http.StatusCreated, toUserResponse(user))
 }

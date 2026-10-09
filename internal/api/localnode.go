@@ -1,0 +1,74 @@
+package api
+
+import (
+	"context"
+	"encoding/json"
+	"net"
+	"net/url"
+	"os"
+	"path/filepath"
+	"time"
+
+	"github.com/thomas-bsn/forgeyard/internal/auth"
+	"github.com/thomas-bsn/forgeyard/internal/store/db"
+)
+
+// LocalJoinFile is the file, in the join directory shared with the agent of the Compose project, through
+// which Forgeyard enables its own machine as a node: the agent waits for it, joins with it and deletes it.
+const LocalJoinFile = "agent.json"
+
+// localNodeName is the name given to Forgeyard's own machine.
+const localNodeName = "local"
+
+// LocalJoin is the content of LocalJoinFile.
+type LocalJoin struct {
+	Server        string `json:"server"`
+	AgentServer   string `json:"agentServer"`
+	Token         string `json:"token"`
+	CAFingerprint string `json:"ca"`
+}
+
+// localNodeSupported reports whether this server can enable its own machine as a node, i.e. it runs with
+// the agent of the Compose project next to it.
+func (s *Server) localNodeSupported() bool {
+	return s.joinDir != ""
+}
+
+// newNode creates a pending node with a fresh join token.
+func (s *Server) newNode(ctx context.Context, q *db.Queries, name string, local bool) (db.Node, string, time.Time, error) {
+	token := auth.NewToken()
+	expires := time.Now().Add(joinTokenTTL)
+	var isLocal int64
+	if local {
+		isLocal = 1
+	}
+	node, err := q.CreateNode(ctx, db.CreateNodeParams{
+		Name:          name,
+		JoinTokenHash: nullString(auth.HashToken(token)),
+		JoinExpiresAt: nullInt(expires.Unix()),
+		IsLocal:       isLocal,
+		CreatedAt:     time.Now().Unix(),
+	})
+	return node, token, expires, err
+}
+
+// writeLocalJoin hands a join token to the local agent. The agent reaches the server by its Compose service
+// name, so nothing goes out through the public address or the proxy in front of it.
+func (s *Server) writeLocalJoin(token string) error {
+	agentServer := "forgeyard:" + s.agentPort
+	if u, err := url.Parse(s.localServerURL); err == nil && u.Hostname() != "" {
+		agentServer = net.JoinHostPort(u.Hostname(), s.agentPort)
+	}
+	raw, err := json.Marshal(LocalJoin{
+		Server: s.localServerURL, AgentServer: agentServer, Token: token, CAFingerprint: s.ca.Fingerprint(),
+	})
+	if err != nil {
+		return err
+	}
+	// Write then rename, so the agent never reads a half-written file.
+	tmp := filepath.Join(s.joinDir, "."+LocalJoinFile+".tmp")
+	if err := os.WriteFile(tmp, raw, 0o600); err != nil {
+		return err
+	}
+	return os.Rename(tmp, filepath.Join(s.joinDir, LocalJoinFile))
+}

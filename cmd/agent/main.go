@@ -64,6 +64,7 @@ func start(ctx context.Context, args []string, mustJoin bool, logger *slog.Logge
 	ca := fs.String("ca", "", "fingerprint of the server's CA (sha256:…)")
 	agentServer := fs.String("agent-server", "", "host:port of the agent port, when it differs from the server's public address (e.g. forgeyard:8081 in the same Docker Compose project)")
 	stateDir := fs.String("state-dir", defaultStateDir(), "where the node identity is stored")
+	joinFile := fs.String("join-file", os.Getenv("FORGEYARD_JOIN_FILE"), "wait for the server of the same Compose project to drop join details in this file")
 	dockerHost := fs.String("docker-host", docker.DefaultHost(), "Docker daemon socket")
 	fs.Parse(args)
 
@@ -79,7 +80,17 @@ func start(ctx context.Context, args []string, mustJoin bool, logger *slog.Logge
 		if mustJoin {
 			return errors.New("--server, --token and --ca are required: copy the command from the Nodes page")
 		}
-		return agent.ErrNotJoined
+		if *joinFile == "" {
+			return agent.ErrNotJoined
+		}
+		cfg, err := agent.WaitAndJoin(ctx, *joinFile, *stateDir, logger)
+		if errors.Is(err, context.Canceled) {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		logger.Info("joined the server", "node", cfg.NodeName, "state_dir", *stateDir)
 	case !joined:
 		cfg, err := agent.Join(ctx, agent.JoinOptions{
 			Server: *server, Token: *token, CAFingerprint: *ca, StateDir: *stateDir, AgentServer: *agentServer,

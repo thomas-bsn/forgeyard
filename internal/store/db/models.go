@@ -63,6 +63,7 @@ type Node struct {
 	PublicIp        string
 	IngressMode     string
 	IngressHttpPort int64
+	IsLocal         int64
 }
 
 type Session struct {

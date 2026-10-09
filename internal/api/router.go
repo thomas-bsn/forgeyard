@@ -34,6 +34,11 @@ type Deps struct {
 	TrustedProxies []netip.Prefix
 	// AgentImage is the agent's container image shown in join commands.
 	AgentImage string
+	// JoinDir is shared with the agent of the Compose project, to enable this machine as a node; empty
+	// when there is no such agent (e.g. the server runs as a plain binary).
+	JoinDir string
+	// LocalServerURL is how that agent reaches the server, e.g. http://forgeyard:8080.
+	LocalServerURL string
 }
 
 // Server holds the dependencies of the HTTP handlers.
@@ -49,6 +54,8 @@ type Server struct {
 
 	trustedProxies []netip.Prefix
 	agentImage     string
+	joinDir        string
+	localServerURL string
 
 	// Replaced in tests.
 	newDNSProvider func(name string, creds map[string]string) (dns.Provider, error)
@@ -70,6 +77,8 @@ func NewServer(d Deps, setupToken string) *Server {
 
 		trustedProxies: d.TrustedProxies,
 		agentImage:     d.AgentImage,
+		joinDir:        d.JoinDir,
+		localServerURL: d.LocalServerURL,
 		limiter:        auth.NewLoginLimiter(10, 15*time.Minute),
 		discord:        discord.NewClient(),
 		secrets:        d.Secrets,

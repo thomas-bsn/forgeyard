@@ -124,6 +124,8 @@ func run(addr, agentAddr, dataDir string, logger *slog.Logger) error {
 			Store: st, Logger: logger, Secrets: box, CA: ca, Nodes: hub, AgentPort: agentPort,
 			TrustedProxies: trustedProxies,
 			AgentImage:     envOr("FORGEYARD_AGENT_IMAGE", "ghcr.io/thomas-bsn/forgeyard-agent:latest"),
+			JoinDir:        os.Getenv("FORGEYARD_JOIN_DIR"),
+			LocalServerURL: envOr("FORGEYARD_LOCAL_SERVER_URL", "http://forgeyard:8080"),
 		}, setupToken).Handler(web.Dist()),
 		ReadHeaderTimeout: 10 * time.Second,
 	}

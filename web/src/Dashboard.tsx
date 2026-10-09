@@ -61,7 +61,7 @@ export default function Dashboard({ instance, user, onLogout }: { instance: Inst
       </nav>
 
       {tab === 'apps' && <Apps admin={admin} />}
-      {tab === 'nodes' && admin && <Nodes />}
+      {tab === 'nodes' && admin && <Nodes localSupported={instance.localNodeSupported} />}
       {tab === 'requests' && admin && <Requests onCountChange={setPending} />}
       {tab === 'settings' && admin && <Settings superadmin={user.role === 'superadmin'} />}
     </div>

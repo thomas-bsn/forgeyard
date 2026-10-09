@@ -9,9 +9,34 @@ services:
       - "8081:8081" # agents
     volumes:
       - forgeyard-data:/data
+      - forgeyard-join:/join
+    environment:
+      FORGEYARD_JOIN_DIR: /join
     restart: unless-stopped
     # Server-specific settings (ports, networks, environment…) go in docker-compose.override.yml,
     # not here: see docker-compose.override.example.yml.
 
+  # The agent that lets this machine run apps. It waits until you enable this machine as a node (in the
+  # setup wizard or the Nodes page), then joins by itself. To leave it out, see the override example.
+  agent:
+    build:
+      context: .
+      target: agent
+    container_name: forgeyard-agent
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - /:/host:ro
+      - forgeyard-agent:/state
+      - forgeyard-join:/join
+    environment:
+      FORGEYARD_HOST_ROOT: /host
+      FORGEYARD_JOIN_FILE: /join/agent.json
+    # The server creates the shared /join volume first, so it is writable by the server's user.
+    depends_on:
+      - forgeyard
+    restart: unless-stopped
+
 volumes:
   forgeyard-data:
+  forgeyard-agent:
+  forgeyard-join:

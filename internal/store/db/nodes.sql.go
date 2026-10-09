@@ -26,15 +26,16 @@ func (q *Queries) ActivateNode(ctx context.Context, arg ActivateNodeParams) erro
 }
 
 const createNode = `-- name: CreateNode :one
-INSERT INTO nodes (name, status, join_token_hash, join_expires_at, created_at)
-VALUES (?, 'pending', ?, ?, ?)
-RETURNING id, name, status, join_token_hash, join_expires_at, cert_serial, hostname, os, arch, cpus, memory_bytes, disk_bytes, docker_version, agent_version, last_seen_at, created_at, public_ip, ingress_mode, ingress_http_port
+INSERT INTO nodes (name, status, join_token_hash, join_expires_at, is_local, created_at)
+VALUES (?, 'pending', ?, ?, ?, ?)
+RETURNING id, name, status, join_token_hash, join_expires_at, cert_serial, hostname, os, arch, cpus, memory_bytes, disk_bytes, docker_version, agent_version, last_seen_at, created_at, public_ip, ingress_mode, ingress_http_port, is_local
 `
 
 type CreateNodeParams struct {
 	Name          string
 	JoinTokenHash sql.NullString
 	JoinExpiresAt sql.NullInt64
+	IsLocal       int64
 	CreatedAt     int64
 }
 
@@ -43,6 +44,7 @@ func (q *Queries) CreateNode(ctx context.Context, arg CreateNodeParams) (Node, e
 		arg.Name,
 		arg.JoinTokenHash,
 		arg.JoinExpiresAt,
+		arg.IsLocal,
 		arg.CreatedAt,
 	)
 	var i Node
@@ -66,6 +68,7 @@ func (q *Queries) CreateNode(ctx context.Context, arg CreateNodeParams) (Node, e
 		&i.PublicIp,
 		&i.IngressMode,
 		&i.IngressHttpPort,
+		&i.IsLocal,
 	)
 	return i, err
 }
@@ -80,7 +83,7 @@ func (q *Queries) DeleteNode(ctx context.Context, id int64) error {
 }
 
 const getNode = `-- name: GetNode :one
-SELECT id, name, status, join_token_hash, join_expires_at, cert_serial, hostname, os, arch, cpus, memory_bytes, disk_bytes, docker_version, agent_version, last_seen_at, created_at, public_ip, ingress_mode, ingress_http_port FROM nodes WHERE id = ?
+SELECT id, name, status, join_token_hash, join_expires_at, cert_serial, hostname, os, arch, cpus, memory_bytes, disk_bytes, docker_version, agent_version, last_seen_at, created_at, public_ip, ingress_mode, ingress_http_port, is_local FROM nodes WHERE id = ?
 `
 
 func (q *Queries) GetNode(ctx context.Context, id int64) (Node, error) {
@@ -106,12 +109,13 @@ func (q *Queries) GetNode(ctx context.Context, id int64) (Node, error) {
 		&i.PublicIp,
 		&i.IngressMode,
 		&i.IngressHttpPort,
+		&i.IsLocal,
 	)
 	return i, err
 }
 
 const getPendingNodeByJoinToken = `-- name: GetPendingNodeByJoinToken :one
-SELECT id, name, status, join_token_hash, join_expires_at, cert_serial, hostname, os, arch, cpus, memory_bytes, disk_bytes, docker_version, agent_version, last_seen_at, created_at, public_ip, ingress_mode, ingress_http_port FROM nodes WHERE join_token_hash = ? AND status = 'pending' AND join_expires_at > ?
+SELECT id, name, status, join_token_hash, join_expires_at, cert_serial, hostname, os, arch, cpus, memory_bytes, disk_bytes, docker_version, agent_version, last_seen_at, created_at, public_ip, ingress_mode, ingress_http_port, is_local FROM nodes WHERE join_token_hash = ? AND status = 'pending' AND join_expires_at > ?
 `
 
 type GetPendingNodeByJoinTokenParams struct {
@@ -142,12 +146,24 @@ func (q *Queries) GetPendingNodeByJoinToken(ctx context.Context, arg GetPendingN
 		&i.PublicIp,
 		&i.IngressMode,
 		&i.IngressHttpPort,
+		&i.IsLocal,
 	)
 	return i, err
 }
 
+const hasLocalNode = `-- name: HasLocalNode :one
+SELECT EXISTS (SELECT 1 FROM nodes WHERE is_local = 1)
+`
+
+func (q *Queries) HasLocalNode(ctx context.Context) (int64, error) {
+	row := q.db.QueryRowContext(ctx, hasLocalNode)
+	var column_1 int64
+	err := row.Scan(&column_1)
+	return column_1, err
+}
+
 const listNodes = `-- name: ListNodes :many
-SELECT id, name, status, join_token_hash, join_expires_at, cert_serial, hostname, os, arch, cpus, memory_bytes, disk_bytes, docker_version, agent_version, last_seen_at, created_at, public_ip, ingress_mode, ingress_http_port FROM nodes ORDER BY name
+SELECT id, name, status, join_token_hash, join_expires_at, cert_serial, hostname, os, arch, cpus, memory_bytes, disk_bytes, docker_version, agent_version, last_seen_at, created_at, public_ip, ingress_mode, ingress_http_port, is_local FROM nodes ORDER BY name
 `
 
 func (q *Queries) ListNodes(ctx context.Context) ([]Node, error) {
@@ -179,6 +195,7 @@ func (q *Queries) ListNodes(ctx context.Context) ([]Node, error) {
 			&i.PublicIp,
 			&i.IngressMode,
 			&i.IngressHttpPort,
+			&i.IsLocal,
 		); err != nil {
 			return nil, err
 		}

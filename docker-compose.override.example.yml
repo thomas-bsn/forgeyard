@@ -61,6 +61,10 @@ services:
     # build:
     #   dockerfile: Dockerfile.local
 
+  # Do not run apps on this machine (only on other nodes): leave the local agent out.
+  # agent:
+  #   profiles: ["disabled"]
+
 # networks:
 #   caddy:
 #     external: true

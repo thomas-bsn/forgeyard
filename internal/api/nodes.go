@@ -41,6 +41,7 @@ type nodeResponse struct {
 	DockerVersion string       `json:"dockerVersion"`
 	AgentVersion  string       `json:"agentVersion"`
 	LastSeenAt    int64        `json:"lastSeenAt,omitempty"`
+	IsLocal       bool         `json:"isLocal"`
 	PublicIP      string       `json:"publicIp"`
 	IngressMode   string       `json:"ingressMode"`
 	IngressPort   int64        `json:"ingressHttpPort"`
@@ -53,7 +54,7 @@ func (s *Server) toNodeResponse(n db.Node) nodeResponse {
 		ID: n.ID, Name: n.Name, State: "pending", Hostname: n.Hostname, OS: n.Os, Arch: n.Arch, CPUs: n.Cpus,
 		MemoryBytes: n.MemoryBytes, DiskBytes: n.DiskBytes, DockerVersion: n.DockerVersion,
 		AgentVersion: n.AgentVersion, LastSeenAt: n.LastSeenAt.Int64,
-		PublicIP: n.PublicIp, IngressMode: n.IngressMode, IngressPort: n.IngressHttpPort,
+		PublicIP: n.PublicIp, IngressMode: n.IngressMode, IngressPort: n.IngressHttpPort, IsLocal: n.IsLocal != 0,
 	}
 	if n.Status != "active" {
 		return resp
@@ -93,6 +94,8 @@ func (s *Server) handleListNodes(w http.ResponseWriter, r *http.Request) {
 
 type createNodeRequest struct {
 	Name string `json:"name"`
+	// Local enables Forgeyard's own machine: its agent joins by itself, no command to run.
+	Local bool `json:"local"`
 }
 
 type joinCommandResponse struct {
@@ -101,10 +104,8 @@ type joinCommandResponse struct {
 	Command string `json:"command"`
 	// DockerCommand runs the agent as a container on another machine.
 	DockerCommand string `json:"dockerCommand"`
-	// ComposeService adds the agent to the server's own Docker Compose project, to use that machine as a node.
-	ComposeService string `json:"composeService"`
-	ExpiresAt      int64  `json:"expiresAt"`
-	AgentServer    string `json:"agentServer"`
+	ExpiresAt     int64  `json:"expiresAt"`
+	AgentServer   string `json:"agentServer"`
 }
 
 func (s *Server) handleCreateNode(w http.ResponseWriter, r *http.Request) {
@@ -117,14 +118,20 @@ func (s *Server) handleCreateNode(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "nom : 1 à 32 caractères parmi a-z, 0-9 et -, sans tiret au début")
 		return
 	}
-	token := auth.NewToken()
-	expires := time.Now().Add(joinTokenTTL)
-	node, err := s.store.CreateNode(r.Context(), db.CreateNodeParams{
-		Name:          name,
-		JoinTokenHash: nullString(auth.HashToken(token)),
-		JoinExpiresAt: nullInt(expires.Unix()),
-		CreatedAt:     time.Now().Unix(),
-	})
+	if body.Local {
+		if !s.localNodeSupported() {
+			writeError(w, http.StatusBadRequest, "cette installation ne contient pas d'agent local (Forgeyard ne tourne pas avec docker compose)")
+			return
+		}
+		if exists, err := s.store.HasLocalNode(r.Context()); err != nil {
+			s.internalError(w, r, err)
+			return
+		} else if exists != 0 {
+			writeError(w, http.StatusConflict, "cette machine est déjà un node")
+			return
+		}
+	}
+	node, token, expires, err := s.newNode(r.Context(), s.store.Queries, name, body.Local)
 	if err != nil && strings.Contains(err.Error(), "UNIQUE") {
 		writeError(w, http.StatusConflict, "un node porte déjà ce nom")
 		return
@@ -133,7 +140,13 @@ func (s *Server) handleCreateNode(w http.ResponseWriter, r *http.Request) {
 		s.internalError(w, r, err)
 		return
 	}
-	s.logger.Info("node created", "node", node.Name, "by", currentUser(r).DisplayName)
+	s.logger.Info("node created", "node", node.Name, "local", body.Local, "by", currentUser(r).DisplayName)
+	if body.Local {
+		if err := s.writeLocalJoin(token); err != nil {
+			s.internalError(w, r, err)
+			return
+		}
+	}
 	s.writeJoinCommand(w, r, http.StatusCreated, node, token, expires)
 }
 
@@ -155,6 +168,12 @@ func (s *Server) handleNewJoinCommand(w http.ResponseWriter, r *http.Request) {
 		s.internalError(w, r, err)
 		return
 	}
+	if node.IsLocal != 0 && s.localNodeSupported() {
+		if err := s.writeLocalJoin(token); err != nil {
+			s.internalError(w, r, err)
+			return
+		}
+	}
 	s.writeJoinCommand(w, r, http.StatusOK, node, token, expires)
 }
 
@@ -172,32 +191,12 @@ func (s *Server) writeJoinCommand(w http.ResponseWriter, r *http.Request, status
 		"  -v forgeyard-agent:/state \\\n" +
 		"  " + s.agentImage + " \\\n" +
 		"  run --server " + base + " " + joinArgs
-	// In the server's Compose project the agent reaches the server by its service name, which avoids going
-	// out through the public address (and the proxy in front of it).
-	compose := "services:\n" +
-		"  agent:\n" +
-		"    build:\n" +
-		"      context: .\n" +
-		"      target: agent\n" +
-		"    container_name: forgeyard-agent\n" +
-		"    restart: unless-stopped\n" +
-		"    volumes:\n" +
-		"      - /var/run/docker.sock:/var/run/docker.sock\n" +
-		"      - /:/host:ro\n" +
-		"      - forgeyard-agent:/state\n" +
-		"    environment:\n" +
-		"      FORGEYARD_HOST_ROOT: /host\n" +
-		"    command: run --server http://forgeyard:8080 --agent-server forgeyard:8081 " + joinArgs + "\n" +
-		"\n" +
-		"volumes:\n" +
-		"  forgeyard-agent:\n"
 	writeJSON(w, status, joinCommandResponse{
-		Node:           s.toNodeResponse(node),
-		Command:        "forgeyard-agent join --server " + base + " " + joinArgs,
-		DockerCommand:  docker,
-		ComposeService: compose,
-		ExpiresAt:      expires.Unix(),
-		AgentServer:    s.agentAddress(base),
+		Node:          s.toNodeResponse(node),
+		Command:       "forgeyard-agent join --server " + base + " " + joinArgs,
+		DockerCommand: docker,
+		ExpiresAt:     expires.Unix(),
+		AgentServer:   s.agentAddress(base),
 	})
 }
 

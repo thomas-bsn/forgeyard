@@ -11,6 +11,7 @@ export type Instance = {
   name: string
   setupRequired: boolean
   passwordLoginEnabled: boolean
+  localNodeSupported: boolean
   discordEnabled: boolean
   discordRedirectUrl: string
 }
@@ -46,6 +47,7 @@ export type Node = {
   dockerVersion: string
   agentVersion: string
   lastSeenAt?: number
+  isLocal: boolean
   publicIp: string
   ingressMode: 'traefik' | 'proxy'
   ingressHttpPort: number
@@ -103,7 +105,6 @@ export type JoinCommand = {
   node: Node
   command: string
   dockerCommand: string
-  composeService: string
   expiresAt: number
 }
 
@@ -162,9 +163,23 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
 export const api = {
   instance: () => request<Instance>('GET', '/api/instance'),
   me: () => request<User>('GET', '/api/auth/me'),
-  setup: (body: { token: string; instanceName: string; publicUrl: string; username: string; password: string }) =>
+  setup: (body: {
+    token: string
+    instanceName: string
+    publicUrl: string
+    username: string
+    password: string
+    localNode: boolean
+  }) =>
     request<User>('POST', '/api/setup', body),
-  setupDiscord: (body: { token: string; instanceName: string; publicUrl: string; clientId: string; clientSecret: string }) =>
+  setupDiscord: (body: {
+    token: string
+    instanceName: string
+    publicUrl: string
+    clientId: string
+    clientSecret: string
+    localNode: boolean
+  }) =>
     request<{ authorizeUrl: string }>('POST', '/api/setup/discord', body),
   login: (username: string, password: string) =>
     request<User>('POST', '/api/auth/login', { username, password }),
@@ -185,7 +200,7 @@ export const api = {
   nodes: () => request<Node[]>('GET', '/api/admin/nodes'),
   setNodeIngress: (id: number, body: { publicIp: string; ingressMode: 'traefik' | 'proxy'; ingressHttpPort: number }) =>
     request<Node>('PUT', `/api/admin/nodes/${id}/ingress`, body),
-  createNode: (name: string) => request<JoinCommand>('POST', '/api/admin/nodes', { name }),
+  createNode: (name: string, local: boolean) => request<JoinCommand>('POST', '/api/admin/nodes', { name, local }),
   newJoinCommand: (id: number) => request<JoinCommand>('POST', `/api/admin/nodes/${id}/join-command`, {}),
   deleteNode: (id: number) => request<void>('DELETE', `/api/admin/nodes/${id}`, {}),
   domainSettings: () => request<DomainSettings>('GET', '/api/admin/settings/domain'),
