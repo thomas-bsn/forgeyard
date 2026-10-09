@@ -61,6 +61,25 @@ export type JoinCommand = {
   expiresAt: number
 }
 
+export type DomainMode = 'none' | 'wildcard' | 'cloudflare'
+
+export type DomainSettings = {
+  publicUrl: string
+  discordRedirectUrl: string
+  mode: DomainMode
+  domain: string
+  publicIp: string
+  cloudflareHasToken: boolean
+  cloudflareZone?: string
+}
+
+export type DomainCheck = {
+  ok: boolean
+  message: string
+  name?: string
+  resolved?: string[]
+}
+
 export class ApiError extends Error {
   constructor(
     public status: number,
@@ -86,9 +105,9 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
 export const api = {
   instance: () => request<Instance>('GET', '/api/instance'),
   me: () => request<User>('GET', '/api/auth/me'),
-  setup: (body: { token: string; instanceName: string; username: string; password: string }) =>
+  setup: (body: { token: string; instanceName: string; publicUrl: string; username: string; password: string }) =>
     request<User>('POST', '/api/setup', body),
-  setupDiscord: (body: { token: string; instanceName: string; clientId: string; clientSecret: string }) =>
+  setupDiscord: (body: { token: string; instanceName: string; publicUrl: string; clientId: string; clientSecret: string }) =>
     request<{ authorizeUrl: string }>('POST', '/api/setup/discord', body),
   login: (username: string, password: string) =>
     request<User>('POST', '/api/auth/login', { username, password }),
@@ -104,6 +123,10 @@ export const api = {
   createNode: (name: string) => request<JoinCommand>('POST', '/api/admin/nodes', { name }),
   newJoinCommand: (id: number) => request<JoinCommand>('POST', `/api/admin/nodes/${id}/join-command`, {}),
   deleteNode: (id: number) => request<void>('DELETE', `/api/admin/nodes/${id}`, {}),
+  domainSettings: () => request<DomainSettings>('GET', '/api/admin/settings/domain'),
+  saveDomainSettings: (body: { publicUrl: string; mode: DomainMode; domain: string; publicIp: string; cloudflareToken: string }) =>
+    request<DomainSettings>('PUT', '/api/admin/settings/domain', body),
+  checkDomain: () => request<DomainCheck>('POST', '/api/admin/settings/domain/check', {}),
   loginSettings: () => request<{ passwordLogin: boolean }>('GET', '/api/admin/settings/login'),
   saveLoginSettings: (passwordLogin: boolean) =>
     request<{ passwordLogin: boolean }>('PUT', '/api/admin/settings/login', { passwordLogin }),

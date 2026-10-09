@@ -2,10 +2,11 @@ import { useState, type FormEvent } from 'react'
 import { api, ApiError, errorMessage, type Instance } from './api'
 import { DiscordAppSteps, DiscordIcon, Logo, ThemeToggle } from './ui'
 
-const steps = ['Token', 'Méthode', 'Compte admin', 'Instance'] as const
+const steps = ['Token', 'Instance', 'Méthode', 'Compte admin'] as const
+const CALLBACK_PATH = '/api/auth/discord/callback'
 type Method = 'discord' | 'password'
 
-export default function Setup({ instance, onDone }: { instance: Instance; onDone: () => void }) {
+export default function Setup({ onDone }: { instance: Instance; onDone: () => void }) {
   const [step, setStep] = useState(0)
   const [token, setToken] = useState('')
   const [method, setMethod] = useState<Method>('discord')
@@ -15,6 +16,9 @@ export default function Setup({ instance, onDone }: { instance: Instance; onDone
   const [clientId, setClientId] = useState('')
   const [clientSecret, setClientSecret] = useState('')
   const [instanceName, setInstanceName] = useState('Forgeyard')
+  const [publicUrl, setPublicUrl] = useState(window.location.origin)
+  const cleanUrl = publicUrl.trim().replace(/\/+$/, '')
+  const otherOrigin = cleanUrl !== window.location.origin
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
   const last = step === steps.length - 1
@@ -22,7 +26,7 @@ export default function Setup({ instance, onDone }: { instance: Instance; onDone
   function next(e: FormEvent) {
     e.preventDefault()
     setError('')
-    if (step === 2 && method === 'password') {
+    if (step === 3 && method === 'password') {
       if (password.length < 12) return setError('Le mot de passe doit faire au moins 12 caractères.')
       if (password !== confirm) return setError('Les mots de passe ne correspondent pas.')
     }
@@ -35,12 +39,12 @@ export default function Setup({ instance, onDone }: { instance: Instance; onDone
     setBusy(true)
     try {
       if (method === 'discord') {
-        const { authorizeUrl } = await api.setupDiscord({ token, instanceName, clientId, clientSecret })
+        const { authorizeUrl } = await api.setupDiscord({ token, instanceName, publicUrl: cleanUrl, clientId, clientSecret })
         // Discord sends the browser back to the server, which makes this account the superadmin.
         window.location.href = authorizeUrl
         return
       }
-      await api.setup({ token, instanceName, username, password })
+      await api.setup({ token, instanceName, publicUrl: cleanUrl, username, password })
       onDone()
     } catch (err) {
       setError(errorMessage(err))
@@ -84,6 +88,21 @@ export default function Setup({ instance, onDone }: { instance: Instance; onDone
 
           {step === 1 && (
             <>
+              <h2>Votre instance</h2>
+              <label className="field">
+                <span>Nom de votre PaaS</span>
+                <input value={instanceName} onChange={(e) => setInstanceName(e.target.value)} maxLength={64} required autoFocus />
+              </label>
+              <label className="field">
+                <span>Adresse de Forgeyard</span>
+                <input type="url" value={publicUrl} onChange={(e) => setPublicUrl(e.target.value)} placeholder="https://forgeyard.mondomaine.com" required />
+                <small>L'adresse à laquelle vous et vos utilisateurs ouvrirez Forgeyard. Modifiable plus tard dans Réglages.</small>
+              </label>
+            </>
+          )}
+
+          {step === 2 && (
+            <>
               <h2>Comment allez-vous vous connecter ?</h2>
               <p className="muted">Ce compte sera le superadmin de l'instance. Il garde cette méthode de connexion.</p>
               <div className="auth-options">
@@ -109,7 +128,7 @@ export default function Setup({ instance, onDone }: { instance: Instance; onDone
             </>
           )}
 
-          {step === 2 && method === 'password' && (
+          {step === 3 && method === 'password' && (
             <>
               <h2>Compte admin</h2>
               <label className="field">
@@ -136,10 +155,18 @@ export default function Setup({ instance, onDone }: { instance: Instance; onDone
             </>
           )}
 
-          {step === 2 && method === 'discord' && (
+          {step === 3 && method === 'discord' && (
             <>
               <h2>Application Discord</h2>
-              <DiscordAppSteps redirectUrl={instance.discordRedirectUrl} />
+              {otherOrigin && (
+                <div className="banner banner-warn">
+                  <span className="dot dot-warn" />
+                  <span>
+                    Vous avez choisi l'adresse <b>{cleanUrl}</b> : ouvrez ce wizard depuis cette adresse pour terminer avec Discord.
+                  </span>
+                </div>
+              )}
+              <DiscordAppSteps redirectUrl={cleanUrl + CALLBACK_PATH} />
               <label className="field">
                 <span>Client ID</span>
                 <input value={clientId} onChange={(e) => setClientId(e.target.value)} inputMode="numeric" placeholder="123456789012345678" required autoFocus />
@@ -152,19 +179,8 @@ export default function Setup({ instance, onDone }: { instance: Instance; onDone
             </>
           )}
 
-          {step === 3 && (
-            <>
-              <h2>Votre instance</h2>
-              <label className="field">
-                <span>Nom de votre PaaS</span>
-                <input value={instanceName} onChange={(e) => setInstanceName(e.target.value)} maxLength={64} required autoFocus />
-              </label>
-              {method === 'discord' && (
-                <p className="muted">
-                  En terminant, vous serez envoyé sur Discord. Le compte avec lequel vous vous connectez deviendra le superadmin.
-                </p>
-              )}
-            </>
+          {last && method === 'discord' && (
+            <p className="muted">En terminant, vous serez envoyé sur Discord. Le compte avec lequel vous vous connectez deviendra le superadmin.</p>
           )}
 
           {error && <p className="error">{error}</p>}

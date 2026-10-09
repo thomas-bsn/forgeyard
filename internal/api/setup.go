@@ -103,6 +103,18 @@ func (s *Server) checkSetupToken(w http.ResponseWriter, token string) bool {
 	return true
 }
 
+// setupPublicURL validates the address chosen in the wizard, defaulting to the one the browser uses.
+func setupPublicURL(w http.ResponseWriter, r *http.Request, raw string) (string, bool) {
+	if strings.TrimSpace(raw) == "" {
+		return requestOrigin(r), true
+	}
+	u, ok := normalizePublicURL(raw)
+	if !ok {
+		writeError(w, http.StatusBadRequest, "adresse de Forgeyard invalide : par exemple https://forgeyard.mondomaine.com")
+	}
+	return u, ok
+}
+
 // validInstanceName trims the name and writes an error unless it is 1 to 64 characters long.
 func validInstanceName(w http.ResponseWriter, name string) (string, bool) {
 	name = strings.TrimSpace(name)
@@ -116,6 +128,7 @@ func validInstanceName(w http.ResponseWriter, name string) (string, bool) {
 type setupRequest struct {
 	Token        string `json:"token"`
 	InstanceName string `json:"instanceName"`
+	PublicURL    string `json:"publicUrl"`
 	Username     string `json:"username"`
 	Password     string `json:"password"`
 }
@@ -131,6 +144,10 @@ func (s *Server) handleSetup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	name, ok := validInstanceName(w, req.InstanceName)
+	if !ok {
+		return
+	}
+	publicURL, ok := setupPublicURL(w, r, req.PublicURL)
 	if !ok {
 		return
 	}
@@ -172,7 +189,7 @@ func (s *Server) handleSetup(w http.ResponseWriter, r *http.Request) {
 		if err := q.SetSetting(r.Context(), db.SetSettingParams{Key: settingInstanceName, Value: name}); err != nil {
 			return err
 		}
-		if err := q.SetSetting(r.Context(), db.SetSettingParams{Key: settingPublicURL, Value: requestOrigin(r)}); err != nil {
+		if err := q.SetSetting(r.Context(), db.SetSettingParams{Key: settingPublicURL, Value: publicURL}); err != nil {
 			return err
 		}
 		if err := q.SetSetting(r.Context(), db.SetSettingParams{Key: settingPasswordLogin, Value: "1"}); err != nil {

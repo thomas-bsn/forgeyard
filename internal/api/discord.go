@@ -150,6 +150,7 @@ func (s *Server) handleDiscordStart(w http.ResponseWriter, r *http.Request) {
 type setupDiscordRequest struct {
 	Token        string `json:"token"`
 	InstanceName string `json:"instanceName"`
+	PublicURL    string `json:"publicUrl"`
 	ClientID     string `json:"clientId"`
 	ClientSecret string `json:"clientSecret"`
 }
@@ -168,6 +169,15 @@ func (s *Server) handleSetupDiscord(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	publicURL, ok := setupPublicURL(w, r, req.PublicURL)
+	if !ok {
+		return
+	}
+	// Discord sends the browser back to the public address, where the sign-in cookie must already be set.
+	if publicURL != requestOrigin(r) {
+		writeError(w, http.StatusBadRequest, "pour configurer Discord, ouvrez le wizard depuis "+publicURL+" : Discord ne renvoie que vers cette adresse")
+		return
+	}
 	req.ClientID = strings.TrimSpace(req.ClientID)
 	req.ClientSecret = strings.TrimSpace(req.ClientSecret)
 	if req.ClientID == "" || req.ClientSecret == "" {
@@ -182,7 +192,7 @@ func (s *Server) handleSetupDiscord(w http.ResponseWriter, r *http.Request) {
 		if err := q.SetSetting(r.Context(), db.SetSettingParams{Key: settingInstanceName, Value: name}); err != nil {
 			return err
 		}
-		return q.SetSetting(r.Context(), db.SetSettingParams{Key: settingPublicURL, Value: requestOrigin(r)})
+		return q.SetSetting(r.Context(), db.SetSettingParams{Key: settingPublicURL, Value: publicURL})
 	})
 	if err != nil {
 		s.internalError(w, r, err)

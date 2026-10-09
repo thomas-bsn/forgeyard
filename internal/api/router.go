@@ -2,14 +2,17 @@
 package api
 
 import (
+	"context"
 	"io/fs"
 	"log/slog"
+	"net"
 	"net/http"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/thomas-bsn/forgeyard/internal/auth"
+	"github.com/thomas-bsn/forgeyard/internal/cloudflare"
 	"github.com/thomas-bsn/forgeyard/internal/discord"
 	"github.com/thomas-bsn/forgeyard/internal/nodes"
 	"github.com/thomas-bsn/forgeyard/internal/pki"
@@ -39,6 +42,10 @@ type Server struct {
 	nodes     *nodes.Hub
 	agentPort string
 
+	// Replaced in tests.
+	newCloudflare func(token string) *cloudflare.Client
+	lookupHost    func(ctx context.Context, host string) ([]string, error)
+
 	mu          sync.Mutex
 	setupToken  string                // empty once setup is completed
 	oauthStates map[string]oauthState // pending Discord sign-ins, by state value
@@ -57,6 +64,9 @@ func NewServer(d Deps, setupToken string) *Server {
 		secrets:     d.Secrets,
 		setupToken:  setupToken,
 		oauthStates: make(map[string]oauthState),
+
+		newCloudflare: cloudflare.New,
+		lookupHost:    net.DefaultResolver.LookupHost,
 	}
 }
 
@@ -87,6 +97,9 @@ func (s *Server) Handler(webFS fs.FS) http.Handler {
 	mux.HandleFunc("DELETE /api/admin/nodes/{id}", s.requireAdmin(s.handleDeleteNode))
 	mux.HandleFunc("GET /api/nodes/ca", s.handleCACertificate)
 	mux.HandleFunc("POST /api/nodes/join", s.handleJoinNode)
+	mux.HandleFunc("GET /api/admin/settings/domain", s.requireSuperadmin(s.handleGetDomainSettings))
+	mux.HandleFunc("PUT /api/admin/settings/domain", s.requireSuperadmin(s.handlePutDomainSettings))
+	mux.HandleFunc("POST /api/admin/settings/domain/check", s.requireSuperadmin(s.handleCheckDomain))
 	mux.HandleFunc("GET /api/admin/settings/login", s.requireSuperadmin(s.handleGetLoginSettings))
 	mux.HandleFunc("PUT /api/admin/settings/login", s.requireSuperadmin(s.handlePutLoginSettings))
 	mux.Handle("/", spaHandler(webFS))

@@ -1,6 +1,7 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import { api, errorMessage, type DiscordSettings } from './api'
 import { DiscordAppSteps } from './ui'
+import DomainPanel from './Domain'
 
 function DiscordSettingsPanel() {
   const [settings, setSettings] = useState<DiscordSettings | null>(null)
@@ -81,6 +82,7 @@ function DiscordSettingsPanel() {
 export default function Settings({ superadmin }: { superadmin: boolean }) {
   return (
     <div className="section">
+      {superadmin && <DomainPanel />}
       {superadmin && <LoginSettingsPanel />}
       <DiscordSettingsPanel />
     </div>
