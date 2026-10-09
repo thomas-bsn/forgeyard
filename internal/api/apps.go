@@ -295,6 +295,23 @@ func (s *Server) syncApps(ctx context.Context) error {
 		for _, a := range apps {
 			host := appHostname(c, a.Name)
 			if provider != nil && host != "" {
+				// A record Forgeyard did not create belongs to another site: leave it alone.
+				if host != a.DnsName {
+					taken, err := dns.Exists(ctx, provider, c.Zone, host)
+					if err != nil {
+						failed = append(failed, host+" ("+err.Error()+")")
+						continue
+					}
+					if taken {
+						failed = append(failed, host+" (existe déjà pour un autre site : renommez l'app)")
+						if a.DnsName != "" {
+							if err := s.store.SetAppDNSName(ctx, db.SetAppDNSNameParams{DnsName: "", ID: a.ID}); err != nil {
+								return err
+							}
+						}
+						continue
+					}
+				}
 				if err := s.setAppRecord(ctx, c, provider, host, nodeIP(node, c)); err != nil {
 					failed = append(failed, host+" ("+err.Error()+")")
 					continue
@@ -432,6 +449,20 @@ func (s *Server) handleCreateApp(w http.ResponseWriter, r *http.Request) {
 	if s.reservedNames(ctx, r, c)[in.Name] {
 		writeError(w, http.StatusConflict, "ce nom est réservé, choisissez-en un autre")
 		return
+	}
+	// A name already in the DNS zone belongs to another site: its record must not be overwritten.
+	if p, err := s.dnsProvider(c); err == nil && p != nil {
+		dctx, cancel := context.WithTimeout(ctx, 20*time.Second)
+		taken, err := dns.Exists(dctx, p, c.Zone, appHostname(c, in.Name))
+		cancel()
+		if err != nil {
+			writeError(w, http.StatusBadGateway, "vérification du DNS : "+err.Error())
+			return
+		}
+		if taken {
+			writeError(w, http.StatusConflict, appHostname(c, in.Name)+" existe déjà dans votre DNS (un autre site l'utilise) : choisissez un autre nom")
+			return
+		}
 	}
 	node, err := s.pickNode(ctx)
 	if errors.Is(err, errNoNode) {

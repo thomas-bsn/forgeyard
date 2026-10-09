@@ -140,3 +140,19 @@ func DeleteAddress(ctx context.Context, p Provider, zone, name string, ip netip.
 	}})
 	return err
 }
+
+// Exists reports whether name (a full domain name in zone) already has an A, AAAA or CNAME record.
+func Exists(ctx context.Context, p Provider, zone, name string) (bool, error) {
+	recs, err := p.GetRecords(ctx, zone)
+	if err != nil {
+		return false, err
+	}
+	rel := libdns.RelativeName(name, zone)
+	for _, r := range recs {
+		rr := r.RR()
+		if rr.Name == rel && (rr.Type == "A" || rr.Type == "AAAA" || rr.Type == "CNAME") {
+			return true, nil
+		}
+	}
+	return false, nil
+}

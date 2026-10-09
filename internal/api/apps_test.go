@@ -4,6 +4,7 @@ import (
 	"context"
 	"net"
 	"net/http"
+	"net/netip"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -11,6 +12,8 @@ import (
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
+
+	"github.com/libdns/libdns"
 
 	"github.com/thomas-bsn/forgeyard/internal/agent"
 	"github.com/thomas-bsn/forgeyard/internal/agentpb"
@@ -266,5 +269,14 @@ func TestDomainConfiguredAfterApps(t *testing.T) {
 	}
 	if ip := mem.Lookup("example.com.", "whoami", "A"); ip != "203.0.113.1" {
 		t.Fatalf("record after domain: %q", ip)
+	}
+
+	// A name another site already uses in the zone is refused, and its record left untouched.
+	mem.SetRecords(context.Background(), "example.com.", []libdns.Record{libdns.Address{Name: "games", IP: netip.MustParseAddr("192.0.2.9")}})
+	if code := postJSON(t, admin, ts.URL+"/api/apps", appInput{Name: "games", Image: "nginx", Port: 80}, nil); code != http.StatusConflict {
+		t.Fatalf("app over an existing record: %d", code)
+	}
+	if ip := mem.Lookup("example.com.", "games", "A"); ip != "192.0.2.9" {
+		t.Fatalf("existing record changed: %q", ip)
 	}
 }
