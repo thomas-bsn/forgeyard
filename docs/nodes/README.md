@@ -58,7 +58,7 @@ Les données viennent de l'agent, qui décrit toutes les 10 secondes les réseau
 Réglé dans la fenêtre « Réseau… » de sa carte :
 
 - **comment arrivent ses visites** : pour la machine de Forgeyard, Traefik ou ton reverse proxy ; pour les autres, relais par la machine de Forgeyard, directement, ou leur propre reverse proxy (voir [routing](../network/routing.md#les-modes-dentrée-dun-node)) ;
-- **IP locale** : trouvée par l'agent, pré-remplie dans l'exemple de règle pour votre proxy ;
+- **IP locale** : trouvée par l'agent (un conteneur éphémère sur le réseau de l'hôte la lit) ; s'il n'y arrive pas, le server prend l'adresse d'où l'agent se connecte quand elle est sur un réseau local (10.x, 192.168.x). Sert au relais et à l'exemple de règle pour un proxy ;
 - **IP publique** : celle vers laquelle Forgeyard fait pointer le DNS des apps de ce node. Sans objet en relais (le DNS pointe vers la machine de Forgeyard). Vide, c'est celle de Réglages › Domaine des apps : il ne faut la remplir que pour un node qui n'est pas derrière la même box (un VPS, un autre site).
 
 ## La carte d'un node

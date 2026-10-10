@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"log/slog"
+	"net/netip"
 	"strconv"
 	"sync"
 	"time"
@@ -402,10 +403,19 @@ func (h *Hub) Connect(stream agentpb.AgentService_ConnectServer) error {
 		return status.Error(codes.InvalidArgument, "the first message must be Hello")
 	}
 	info := hello.GetInfo()
+	localIP := info.GetLocalIp()
+	if localIP == "" {
+		// The agent could not tell: the address it connects from is its local one when it comes over the
+		// local network, which is the case of the nodes Forgeyard's machine relays.
+		if ip := lanPeerIP(stream.Context()); ip != "" {
+			localIP = ip
+			h.logger.Info("node local IP taken from its connection", "node", node.Name, "ip", ip)
+		}
+	}
 	if err := h.store.UpdateNodeInfo(stream.Context(), db.UpdateNodeInfoParams{
 		Hostname: info.GetHostname(), Os: info.GetOs(), Arch: info.GetArch(), Cpus: int64(info.GetCpus()),
 		MemoryBytes: int64(info.GetMemoryBytes()), DiskBytes: int64(info.GetDiskBytes()),
-		DockerVersion: info.GetDockerVersion(), AgentVersion: hello.GetAgentVersion(), LocalIp: info.GetLocalIp(), DockerError: info.GetDockerError(),
+		DockerVersion: info.GetDockerVersion(), AgentVersion: hello.GetAgentVersion(), LocalIp: localIP, DockerError: info.GetDockerError(),
 		LastSeenAt: sql.NullInt64{Int64: time.Now().Unix(), Valid: true}, ID: node.ID,
 	}); err != nil {
 		return status.Error(codes.Internal, "saving node info failed")
@@ -701,3 +711,26 @@ func (h *Hub) deliverExec(m *agentpb.ExecOutput) {
 		h.endExec(m.GetSessionId())
 	}
 }
+
+// lanPeerIP is the address a stream comes from, when it is on a home or office network (10/8,
+// 192.168/16). 172.16/12 is left out: it is also where Docker's own networks are, whose gateway a
+// connection may come through instead of the real address.
+func lanPeerIP(ctx context.Context) string {
+	p, ok := peer.FromContext(ctx)
+	if !ok || p.Addr == nil {
+		return ""
+	}
+	ap, err := netip.ParseAddrPort(p.Addr.String())
+	if err != nil {
+		return ""
+	}
+	ip := ap.Addr().Unmap()
+	for _, prefix := range lanPrefixes {
+		if prefix.Contains(ip) {
+			return ip.String()
+		}
+	}
+	return ""
+}
+
+var lanPrefixes = []netip.Prefix{netip.MustParsePrefix("10.0.0.0/8"), netip.MustParsePrefix("192.168.0.0/16")}
