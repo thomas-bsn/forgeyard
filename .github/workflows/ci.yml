@@ -1,6 +1,7 @@
-# Builds the server and agent images for amd64 and arm64 and publishes them to GitHub Container Registry:
-# :latest from main, :X.Y.Z and :X.Y from version tags (vX.Y.Z).
-name: Docker images
+# Checks the Go code, the web UI and the generated code in parallel; when all pass, builds the server and
+# agent images for amd64 and arm64 and publishes them to GitHub Container Registry: :latest from main,
+# :X.Y.Z and :X.Y from version tags (vX.Y.Z). Pull requests build the images without publishing them.
+name: CI
 
 on:
   push:
@@ -13,17 +14,49 @@ permissions:
   packages: write
 
 jobs:
-  test:
+  go:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
-      - run: go test ./...
+      - run: go vet ./...
+      - run: go test -race ./...
+
+  web:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - run: npm ci
+        working-directory: web
+      # Type-checks (tsc -b) then bundles.
+      - run: npm run build
+        working-directory: web
+
+  # The gRPC and sqlc code is committed: it must match proto/ and the SQL files.
+  generated:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - run: make generate
+      - name: Generated code is up to date
+        run: |
+          if ! git diff --exit-code -- internal/agentpb internal/store/db; then
+            echo "::error::Generated code is stale: run 'make generate' and commit the result."
+            exit 1
+          fi
 
   image:
-    needs: test
+    needs: [go, web, generated]
     runs-on: ubuntu-latest
     strategy:
       matrix:
