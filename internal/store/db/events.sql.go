@@ -30,6 +30,29 @@ func (q *Queries) AddAppEvent(ctx context.Context, arg AddAppEventParams) error 
 	return err
 }
 
+const addContainerEvent = `-- name: AddContainerEvent :exec
+INSERT INTO container_events (node_id, name, at, kind, message) VALUES (?, ?, ?, ?, ?)
+`
+
+type AddContainerEventParams struct {
+	NodeID  int64
+	Name    string
+	At      int64
+	Kind    string
+	Message string
+}
+
+func (q *Queries) AddContainerEvent(ctx context.Context, arg AddContainerEventParams) error {
+	_, err := q.db.ExecContext(ctx, addContainerEvent,
+		arg.NodeID,
+		arg.Name,
+		arg.At,
+		arg.Kind,
+		arg.Message,
+	)
+	return err
+}
+
 const listAppEvents = `-- name: ListAppEvents :many
 SELECT id, app_id, at, kind, message FROM app_events WHERE app_id = ? ORDER BY id DESC LIMIT ?
 `
@@ -68,6 +91,46 @@ func (q *Queries) ListAppEvents(ctx context.Context, arg ListAppEventsParams) ([
 	return items, nil
 }
 
+const listContainerEvents = `-- name: ListContainerEvents :many
+SELECT id, node_id, name, at, kind, message FROM container_events WHERE node_id = ? AND name = ? ORDER BY id DESC LIMIT ?
+`
+
+type ListContainerEventsParams struct {
+	NodeID int64
+	Name   string
+	Limit  int64
+}
+
+func (q *Queries) ListContainerEvents(ctx context.Context, arg ListContainerEventsParams) ([]ContainerEvent, error) {
+	rows, err := q.db.QueryContext(ctx, listContainerEvents, arg.NodeID, arg.Name, arg.Limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ContainerEvent{}
+	for rows.Next() {
+		var i ContainerEvent
+		if err := rows.Scan(
+			&i.ID,
+			&i.NodeID,
+			&i.Name,
+			&i.At,
+			&i.Kind,
+			&i.Message,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const pruneAppEvents = `-- name: PruneAppEvents :exec
 DELETE FROM app_events
 WHERE app_events.app_id = ?1
@@ -76,5 +139,23 @@ WHERE app_events.app_id = ?1
 
 func (q *Queries) PruneAppEvents(ctx context.Context, appID int64) error {
 	_, err := q.db.ExecContext(ctx, pruneAppEvents, appID)
+	return err
+}
+
+const pruneContainerEvents = `-- name: PruneContainerEvents :exec
+DELETE FROM container_events
+WHERE container_events.node_id = ?1 AND container_events.name = ?2
+  AND container_events.id NOT IN (
+    SELECT e.id FROM container_events e WHERE e.node_id = ?1 AND e.name = ?2 ORDER BY e.id DESC LIMIT 200
+  )
+`
+
+type PruneContainerEventsParams struct {
+	NodeID int64
+	Name   string
+}
+
+func (q *Queries) PruneContainerEvents(ctx context.Context, arg PruneContainerEventsParams) error {
+	_, err := q.db.ExecContext(ctx, pruneContainerEvents, arg.NodeID, arg.Name)
 	return err
 }

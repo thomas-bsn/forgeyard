@@ -41,21 +41,23 @@ func nodeInfo(ctx context.Context, dc *docker.Client, logger *slog.Logger) *agen
 		info.DiskBytes = d.Total
 	}
 	// Docker describes the host itself, which gopsutil cannot do from inside a container.
-	if dc != nil {
-		if di, err := dc.Info(ctx); err == nil {
-			info.DockerVersion = di.ServerVersion
-			if di.Name != "" {
-				info.Hostname = di.Name
-			}
-			if di.OperatingSystem != "" {
-				info.Os = di.OperatingSystem
-			}
-			if di.NCPU > 0 {
-				info.Cpus = int32(di.NCPU)
-			}
-			if di.MemTotal > 0 {
-				info.MemoryBytes = di.MemTotal
-			}
+	if dc == nil {
+		info.DockerError = "no Docker client"
+	} else if di, err := dc.Info(ctx); err != nil {
+		info.DockerError = err.Error()
+	} else {
+		info.DockerVersion = di.ServerVersion
+		if di.Name != "" {
+			info.Hostname = di.Name
+		}
+		if di.OperatingSystem != "" {
+			info.Os = di.OperatingSystem
+		}
+		if di.NCPU > 0 {
+			info.Cpus = int32(di.NCPU)
+		}
+		if di.MemTotal > 0 {
+			info.MemoryBytes = di.MemTotal
 		}
 	}
 	return info

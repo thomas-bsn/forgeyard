@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"log/slog"
+	"strconv"
 	"sync"
 	"time"
 
@@ -37,6 +38,62 @@ type UsageSample struct {
 	At              int64   `json:"t"`
 	CPUPercent      float64 `json:"cpu"`
 	MemoryUsedBytes uint64  `json:"mem"`
+}
+
+// ExternalChangeFunc is told when an external container of a node changes state.
+type ExternalChangeFunc func(nodeID int64, from, to *agentpb.ExternalContainer)
+
+// ExternalKey identifies an external container across recreations: docker compose gives a recreated
+// container a new ID but the same name.
+func ExternalKey(nodeID int64, name string) string {
+	return strconv.FormatInt(nodeID, 10) + "/" + name
+}
+
+// ExternalUsage returns an external container's resource use over the last hour, oldest first.
+func (h *Hub) ExternalUsage(nodeID int64, name string) []UsageSample {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return append([]UsageSample(nil), h.extUsage[ExternalKey(nodeID, name)]...)
+}
+
+func addSample(samples []UsageSample, now time.Time, cpu float64, mem uint64) []UsageSample {
+	if n := len(samples); n > 0 && now.Unix()-samples[n-1].At < int64(usageEvery/time.Second) {
+		return samples
+	}
+	samples = append(samples, UsageSample{At: now.Unix(), CPUPercent: cpu, MemoryUsedBytes: mem})
+	if len(samples) > usageLen {
+		samples = samples[len(samples)-usageLen:]
+	}
+	return samples
+}
+
+func (h *Hub) setExternals(nodeID int64, list []*agentpb.ExternalContainer) {
+	type change struct{ from, to *agentpb.ExternalContainer }
+	var changes []change
+	now := time.Now()
+	h.mu.Lock()
+	prev := map[string]*agentpb.ExternalContainer{}
+	for _, c := range h.externals[nodeID] {
+		prev[c.GetName()] = c
+	}
+	_, known := h.externals[nodeID]
+	for _, c := range list {
+		key := ExternalKey(nodeID, c.GetName())
+		if c.GetState() == "running" && c.GetMemoryUsedBytes() > 0 {
+			h.extUsage[key] = addSample(h.extUsage[key], now, c.GetCpuPercent(), c.GetMemoryUsedBytes())
+		}
+		// The first list after a connection is the baseline: only later differences are changes.
+		if p, ok := prev[c.GetName()]; known && (!ok || p.GetState() != c.GetState() || p.GetId() != c.GetId()) {
+			changes = append(changes, change{p, c})
+		}
+	}
+	h.externals[nodeID] = list
+	h.mu.Unlock()
+	if h.ExternalChanged != nil {
+		for _, c := range changes {
+			h.ExternalChanged(nodeID, c.from, c.to)
+		}
+	}
 }
 
 // StateChangeFunc is told when an app's reported state changes from a known previous state.
@@ -76,12 +133,15 @@ type Hub struct {
 	Desired DesiredStateFunc
 	// StateChanged, if set, is called when an app's state changes. Set it before serving.
 	StateChanged StateChangeFunc
+	// ExternalChanged, if set, is called when an external container's state changes. Set it before serving.
+	ExternalChanged ExternalChangeFunc
 
 	mu         sync.Mutex
 	sessions   map[int64]*session
 	statuses   map[int64]AppStatus                    // by app ID
 	usage      map[int64][]UsageSample                // by app ID, oldest first
 	externals  map[int64][]*agentpb.ExternalContainer // by node ID, while connected
+	extUsage   map[string][]UsageSample               // by ExternalKey, oldest first
 	logStreams map[string]chan *agentpb.LogLine       // by stream ID
 }
 
@@ -89,7 +149,7 @@ type Hub struct {
 func NewHub(st *store.Store, logger *slog.Logger) *Hub {
 	return &Hub{
 		store: st, logger: logger, sessions: make(map[int64]*session),
-		statuses: make(map[int64]AppStatus), usage: make(map[int64][]UsageSample),
+		statuses: make(map[int64]AppStatus), usage: make(map[int64][]UsageSample), extUsage: make(map[string][]UsageSample),
 		externals: make(map[int64][]*agentpb.ExternalContainer), logStreams: make(map[string]chan *agentpb.LogLine),
 	}
 }
@@ -277,7 +337,7 @@ func (h *Hub) Connect(stream agentpb.AgentService_ConnectServer) error {
 	if err := h.store.UpdateNodeInfo(stream.Context(), db.UpdateNodeInfoParams{
 		Hostname: info.GetHostname(), Os: info.GetOs(), Arch: info.GetArch(), Cpus: int64(info.GetCpus()),
 		MemoryBytes: int64(info.GetMemoryBytes()), DiskBytes: int64(info.GetDiskBytes()),
-		DockerVersion: info.GetDockerVersion(), AgentVersion: hello.GetAgentVersion(), LocalIp: info.GetLocalIp(),
+		DockerVersion: info.GetDockerVersion(), AgentVersion: hello.GetAgentVersion(), LocalIp: info.GetLocalIp(), DockerError: info.GetDockerError(),
 		LastSeenAt: sql.NullInt64{Int64: time.Now().Unix(), Valid: true}, ID: node.ID,
 	}); err != nil {
 		return status.Error(codes.Internal, "saving node info failed")
@@ -348,9 +408,7 @@ func (h *Hub) Connect(stream agentpb.AgentService_ConnectServer) error {
 					lastTouch = time.Now()
 				}
 			case *agentpb.AgentMessage_ExternalContainers:
-				h.mu.Lock()
-				h.externals[node.ID] = m.ExternalContainers.GetContainers()
-				h.mu.Unlock()
+				h.setExternals(node.ID, m.ExternalContainers.GetContainers())
 			case *agentpb.AgentMessage_AppStatuses:
 				h.setStatuses(node.ID, m.AppStatuses.GetApps())
 			case *agentpb.AgentMessage_LogLine:
@@ -423,15 +481,9 @@ func (h *Hub) setStatuses(nodeID int64, list []*agentpb.AppStatus) {
 			changes = append(changes, change{prev.Status, st})
 		}
 		h.statuses[id] = AppStatus{NodeID: nodeID, Status: st, ReportedAt: now}
-		if st.GetState() == "running" {
-			samples := h.usage[id]
-			if n := len(samples); n == 0 || now.Unix()-samples[n-1].At >= int64(usageEvery/time.Second) {
-				samples = append(samples, UsageSample{At: now.Unix(), CPUPercent: st.GetCpuPercent(), MemoryUsedBytes: st.GetMemoryUsedBytes()})
-				if len(samples) > usageLen {
-					samples = samples[len(samples)-usageLen:]
-				}
-				h.usage[id] = samples
-			}
+		// No memory means no measure (an older agent, or Docker could not read the container's cgroup).
+		if st.GetState() == "running" && st.GetMemoryUsedBytes() > 0 {
+			h.usage[id] = addSample(h.usage[id], now, st.GetCpuPercent(), st.GetMemoryUsedBytes())
 		}
 	}
 	h.mu.Unlock()

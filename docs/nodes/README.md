@@ -15,6 +15,8 @@ Code : `internal/api/nodes.go`, `internal/api/localnode.go`, `internal/nodes` (c
 | En ligne | L'agent est connecté en ce moment |
 | Hors ligne | L'agent a rejoint mais n'est pas connecté. Ses conteneurs continuent de tourner. |
 
+Si l'agent est connecté mais ne joint pas Docker, la carte l'affiche en rouge avec l'erreur de Docker (socket non monté, permission…).
+
 ## Ajouter une autre machine
 
 1. Nodes › « + Ajouter un node » › « Une autre machine » : nom (`a-z`, `0-9`, `-`, 32 caractères max.).

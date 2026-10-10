@@ -461,7 +461,7 @@ func (q *Queries) UpdateAppConfig(ctx context.Context, arg UpdateAppConfigParams
 }
 
 const updateNodeIngress = `-- name: UpdateNodeIngress :one
-UPDATE nodes SET public_ip = ?, ingress_mode = ?, ingress_http_port = ? WHERE id = ? RETURNING id, name, status, join_token_hash, join_expires_at, cert_serial, hostname, os, arch, cpus, memory_bytes, disk_bytes, docker_version, agent_version, last_seen_at, created_at, public_ip, ingress_mode, ingress_http_port, is_local, local_ip
+UPDATE nodes SET public_ip = ?, ingress_mode = ?, ingress_http_port = ? WHERE id = ? RETURNING id, name, status, join_token_hash, join_expires_at, cert_serial, hostname, os, arch, cpus, memory_bytes, disk_bytes, docker_version, agent_version, last_seen_at, created_at, public_ip, ingress_mode, ingress_http_port, is_local, local_ip, docker_error
 `
 
 type UpdateNodeIngressParams struct {
@@ -501,6 +501,7 @@ func (q *Queries) UpdateNodeIngress(ctx context.Context, arg UpdateNodeIngressPa
 		&i.IngressHttpPort,
 		&i.IsLocal,
 		&i.LocalIp,
+		&i.DockerError,
 	)
 	return i, err
 }

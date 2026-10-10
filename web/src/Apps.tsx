@@ -617,22 +617,24 @@ function AppDetail({ app, onChange, go }: { app: App; onChange: () => void; go: 
       </aside>
 
       <main className="detail-main">
-        <div className="segmented" role="tablist" aria-label="Vues de l’app">
-          {(
-            [
-              ['observability', 'Observabilité'],
-              ['logs', 'Logs'],
-              ['events', 'Événements'],
-            ] as const
-          ).map(([value, label]) => (
-            <button key={value} type="button" role="tab" aria-selected={tab === value} className={tab === value ? 'on' : ''} onClick={() => setTab(value)}>
-              {label}
-            </button>
-          ))}
-        </div>
-        {tab === 'observability' && <Observability app={app} />}
+        <DetailTabs tab={tab} onTab={setTab} label="Vues de l’app" />
+        {tab === 'observability' && (
+          <Observability
+            m={{
+              key: `app-${app.id}`,
+              load: () => api.appUsage(app.id),
+              running: app.state === 'running',
+              cpuPercent: app.cpuPercent,
+              memoryUsedBytes: app.memoryUsedBytes,
+              memoryLimitBytes: app.memoryMb * 1024 * 1024,
+              lifecycle: true,
+              restartCount: app.restartCount,
+              startedAt: app.startedAt,
+            }}
+          />
+        )}
         {tab === 'logs' && <Logs url={`/api/apps/${app.id}/logs`} />}
-        {tab === 'events' && <Events appId={app.id} />}
+        {tab === 'events' && <Events eventsKey={`app-${app.id}`} load={() => api.appEvents(app.id)} />}
       </main>
 
       {editing && full && (
@@ -652,81 +654,117 @@ function AppDetail({ app, onChange, go }: { app: App; onChange: () => void; go: 
   )
 }
 
-function Observability({ app }: { app: App }) {
+/** What the observability view shows: the current measures, and how to load the last hour. */
+type Measures = {
+  key: string
+  load: () => Promise<AppUsage>
+  running: boolean
+  cpuPercent?: number
+  memoryUsedBytes?: number
+  memoryLimitBytes?: number
+  // Restarts and start time are known for Forgeyard's apps only.
+  lifecycle?: boolean
+  restartCount?: number
+  startedAt?: number
+}
+
+const timeFormat = (t: number) => new Date(t * 1000).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+
+function Observability({ m }: { m: Measures }) {
   const [usage, setUsage] = useState<AppUsage | null>(null)
 
   useEffect(() => {
-    const load = () => api.appUsage(app.id).then(setUsage, () => {})
+    const load = () => m.load().then(setUsage, () => {})
     load()
     const id = setInterval(load, USAGE_POLL_MS)
     return () => clearInterval(id)
-  }, [app.id])
+  }, [m.key])
 
-  const running = app.state === 'running'
-  const limit = usage?.memoryLimitBytes ?? app.memoryMb << 20
+  // No memory means no measure: the agent could not read the container's use.
+  const measured = m.running && !!m.memoryUsedBytes
+  const limit = usage?.memoryLimitBytes || m.memoryLimitBytes || 0
   const samples = usage?.samples ?? []
+  const times = samples.map((s) => s.t)
 
   return (
     <>
       <div className="tiles">
         <div className="tile">
           <div className="k">CPU</div>
-          <div className="v">{running ? `${(app.cpuPercent ?? 0).toFixed(1)} %` : '–'}</div>
+          <div className="v">{measured ? `${(m.cpuPercent ?? 0).toFixed(1)} %` : '–'}</div>
         </div>
         <div className="tile">
           <div className="k">Mémoire</div>
           <div className="v">
-            {running && app.memoryUsedBytes ? formatBytes(app.memoryUsedBytes) : '–'} <small>/ {formatBytes(limit)}</small>
+            {measured ? formatBytes(m.memoryUsedBytes!) : '–'} {limit > 0 && <small>/ {formatBytes(limit)}</small>}
           </div>
         </div>
-        <div className="tile">
-          <div className="k">Redémarrages</div>
-          <div className={`v ${app.restartCount ? 'v-down' : ''}`}>{app.restartCount ?? 0}</div>
-        </div>
-        <div className="tile">
-          <div className="k">Démarrée</div>
-          <div className="v v-small">{running && app.startedAt ? since(app.startedAt) : '–'}</div>
-        </div>
+        {m.lifecycle && (
+          <>
+            <div className="tile">
+              <div className="k">Redémarrages</div>
+              <div className={`v ${m.restartCount ? 'v-down' : ''}`}>{m.restartCount ?? 0}</div>
+            </div>
+            <div className="tile">
+              <div className="k">Démarrée</div>
+              <div className="v v-small">{m.running && m.startedAt ? since(m.startedAt) : '–'}</div>
+            </div>
+          </>
+        )}
       </div>
+      {m.running && !measured && (
+        <p className="hint">
+          Pas de mesure pour l’instant. Si ça dure, Docker ne fournit pas l’utilisation de ce conteneur sur ce node : vérifiez avec{' '}
+          <code>docker stats --no-stream</code> sur la machine.
+        </p>
+      )}
       <section className="panel chart-panel">
         <div className="chart-head">
           <h2>CPU</h2>
           <span className="muted">dernière heure · en % d’un cœur</span>
         </div>
-        <AreaChart values={samples.map((s) => s.cpu)} max={5} label="CPU sur la dernière heure" />
+        <AreaChart values={samples.map((s) => s.cpu)} times={times} format={(v) => `${v.toFixed(2)} %`} max={5} label="CPU sur la dernière heure" timeFormat={timeFormat} />
       </section>
       <section className="panel chart-panel">
         <div className="chart-head">
           <h2>Mémoire</h2>
-          <span className="muted">dernière heure · limite {formatBytes(limit)}</span>
+          <span className="muted">dernière heure{limit > 0 ? ` · limite ${formatBytes(limit)}` : ''}</span>
         </div>
-        <AreaChart values={samples.map((s) => s.mem)} max={limit} color="var(--warn)" label="Mémoire sur la dernière heure" />
+        <AreaChart
+          values={samples.map((s) => s.mem)}
+          times={times}
+          format={(v) => formatBytes(v) + (limit > 0 ? ` (${Math.round((v / limit) * 100)} % de la limite)` : '')}
+          max={limit || undefined}
+          color="var(--warn)"
+          label="Mémoire sur la dernière heure"
+          timeFormat={timeFormat}
+        />
       </section>
     </>
   )
 }
 
-function Events({ appId }: { appId: number }) {
+function Events({ eventsKey, load }: { eventsKey: string; load: () => Promise<AppEvent[]> }) {
   const [events, setEvents] = useState<AppEvent[] | null>(null)
   const [error, setError] = useState('')
 
   useEffect(() => {
-    const load = () =>
-      api.appEvents(appId).then(
+    const fetch = () =>
+      load().then(
         (e) => {
           setEvents(e)
           setError('')
         },
         (err) => setError(errorMessage(err)),
       )
-    load()
-    const id = setInterval(load, POLL_MS * 2)
+    fetch()
+    const id = setInterval(fetch, POLL_MS * 2)
     return () => clearInterval(id)
-  }, [appId])
+  }, [eventsKey])
 
   if (error) return <p className="error">{error}</p>
   if (!events) return null
-  if (events.length === 0) return <div className="empty-state">Aucun événement pour le moment.</div>
+  if (events.length === 0) return <div className="empty-state">Aucun événement pour le moment : démarrages, arrêts, crashs et changements s’afficheront ici.</div>
   const tones = { info: '', success: 'up', warning: 'warn', error: 'down' }
   return (
     <ol className="panel events">
@@ -743,7 +781,26 @@ function Events({ appId }: { appId: number }) {
   )
 }
 
+function DetailTabs({ tab, onTab, label }: { tab: DetailTab; onTab: (t: DetailTab) => void; label: string }) {
+  return (
+    <div className="segmented" role="tablist" aria-label={label}>
+      {(
+        [
+          ['observability', 'Observabilité'],
+          ['logs', 'Logs'],
+          ['events', 'Événements'],
+        ] as const
+      ).map(([value, text]) => (
+        <button key={value} type="button" role="tab" aria-selected={tab === value} className={tab === value ? 'on' : ''} onClick={() => onTab(value)}>
+          {text}
+        </button>
+      ))}
+    </div>
+  )
+}
+
 function ContainerDetail({ container: c, superadmin, onChange, go }: { container: Container; superadmin: boolean; onChange: () => void; go: (path: string) => void }) {
+  const [tab, setTab] = useState<DetailTab>('observability')
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
   const tone = containerTone(c)
@@ -796,10 +853,6 @@ function ContainerDetail({ container: c, superadmin, onChange, go }: { container
               <dd>{c.composeProject}</dd>
             </>
           )}
-          <dt>CPU</dt>
-          <dd>{c.state === 'running' ? `${(c.cpuPercent ?? 0).toFixed(1)} %` : '–'}</dd>
-          <dt>Mémoire</dt>
-          <dd>{c.memoryUsedBytes ? formatBytes(c.memoryUsedBytes) : '–'}</dd>
           <dt>Propriétaire</dt>
           <dd>{c.ownerName}</dd>
         </dl>
@@ -824,11 +877,25 @@ function ContainerDetail({ container: c, superadmin, onChange, go }: { container
         )}
       </aside>
       <main className="detail-main">
-        {superadmin ? (
-          <Logs url={`/api/admin/nodes/${c.nodeId}/containers/${c.id}/logs`} />
-        ) : (
-          <div className="empty-state">Les logs des conteneurs externes sont réservés au superadmin.</div>
+        <DetailTabs tab={tab} onTab={setTab} label="Vues du conteneur" />
+        {tab === 'observability' && (
+          <Observability
+            m={{
+              key: `c-${c.nodeId}-${c.name}`,
+              load: () => api.containerUsage(c),
+              running: c.state === 'running',
+              cpuPercent: c.cpuPercent,
+              memoryUsedBytes: c.memoryUsedBytes,
+            }}
+          />
         )}
+        {tab === 'logs' &&
+          (superadmin ? (
+            <Logs url={`/api/admin/nodes/${c.nodeId}/containers/${c.id}/logs`} />
+          ) : (
+            <div className="empty-state">Les logs des conteneurs externes sont réservés au superadmin.</div>
+          ))}
+        {tab === 'events' && <Events eventsKey={`c-${c.nodeId}-${c.name}`} load={() => api.containerEvents(c)} />}
       </main>
     </div>
   )

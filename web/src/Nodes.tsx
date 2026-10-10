@@ -267,8 +267,17 @@ function NodeCard({
         <>
           <p className="muted node-specs">
             {node.hostname} · {node.os} · {node.arch} · {node.cpus} CPU
-            {node.dockerVersion ? ` · Docker ${node.dockerVersion}` : ' · Docker injoignable'}
+            {node.dockerVersion ? ` · Docker ${node.dockerVersion}` : ''}
           </p>
+          {!node.dockerVersion && (
+            <div className="banner banner-down">
+              <span className="dot dot-down" />
+              <span>
+                L’agent n’arrive pas à joindre Docker sur cette machine{node.dockerError ? ` : ${node.dockerError}` : '.'} Vérifiez que le
+                socket est monté (<code>-v /var/run/docker.sock:/var/run/docker.sock</code>) puis redémarrez l’agent.
+              </span>
+            </div>
+          )}
           {m ? (
             <div className="meters-row">
               <Meter label="CPU" pct={m.cpuPercent} text={`${m.cpuPercent.toFixed(0)} %`} />

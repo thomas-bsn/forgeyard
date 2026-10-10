@@ -45,6 +45,7 @@ message NodeInfo {
   uint64 disk_bytes = 6;
   string docker_version = 7;
   string local_ip = 8; // the host's IP on its local network, for a reverse proxy to reach Traefik
+  string docker_error = 9; // why Docker could not be reached, when it could not
 }
 
 // Metrics is sent every few seconds.

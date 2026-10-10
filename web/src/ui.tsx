@@ -276,21 +276,74 @@ export function Switch({ checked, onChange, label, disabled }: { checked: boolea
   )
 }
 
-/** A small area chart of values over time; max sets the top of the scale (else the highest value). */
-export function AreaChart({ values, max, color = 'var(--accent)', label }: { values: number[]; max?: number; color?: string; label: string }) {
+/**
+ * A small area chart of values over time; max sets the top of the scale (else the highest value).
+ * Hovering shows the moment and the value under the cursor.
+ */
+export function AreaChart({
+  values,
+  times,
+  format,
+  timeFormat,
+  max,
+  color = 'var(--accent)',
+  label,
+}: {
+  values: number[]
+  times: number[]
+  format: (v: number) => string
+  timeFormat: (t: number) => string
+  max?: number
+  color?: string
+  label: string
+}) {
+  const [hover, setHover] = useState<number | null>(null)
   const W = 600
   const H = 120
   if (values.length < 2) {
     return <div className="chart-empty muted">Pas encore assez de mesures : elles arrivent toutes les 15 s.</div>
   }
   const top = Math.max(max ?? 0, ...values, 1e-9)
-  const pts = values.map((v, i) => `${((i / (values.length - 1)) * W).toFixed(1)},${(H - (v / top) * (H - 4)).toFixed(1)}`)
+  const x = (i: number) => (i / (values.length - 1)) * W
+  const y = (v: number) => H - (v / top) * (H - 4)
+  const pts = values.map((v, i) => `${x(i).toFixed(1)},${y(v).toFixed(1)}`)
+  const pick = (e: { clientX: number; currentTarget: HTMLElement }) => {
+    const r = e.currentTarget.getBoundingClientRect()
+    const i = Math.round(((e.clientX - r.left) / r.width) * (values.length - 1))
+    setHover(Math.max(0, Math.min(values.length - 1, i)))
+  }
+  const pct = hover === null ? 0 : (hover / (values.length - 1)) * 100
+  const peak = Math.max(...values)
+  const avg = values.reduce((a, v) => a + v, 0) / values.length
+
   return (
-    <svg className="chart" viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" role="img" aria-label={label}>
-      <line x1="0" y1={H / 2} x2={W} y2={H / 2} className="chart-grid" />
-      <polygon points={`0,${H} ${pts.join(' ')} ${W},${H}`} fill={color} opacity="0.12" />
-      <polyline points={pts.join(' ')} fill="none" stroke={color} strokeWidth="2" vectorEffect="non-scaling-stroke" />
-    </svg>
+    <div>
+      <div className="chart-area" onMouseMove={pick} onMouseLeave={() => setHover(null)}>
+        <svg className="chart" viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" role="img" aria-label={`${label} : moyenne ${format(avg)}, pic ${format(peak)}`}>
+          <line x1="0" y1={H / 2} x2={W} y2={H / 2} className="chart-grid" />
+          <polygon points={`0,${H} ${pts.join(' ')} ${W},${H}`} fill={color} opacity="0.12" />
+          <polyline points={pts.join(' ')} fill="none" stroke={color} strokeWidth="2" vectorEffect="non-scaling-stroke" />
+        </svg>
+        {hover !== null && (
+          <>
+            <div className="chart-cursor" style={{ left: `${pct}%` }} />
+            <div className="chart-point" style={{ left: `${pct}%`, top: `${(y(values[hover]) / H) * 100}%`, background: color }} />
+            <div className={`chart-tip ${pct > 60 ? 'chart-tip-left' : ''}`} style={{ left: `${pct}%` }}>
+              <strong>{format(values[hover])}</strong>
+              <span>{timeFormat(times[hover])}</span>
+            </div>
+          </>
+        )}
+      </div>
+      <div className="chart-legend muted">
+        <span>
+          {timeFormat(times[0])} → {timeFormat(times[times.length - 1])}
+        </span>
+        <span>
+          moyenne {format(avg)} · pic {format(peak)}
+        </span>
+      </div>
+    </div>
   )
 }
 

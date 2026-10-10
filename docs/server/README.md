@@ -42,6 +42,7 @@ Pas de microservices : un binaire est plus simple à installer et à mettre à j
 | `nodes` | Machines : hash du token de join, série du certificat, mode réseau, IP publique, local |
 | `apps` | Apps : node, propriétaire, image, port, variables chiffrées, mémoire, état voulu, génération, nom DNS |
 | `app_events` | Ce qui arrive à chaque app (200 derniers) |
+| `container_events` | Ce qui arrive aux conteneurs externes, par node et nom (200 derniers) |
 
 ## Développement
 

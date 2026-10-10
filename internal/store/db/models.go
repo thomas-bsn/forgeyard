@@ -45,6 +45,15 @@ type AppEvent struct {
 	Message string
 }
 
+type ContainerEvent struct {
+	ID      int64
+	NodeID  int64
+	Name    string
+	At      int64
+	Kind    string
+	Message string
+}
+
 type LoginLink struct {
 	TokenHash string
 	UserID    int64
@@ -73,6 +82,7 @@ type Node struct {
 	IngressHttpPort int64
 	IsLocal         int64
 	LocalIp         string
+	DockerError     string
 }
 
 type Session struct {

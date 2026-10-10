@@ -90,6 +90,7 @@ func NewServer(d Deps, setupToken string) *Server {
 	}
 	d.Nodes.Desired = s.desiredState
 	d.Nodes.StateChanged = s.onAppStateChange
+	d.Nodes.ExternalChanged = s.onExternalChange
 	return s
 }
 
@@ -127,6 +128,8 @@ func (s *Server) Handler(webFS fs.FS) http.Handler {
 	mux.HandleFunc("GET /api/admin/containers", s.requireAdmin(s.handleListContainers))
 	mux.HandleFunc("POST /api/admin/nodes/{node}/containers/{container}/{action}", s.requireSuperadmin(s.handleContainerAction))
 	mux.HandleFunc("GET /api/admin/nodes/{node}/containers/{container}/logs", s.requireSuperadmin(s.handleContainerLogs))
+	mux.HandleFunc("GET /api/admin/nodes/{node}/containers/{container}/usage", s.requireAdmin(s.handleContainerUsage))
+	mux.HandleFunc("GET /api/admin/nodes/{node}/containers/{container}/events", s.requireAdmin(s.handleContainerEvents))
 	mux.HandleFunc("GET /api/admin/users", s.requireAdmin(s.handleListUsers))
 	mux.HandleFunc("PUT /api/admin/users/{id}", s.requireAdmin(s.handleUpdateUser))
 	mux.HandleFunc("DELETE /api/admin/users/{id}", s.requireAdmin(s.handleDeleteUser))

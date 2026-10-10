@@ -53,6 +53,7 @@ export type Node = {
   isLocal: boolean
   publicIp: string
   localIp: string
+  dockerError?: string
   ingressMode: 'traefik' | 'proxy'
   ingressHttpPort: number
   metrics?: {
@@ -257,6 +258,8 @@ export const api = {
   deleteApp: (id: number) => request<void>('DELETE', `/api/apps/${id}`, {}),
   appEvents: (id: number) => request<AppEvent[]>('GET', `/api/apps/${id}/events`),
   appUsage: (id: number) => request<AppUsage>('GET', `/api/apps/${id}/usage`),
+  containerUsage: (c: Container) => request<AppUsage>('GET', `/api/admin/nodes/${c.nodeId}/containers/${c.id}/usage`),
+  containerEvents: (c: Container) => request<AppEvent[]>('GET', `/api/admin/nodes/${c.nodeId}/containers/${c.id}/events`),
   containers: () => request<Container[]>('GET', '/api/admin/containers'),
   containerAction: (c: Container, action: 'start' | 'stop' | 'restart') =>
     request<void>('POST', `/api/admin/nodes/${c.nodeId}/containers/${c.id}/${action}`, {}),

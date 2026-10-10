@@ -9,6 +9,7 @@ import (
 
 	"github.com/thomas-bsn/forgeyard/internal/agentpb"
 	"github.com/thomas-bsn/forgeyard/internal/auth"
+	"github.com/thomas-bsn/forgeyard/internal/nodes"
 	"github.com/thomas-bsn/forgeyard/internal/store/db"
 )
 
@@ -155,6 +156,38 @@ func TestExternalContainers(t *testing.T) {
 	}
 	if c := list[0]; c.Name != "caddy" || c.NodeName != "node-a" || c.OwnerName != "boss" {
 		t.Fatalf("container: %+v", c)
+	}
+
+	// A crash becomes an event, and running samples become usage.
+	fa.stream.Send(&agentpb.AgentMessage{Msg: &agentpb.AgentMessage_ExternalContainers{ExternalContainers: &agentpb.ExternalContainers{
+		Containers: []*agentpb.ExternalContainer{{Id: "abc123", Name: "caddy", Image: "caddy:2", State: "exited", Status: "Exited (2) 1 second ago"}},
+	}}})
+	for {
+		var events []appEventResponse
+		get(t, admin, ts.URL+"/api/admin/nodes/"+itoa(fa.nodeID)+"/containers/abc123/events", &events)
+		if len(events) == 1 && events[0].Message == "Planté (code 2)" {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("container events: %+v", events)
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	fa.stream.Send(&agentpb.AgentMessage{Msg: &agentpb.AgentMessage_ExternalContainers{ExternalContainers: &agentpb.ExternalContainers{
+		Containers: []*agentpb.ExternalContainer{{Id: "abc123", Name: "caddy", Image: "caddy:2", State: "running", CpuPercent: 3, MemoryUsedBytes: 10 << 20}},
+	}}})
+	for {
+		var usage struct {
+			Samples []nodes.UsageSample `json:"samples"`
+		}
+		get(t, admin, ts.URL+"/api/admin/nodes/"+itoa(fa.nodeID)+"/containers/abc123/usage", &usage)
+		if len(usage.Samples) == 1 && usage.Samples[0].MemoryUsedBytes == 10<<20 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("container usage: %+v", usage)
+		}
+		time.Sleep(50 * time.Millisecond)
 	}
 
 	base := ts.URL + "/api/admin/nodes/" + itoa(fa.nodeID) + "/containers/"

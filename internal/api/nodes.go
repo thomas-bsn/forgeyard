@@ -44,6 +44,7 @@ type nodeResponse struct {
 	IsLocal       bool         `json:"isLocal"`
 	PublicIP      string       `json:"publicIp"`
 	LocalIP       string       `json:"localIp"`
+	DockerError   string       `json:"dockerError,omitempty"`
 	IngressMode   string       `json:"ingressMode"`
 	IngressPort   int64        `json:"ingressHttpPort"`
 	Metrics       *nodeMetrics `json:"metrics,omitempty"`
@@ -55,7 +56,7 @@ func (s *Server) toNodeResponse(n db.Node) nodeResponse {
 		ID: n.ID, Name: n.Name, State: "pending", Hostname: n.Hostname, OS: n.Os, Arch: n.Arch, CPUs: n.Cpus,
 		MemoryBytes: n.MemoryBytes, DiskBytes: n.DiskBytes, DockerVersion: n.DockerVersion,
 		AgentVersion: n.AgentVersion, LastSeenAt: n.LastSeenAt.Int64,
-		PublicIP: n.PublicIp, LocalIP: n.LocalIp, IngressMode: n.IngressMode, IngressPort: n.IngressHttpPort, IsLocal: n.IsLocal != 0,
+		PublicIP: n.PublicIp, LocalIP: n.LocalIp, DockerError: n.DockerError, IngressMode: n.IngressMode, IngressPort: n.IngressHttpPort, IsLocal: n.IsLocal != 0,
 	}
 	if n.Status != "active" {
 		return resp

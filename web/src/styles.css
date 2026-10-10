@@ -1424,10 +1424,69 @@ button.row:hover {
   font-size: 0.82rem;
 }
 
+.chart-area {
+  position: relative;
+  height: 120px;
+  cursor: crosshair;
+}
+
 .chart {
   width: 100%;
   height: 120px;
   display: block;
+}
+
+.chart-cursor {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: var(--muted);
+  pointer-events: none;
+}
+
+.chart-point {
+  position: absolute;
+  width: 9px;
+  height: 9px;
+  margin: -4.5px 0 0 -4.5px;
+  border-radius: 50%;
+  border: 2px solid var(--card);
+  pointer-events: none;
+}
+
+.chart-tip {
+  position: absolute;
+  top: 4px;
+  margin-left: 10px;
+  display: grid;
+  gap: 1px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--card);
+  box-shadow: 0 4px 16px rgb(0 0 0 / 0.18);
+  font-size: 0.8rem;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.chart-tip span {
+  color: var(--muted);
+}
+
+.chart-tip-left {
+  transform: translateX(-100%);
+  margin-left: -10px;
+}
+
+.chart-legend {
+  display: flex;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 6px;
+  font-size: 0.78rem;
 }
 
 .chart-grid {

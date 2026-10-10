@@ -25,7 +25,7 @@ UPDATE nodes SET join_token_hash = ?, join_expires_at = ? WHERE id = ? AND statu
 -- name: UpdateNodeInfo :exec
 UPDATE nodes
 SET hostname = ?, os = ?, arch = ?, cpus = ?, memory_bytes = ?, disk_bytes = ?,
-    docker_version = ?, agent_version = ?, local_ip = ?, last_seen_at = ?
+    docker_version = ?, docker_error = ?, agent_version = ?, local_ip = ?, last_seen_at = ?
 WHERE id = ?;
 
 -- name: TouchNode :exec

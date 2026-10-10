@@ -43,6 +43,8 @@ Les routes d'app vérifient que l'utilisateur est le propriétaire ou un admin.
 | `PUT /api/admin/nodes/{id}/ingress` | IP publique et mode réseau |
 | `DELETE /api/admin/nodes/{id}` | Retirer (refusé s'il a des apps) |
 | `GET /api/admin/containers` | Conteneurs externes de tous les nodes en ligne |
+| `GET /api/admin/nodes/{node}/containers/{id}/usage` | CPU et mémoire d'un conteneur externe, dernière heure |
+| `GET /api/admin/nodes/{node}/containers/{id}/events` | Derniers événements d'un conteneur externe |
 | `GET /api/admin/users` | Comptes, avec leur nombre d'apps |
 | `PUT /api/admin/users/{id}` | Rôle, désactivé, apps suspendues (jamais le superadmin ni soi-même) |
 | `DELETE /api/admin/users/{id}` | Supprimer un compte et ses apps |

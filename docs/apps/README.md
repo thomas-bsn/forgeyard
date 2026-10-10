@@ -46,7 +46,7 @@ Un utilisateur ne voit que ses apps, en cartes. Les admins voient tout : **une s
 
 La page d'une app a trois vues :
 
-- **Observabilité** : CPU (en % d'un cœur) et mémoire actuels, redémarrages, et les courbes de la dernière heure. L'agent mesure chaque conteneur via Docker (`/stats`) toutes les 3 s ; le server garde un point toutes les 15 s, en mémoire (perdu au redémarrage du server).
+- **Observabilité** : CPU (en % d'un cœur : 100 % = un cœur entier) et mémoire actuels, redémarrages, et les courbes de la dernière heure ; le survol d'une courbe affiche l'heure et la valeur, la légende la moyenne et le pic. L'agent mesure chaque conteneur via Docker (`/stats`) toutes les 3 s ; le server garde un point toutes les 15 s, en mémoire (perdu au redémarrage du server). Une mesure sans mémoire est ignorée : elle veut dire que Docker n'a pas pu lire le conteneur (agent trop ancien, ou noyau sans cgroup mémoire, fréquent sur Raspberry Pi). Une app au repos est vraiment à ~0 % de CPU.
 - **Logs** : voir ci-dessous.
 - **Événements** : création, DNS, configuration, démarrages et arrêts (avec qui l'a fait), mises en ligne, crashs (code de sortie, manque de mémoire), redémarrages en boucle. Les 200 derniers par app sont gardés en base.
 
@@ -54,6 +54,7 @@ La page d'une app a trois vues :
 
 L'agent liste aussi les conteneurs du node que Forgeyard n'a pas créés (lancés à la main, par docker compose…), toutes les 10 s. Ils apparaissent dans la colonne de leur node avec le badge **externe**, et appartiennent au superadmin.
 
+- Même page qu'une app : **Observabilité** (CPU et mémoire, dernière heure), **Logs** et **Événements** (apparu, recréé, en ligne, arrêté, planté avec son code, redémarre en boucle, et les actions du superadmin), gardés par nom de conteneur pour survivre à un `docker compose up` qui le recrée.
 - Les admins les voient ; seul le superadmin peut voir leurs logs, les démarrer, les arrêter ou les redémarrer.
 - Les conteneurs de Forgeyard lui-même (server, agent, Traefik) sont exclus : leurs images portent le label `forgeyard.internal`, Traefik `forgeyard.ingress`, et l'agent reconnaît son propre conteneur.
 - L'agent revérifie qu'un conteneur est bien externe avant toute action.
