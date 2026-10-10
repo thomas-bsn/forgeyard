@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { api, errorMessage, type Member, type MemberProfile, type User } from './api'
 import { Banner } from './Profile'
-import { Avatar } from './ui'
+import { AppLogo, Avatar } from './ui'
 
 const roleLabels: Record<Member['role'], string> = { superadmin: 'superadmin', admin: 'admin', user: 'membre' }
 
@@ -124,6 +124,7 @@ export function MemberPage({ id, me }: { id: number; me: User }) {
                 const [label, dot] = stateText[a.state] ?? ['En attente', '']
                 return (
                   <div key={a.id} className="mini-list-row">
+                    <AppLogo url={a.logo.url} color={a.logo.color} name={a.name} size={32} />
                     <span className={`dot ${dot}`} title={label} />
                     <strong>{a.name}</strong>
                     {a.url ? (

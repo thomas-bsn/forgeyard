@@ -66,7 +66,7 @@ export default function Dashboard({
         <UserMenu user={user} admin={admin} pending={pending} onLogout={logout} />
       </header>
 
-      {page === 'apps' && <Apps admin={admin} superadmin={user.role === 'superadmin'} route={route.length ? route : ['apps']} go={go} />}
+      {page === 'apps' && <Apps admin={admin} superadmin={user.role === 'superadmin'} layout={instance.appsLayout} route={route.length ? route : ['apps']} go={go} />}
       {page === 'nodes' && admin && <Nodes localSupported={instance.localNodeSupported} />}
       {route[0] === 'u' && route[1] ? (
         <MemberPage id={Number(route[1])} me={user} />

@@ -2425,3 +2425,501 @@ a.link-btn {
     padding: 22px;
   }
 }
+
+/* --- App logos and the three Apps views ------------------------------------------ */
+
+.app-logo {
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  color: #fff;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.app-logo-img {
+  background: #fff;
+  border: 1px solid var(--border);
+}
+
+.app-logo-img img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.app-logo-preview {
+  width: 48px;
+  height: 48px;
+  border-radius: 12px;
+  object-fit: cover;
+}
+
+.app-logo-upload {
+  width: 48px;
+  height: 48px;
+  border-radius: 12px;
+  border: 2px dashed var(--border);
+  color: var(--muted);
+  font-size: 1.3rem;
+}
+
+.logo-button {
+  position: relative;
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: pointer;
+}
+
+.logo-edit {
+  position: absolute;
+  right: -5px;
+  bottom: -5px;
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--card);
+  border: 1px solid var(--border);
+  color: var(--muted);
+}
+
+.logo-button:hover .logo-edit {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+.logo-option {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 13px;
+  border-radius: 14px;
+  border: 1px solid var(--border);
+  cursor: pointer;
+}
+
+.logo-option.selected {
+  border: 2px solid var(--accent);
+  padding: 12px;
+  background: color-mix(in srgb, var(--accent) 6%, var(--card));
+}
+
+.logo-option input {
+  accent-color: var(--accent);
+}
+
+.logo-option-text {
+  flex: 1;
+  display: grid;
+  gap: 4px;
+  justify-items: start;
+}
+
+.color-swatches {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.swatch {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+}
+
+.swatch.on {
+  outline: 2px solid var(--text);
+  outline-offset: 2px;
+}
+
+.layout-choices {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 10px;
+}
+
+.layout-choices strong {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* B: nodes on the left */
+.apps-split {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 20px;
+  align-items: flex-start;
+}
+
+.node-nav {
+  flex: 1 1 210px;
+  max-width: 250px;
+  display: grid;
+  gap: 3px;
+}
+
+.node-nav-title {
+  padding: 0 10px 6px;
+  color: var(--muted);
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.node-nav button {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid transparent;
+  border-radius: 12px;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.node-nav button:hover {
+  background: var(--card-hover);
+}
+
+.node-nav button[aria-current='page'] {
+  background: var(--card);
+  border-color: var(--border);
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.node-nav-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.node-nav .muted {
+  font-size: 0.82rem;
+  font-weight: 400;
+}
+
+.problem-count {
+  padding: 0 7px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--down) 15%, var(--card));
+  color: var(--down);
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.node-nav-meters {
+  display: grid;
+  gap: 8px;
+  margin-top: 10px;
+  padding: 12px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: var(--card);
+  font-size: 0.78rem;
+}
+
+.apps-main {
+  flex: 999 1 560px;
+  min-width: 0;
+  display: grid;
+  gap: 14px;
+}
+
+@media (max-width: 720px) {
+  .node-nav {
+    max-width: none;
+    display: flex;
+    flex-wrap: wrap;
+  }
+  .node-nav-title,
+  .node-nav-meters {
+    display: none;
+  }
+}
+
+.app-card-head {
+  gap: 12px;
+}
+
+.app-card-title {
+  display: grid;
+  flex: 1;
+  min-width: 0;
+}
+
+.app-card-title strong,
+.app-card-title .muted {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.app-card-title .muted {
+  font-size: 0.8rem;
+}
+
+.app-card {
+  gap: 10px;
+  padding: 14px;
+}
+
+/* A: node cards above */
+.node-picker {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 12px;
+}
+
+.node-pick {
+  display: grid;
+  gap: 10px;
+  padding: 15px;
+  border-radius: 16px;
+  border: 1px solid var(--border);
+  background: var(--card);
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.node-pick.on {
+  border: 2px solid var(--accent);
+  padding: 14px;
+  box-shadow: 0 6px 20px color-mix(in srgb, var(--accent) 18%, transparent);
+}
+
+.node-pick-all {
+  border-style: dashed;
+  background: transparent;
+}
+
+.node-pick-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.node-pick-head .muted {
+  margin-left: auto;
+  font-size: 0.8rem;
+}
+
+.node-pick-meta {
+  font-size: 0.82rem;
+}
+
+.logo-stack {
+  display: flex;
+  min-height: 28px;
+}
+
+.logo-stack > * + * {
+  margin-left: -6px;
+}
+
+.logo-stack .app-logo {
+  box-shadow: 0 0 0 2px var(--card);
+}
+
+.logo-more {
+  display: grid;
+  place-items: center;
+  min-width: 28px;
+  height: 28px;
+  padding: 0 4px;
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--muted);
+  font-size: 0.72rem;
+  box-shadow: 0 0 0 2px var(--card);
+}
+
+.apps-panel {
+  gap: 14px;
+}
+
+.apps-panel-head {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+
+.apps-panel-head h2 {
+  font-size: 1.05rem;
+}
+
+.tile-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 10px;
+}
+
+.app-tile {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 11px 12px;
+  border-radius: 14px;
+  border: 1px solid var(--border);
+  color: var(--text);
+  text-decoration: none;
+}
+
+.app-tile:hover {
+  border-color: var(--accent);
+}
+
+.app-tile-text {
+  display: grid;
+  min-width: 0;
+}
+
+.app-tile-text strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.app-tile-state {
+  font-size: 0.78rem;
+  color: var(--muted);
+}
+
+.app-tile-state.state-up {
+  color: var(--up);
+}
+
+.app-tile-state.state-down {
+  color: var(--down);
+}
+
+/* C: tabs and big icons */
+.launcher-bar {
+  display: flex;
+  align-items: flex-end;
+  gap: 12px;
+  flex-wrap: wrap;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 8px;
+}
+
+.launcher-tabs {
+  flex: 1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.launcher-tabs button {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 14px;
+  border: 0;
+  border-radius: 10px;
+  background: none;
+  color: var(--muted);
+  font: inherit;
+  cursor: pointer;
+}
+
+.launcher-tabs button.on {
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.launcher-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(118px, 1fr));
+  gap: 14px 10px;
+}
+
+.launcher-icon {
+  display: grid;
+  justify-items: center;
+  align-content: start;
+  gap: 8px;
+  padding: 14px 6px;
+  border: 0;
+  border-radius: 18px;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  text-decoration: none;
+  text-align: center;
+  cursor: pointer;
+}
+
+.launcher-icon:hover {
+  background: var(--card);
+}
+
+.launcher-icon strong {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.88rem;
+}
+
+.launcher-sub {
+  margin-top: -6px;
+  font-size: 0.72rem;
+}
+
+.launcher-logo {
+  position: relative;
+}
+
+.launcher-badge {
+  position: absolute;
+  right: -3px;
+  bottom: -3px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--muted);
+  border: 3px solid var(--bg);
+}
+
+.launcher-badge.dot-up {
+  background: var(--up);
+}
+
+.launcher-badge.dot-warn {
+  background: var(--warn);
+}
+
+.launcher-badge.dot-down {
+  background: var(--down);
+}
+
+.launcher-new {
+  color: var(--muted);
+}
+
+.launcher-plus {
+  display: grid;
+  place-items: center;
+  width: 64px;
+  height: 64px;
+  border-radius: 17px;
+  border: 2px dashed var(--border);
+  font-size: 1.6rem;
+}

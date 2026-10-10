@@ -4,6 +4,16 @@ Une **app** = un conteneur Docker lancé depuis une image, avec ses variables d'
 
 Code : `internal/api/apps.go`, `web/src/Apps.tsx`.
 
+## Logo
+
+Chaque app a un logo, au choix (clic sur le logo, sur la page de l'app) :
+
+- **Automatique** (par défaut) : le logo de l'image sur Docker Hub (images officielles), sinon l'avatar de son éditeur (Gravatar de l'organisation ou de l'utilisateur Docker Hub). Le server les télécharge, les réduit en 128 px et les garde en cache (30 jours, 7 jours quand il n'y en a pas). Docker Hub n'a pas d'API documentée pour les logos : sans logo, ou pour une image d'un autre registre (ghcr.io…), c'est l'initiale.
+- **Mon image** : envoyée et cadrée en carré.
+- **Initiale et couleur**.
+
+Les conteneurs externes ont le logo automatique de leur image.
+
 ## Champs
 
 | Champ | Règle |
@@ -31,7 +41,13 @@ Code : `internal/api/apps.go`, `web/src/Apps.tsx`.
 | Configuration | Fenêtre : image, port, variables, mémoire ; enregistrer recrée le conteneur |
 | Supprimer | Supprime l'enregistrement DNS créé par Forgeyard, puis le conteneur. Si le fournisseur DNS ne répond pas, l'app est quand même supprimée et l'erreur est notée dans les logs du server. |
 
-Un utilisateur ne voit que ses apps, en cartes. Les admins voient tout : **une section par node** (repliable, avec son CPU et sa RAM), ses apps et ses conteneurs externes en grille, et le propriétaire de chaque app. Les problèmes passent en premier. Filtres : type (apps Forgeyard / externes), état (en ligne / arrêtés / en erreur), et une recherche par nom, image, propriétaire ou projet compose. Un conteneur externe arrêté avec un code de sortie non nul compte comme « en erreur ».
+L'onglet Apps a trois présentations, au choix du superadmin (Réglages › Général) :
+
+- **Nodes à gauche** (par défaut) : la liste des nodes avec leur nombre d'apps et leurs problèmes, le CPU et la RAM du node choisi ; à droite ses apps en cartes (logo, nom, propriétaire, état, adresse) ;
+- **Cartes de nodes** : une carte par node en haut (mini-logos de ses apps, problèmes), ses apps en tuiles en dessous ;
+- **Icônes** : des onglets de nodes et les apps en grandes icônes avec une pastille d'état.
+
+Partout « Tous » montre tous les nodes, le node choisi est retenu par le navigateur, les problèmes passent en premier, et on filtre par type (Forgeyard / externes), par état et par recherche (nom, image, propriétaire, projet compose). Un utilisateur ne choisit pas de node : il voit ses apps. Un conteneur externe arrêté avec un code de sortie non nul compte comme « en erreur ».
 
 ## États
 

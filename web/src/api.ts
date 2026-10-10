@@ -36,7 +36,7 @@ export type MemberProfile = Member & {
   discordId?: string
   email?: string
   showApps: boolean
-  apps: { id: number; name: string; url?: string; state: AppState }[]
+  apps: { id: number; name: string; url?: string; state: AppState; logo: App['logo'] }[]
   activity: { at: number; kind: AppEvent['kind']; app: string; message: string }[]
 }
 
@@ -56,6 +56,7 @@ export type Instance = {
   localNodeSupported: boolean
   localWebPorts?: 'busy' | 'free'
   localIp?: string
+  appsLayout: 'sidebar' | 'nodes' | 'launcher'
   dnsProviders?: DNSProviderKind[]
   discordEnabled: boolean
   discordRedirectUrl: string
@@ -141,6 +142,7 @@ export type App = {
   memoryUsedBytes?: number
   suspended?: boolean
   public: boolean
+  logo: { mode: 'auto' | 'custom' | 'initial'; url?: string; color?: string; autoUrl?: string }
   updatedAt: number
   env?: Record<string, string>
 }
@@ -167,6 +169,7 @@ export type Container = {
   memoryUsedBytes?: number
   composeProject?: string
   ownerName: string
+  logoUrl?: string
 }
 
 export type Account = {
@@ -322,12 +325,14 @@ export const api = {
   deleteBanner: () => request<User>('DELETE', '/api/me/banner', {}),
   members: () => request<Member[]>('GET', '/api/members'),
   member: (id: number) => request<MemberProfile>('GET', `/api/members/${id}`),
+  setAppLogo: (id: number, body: { mode: 'auto' | 'custom' | 'initial'; color?: string; image?: string }) =>
+    request<App>('PUT', `/api/apps/${id}/logo`, body),
   setAppPublic: (id: number, value: boolean) => request<App>('PUT', `/api/apps/${id}/public`, { public: value }),
   changePassword: (current: string, next: string) => request<void>('PUT', '/api/me/password', { current, new: next }),
   sessions: () => request<Session[]>('GET', '/api/me/sessions'),
   deleteSession: (id: string) => request<void>('DELETE', `/api/me/sessions/${id}`, {}),
-  saveGeneralSettings: (name: string, publicUrl: string) =>
-    request<{ name: string; publicUrl: string }>('PUT', '/api/admin/settings/general', { name, publicUrl }),
+  saveGeneralSettings: (name: string, publicUrl: string, appsLayout: Instance['appsLayout']) =>
+    request<{ name: string; publicUrl: string; appsLayout: Instance['appsLayout'] }>('PUT', '/api/admin/settings/general', { name, publicUrl, appsLayout }),
   nodes: () => request<Node[]>('GET', '/api/admin/nodes'),
   setNodeIngress: (id: number, body: { publicIp: string; ingressMode: 'traefik' | 'proxy'; ingressHttpPort: number }) =>
     request<Node>('PUT', `/api/admin/nodes/${id}/ingress`, body),

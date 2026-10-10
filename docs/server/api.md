@@ -29,6 +29,8 @@ Toutes les écritures sont en JSON. Les routes sont déclarées dans `internal/a
 | `PUT`, `DELETE /api/me/banner` | Envoyer une bannière ou revenir à celle de Discord |
 | `GET /api/users/{id}/banner` | Bannière envoyée par un utilisateur |
 | `GET /api/members`, `GET /api/members/{id}` | Membres, et profil public (apps publiques, activité) |
+| `PUT /api/apps/{id}/logo`, `GET /api/apps/{id}/logo` | Choisir le logo d'une app (auto, image, initiale) ; logo envoyé |
+| `GET /api/logos?repo=` | Logo d'une image Docker Hub (mis en cache) |
 | `PUT /api/apps/{id}/public` | Afficher ou masquer une app sur le profil de son propriétaire |
 | `GET /api/me/sessions`, `DELETE /api/me/sessions/{id\|others}` | Appareils connectés, en déconnecter un ou tous les autres |
 | `GET`, `POST /api/apps` | Lister, créer |

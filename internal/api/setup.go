@@ -53,6 +53,8 @@ type instanceResponse struct {
 	LocalWebPorts string `json:"localWebPorts,omitempty"`
 	// LocalIP is this machine's IP on its local network, during setup, for the reverse proxy example.
 	LocalIP string `json:"localIp,omitempty"`
+	// AppsLayout is how the Apps tab shows apps, chosen by the superadmin.
+	AppsLayout string `json:"appsLayout"`
 	// DNSProviders are listed during setup only, for the wizard's domain step.
 	DNSProviders       []dns.Kind `json:"dnsProviders,omitempty"`
 	DiscordEnabled     bool       `json:"discordEnabled"`
@@ -91,6 +93,7 @@ func (s *Server) handleInstance(w http.ResponseWriter, r *http.Request) {
 		LocalNodeSupported: s.localNodeSupported(),
 		LocalWebPorts:      webPorts,
 		LocalIP:            localIP,
+		AppsLayout:         s.appsLayout(r.Context()),
 		DiscordEnabled:     enabled && !s.setupRequired(),
 		DiscordRedirectURL: redirectURL,
 	})

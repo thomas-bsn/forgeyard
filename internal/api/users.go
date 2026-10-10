@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"database/sql"
 	"errors"
 	"net/http"
@@ -189,8 +190,22 @@ func (s *Server) handleDeleteUser(w http.ResponseWriter, r *http.Request) {
 }
 
 type generalSettings struct {
-	Name      string `json:"name"`
-	PublicURL string `json:"publicUrl"`
+	Name       string `json:"name"`
+	PublicURL  string `json:"publicUrl"`
+	AppsLayout string `json:"appsLayout"`
+}
+
+// settingAppsLayout is how the Apps tab shows apps: "sidebar" (nodes on the left, the default), "nodes"
+// (node cards above) or "launcher" (node tabs and big icons).
+const settingAppsLayout = "apps_layout"
+
+var appsLayouts = map[string]bool{"sidebar": true, "nodes": true, "launcher": true}
+
+func (s *Server) appsLayout(ctx context.Context) string {
+	if v, err := s.store.GetSetting(ctx, settingAppsLayout); err == nil && appsLayouts[v] {
+		return v
+	}
+	return "sidebar"
 }
 
 // handlePutGeneralSettings changes the instance's name and Forgeyard's address.
@@ -210,12 +225,20 @@ func (s *Server) handlePutGeneralSettings(w http.ResponseWriter, r *http.Request
 		writeError(w, http.StatusBadRequest, "adresse de Forgeyard invalide : par exemple https://forgeyard.mondomaine.com")
 		return
 	}
+	layout := body.AppsLayout
+	if layout == "" {
+		layout = s.appsLayout(ctx)
+	}
+	if !appsLayouts[layout] {
+		writeError(w, http.StatusBadRequest, "vue inconnue : sidebar, nodes ou launcher")
+		return
+	}
 	if err := s.store.InTx(ctx, func(q *db.Queries) error {
-		return storeSettings(ctx, q, map[string]string{settingInstanceName: name, settingPublicURL: publicURL})
+		return storeSettings(ctx, q, map[string]string{settingInstanceName: name, settingPublicURL: publicURL, settingAppsLayout: layout})
 	}); err != nil {
 		s.internalError(w, r, err)
 		return
 	}
-	s.logger.Info("general settings changed", "name", name, "public_url", publicURL, "by", currentUser(r).DisplayName)
-	writeJSON(w, http.StatusOK, generalSettings{Name: name, PublicURL: publicURL})
+	s.logger.Info("general settings changed", "name", name, "public_url", publicURL, "apps_layout", layout, "by", currentUser(r).DisplayName)
+	writeJSON(w, http.StatusOK, generalSettings{Name: name, PublicURL: publicURL, AppsLayout: layout})
 }

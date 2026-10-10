@@ -82,7 +82,7 @@ func (s *Server) writeMe(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, toUserResponse(u))
 }
 
-// readImage decodes an uploaded image sent as a data URL, checking its size and its real format.
+// readImage decodes an uploaded image sent as a data URL in the request body.
 func readImage(w http.ResponseWriter, r *http.Request, maxBytes int) ([]byte, string, bool) {
 	var body struct {
 		Image string `json:"image"`
@@ -90,27 +90,33 @@ func readImage(w http.ResponseWriter, r *http.Request, maxBytes int) ([]byte, st
 	if !decodeJSON(w, r, &body) {
 		return nil, "", false
 	}
-	_, encoded, ok := strings.Cut(body.Image, ";base64,")
-	if !ok {
-		writeError(w, http.StatusBadRequest, "image invalide")
+	data, contentType, err := decodeDataURL(body.Image, maxBytes)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
 		return nil, "", false
+	}
+	return data, contentType, true
+}
+
+// decodeDataURL decodes an image sent as a data URL, checking its size and its real format.
+func decodeDataURL(dataURL string, maxBytes int) ([]byte, string, error) {
+	_, encoded, ok := strings.Cut(dataURL, ";base64,")
+	if !ok {
+		return nil, "", errors.New("image invalide")
 	}
 	data, err := base64.StdEncoding.DecodeString(encoded)
 	if err != nil || len(data) == 0 {
-		writeError(w, http.StatusBadRequest, "image invalide")
-		return nil, "", false
+		return nil, "", errors.New("image invalide")
 	}
 	if len(data) > maxBytes {
-		writeError(w, http.StatusBadRequest, "image trop lourde ("+strconv.Itoa(maxBytes>>10)+" Ko au plus)")
-		return nil, "", false
+		return nil, "", errors.New("image trop lourde (" + strconv.Itoa(maxBytes>>10) + " Ko au plus)")
 	}
 	// The type comes from the bytes, not from what the browser claims.
 	contentType := http.DetectContentType(data)
 	if !avatarTypes[contentType] {
-		writeError(w, http.StatusBadRequest, "format refusé : PNG, JPEG, WebP ou GIF")
-		return nil, "", false
+		return nil, "", errors.New("format refusé : PNG, JPEG, WebP ou GIF")
 	}
-	return data, contentType, true
+	return data, contentType, nil
 }
 
 // serveImage sends an uploaded image so that a browser can only display it.

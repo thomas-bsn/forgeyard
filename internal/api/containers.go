@@ -31,6 +31,7 @@ type containerResponse struct {
 	MemoryUsed     uint64   `json:"memoryUsedBytes,omitempty"`
 	ComposeProject string   `json:"composeProject,omitempty"`
 	OwnerName      string   `json:"ownerName"`
+	LogoURL        string   `json:"logoUrl,omitempty"`
 }
 
 func (s *Server) handleListContainers(w http.ResponseWriter, r *http.Request) {
@@ -60,7 +61,7 @@ func (s *Server) handleListContainers(w http.ResponseWriter, r *http.Request) {
 				NodeID: nodeID, NodeName: names[nodeID], ID: c.GetId(), Name: c.GetName(), Image: c.GetImage(),
 				State: c.GetState(), Status: c.GetStatus(), CreatedAt: c.GetCreatedAt(), Ports: ports,
 				CPUPercent: c.GetCpuPercent(), MemoryUsed: c.GetMemoryUsedBytes(), ComposeProject: c.GetComposeProject(),
-				OwnerName: owner.DisplayName,
+				OwnerName: owner.DisplayName, LogoURL: imageLogoURL(c.GetImage()),
 			})
 		}
 	}

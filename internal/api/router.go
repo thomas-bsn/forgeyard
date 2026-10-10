@@ -60,6 +60,7 @@ type Server struct {
 	// Replaced in tests.
 	newDNSProvider func(name string, creds map[string]string) (dns.Provider, error)
 	lookupHost     func(ctx context.Context, host string) ([]string, error)
+	httpClient     *http.Client // for Docker Hub logos
 
 	mu          sync.Mutex
 	setupToken  string                // empty once setup is completed
@@ -87,6 +88,7 @@ func NewServer(d Deps, setupToken string) *Server {
 
 		newDNSProvider: dns.New,
 		lookupHost:     net.DefaultResolver.LookupHost,
+		httpClient:     &http.Client{Timeout: 10 * time.Second},
 	}
 	d.Nodes.Desired = s.desiredState
 	d.Nodes.StateChanged = s.onAppStateChange
@@ -119,6 +121,9 @@ func (s *Server) Handler(webFS fs.FS) http.Handler {
 	mux.HandleFunc("GET /api/members", s.requireUser(s.handleListMembers))
 	mux.HandleFunc("GET /api/members/{id}", s.requireUser(s.handleGetMember))
 	mux.HandleFunc("PUT /api/apps/{id}/public", s.requireUser(s.handleSetAppPublic))
+	mux.HandleFunc("PUT /api/apps/{id}/logo", s.requireUser(s.handlePutAppLogo))
+	mux.HandleFunc("GET /api/apps/{id}/logo", s.requireUser(s.handleGetAppLogo))
+	mux.HandleFunc("GET /api/logos", s.requireUser(s.handleImageLogo))
 	mux.HandleFunc("GET /api/auth/link", s.handleLoginLink)
 	mux.HandleFunc("GET /api/auth/discord", s.handleDiscordStart)
 	mux.HandleFunc("GET /api/auth/discord/callback", s.handleDiscordCallback)

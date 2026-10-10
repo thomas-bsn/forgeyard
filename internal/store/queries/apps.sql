@@ -58,3 +58,24 @@ UPDATE apps SET public = ? WHERE id = ?;
 
 -- name: ListPublicAppsByOwner :many
 SELECT * FROM apps WHERE owner_id = ? AND public = 1 ORDER BY name;
+
+-- name: SetAppLogo :exec
+UPDATE apps SET logo_mode = ?, logo_color = ?, logo_updated_at = ? WHERE id = ?;
+
+-- name: PutAppLogoImage :exec
+INSERT INTO app_logos (app_id, content_type, data) VALUES (?, ?, ?)
+ON CONFLICT (app_id) DO UPDATE SET content_type = excluded.content_type, data = excluded.data;
+
+-- name: GetAppLogoImage :one
+SELECT * FROM app_logos WHERE app_id = ?;
+
+-- name: DeleteAppLogoImage :exec
+DELETE FROM app_logos WHERE app_id = ?;
+
+-- name: GetImageLogo :one
+SELECT * FROM image_logos WHERE repo = ?;
+
+-- name: PutImageLogo :exec
+INSERT INTO image_logos (repo, found, content_type, data, fetched_at) VALUES (?, ?, ?, ?, ?)
+ON CONFLICT (repo) DO UPDATE SET found = excluded.found, content_type = excluded.content_type,
+    data = excluded.data, fetched_at = excluded.fetched_at;

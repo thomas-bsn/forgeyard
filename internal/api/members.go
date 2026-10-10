@@ -50,10 +50,11 @@ func memberUser(m db.ListMembersRow) db.User {
 }
 
 type memberApp struct {
-	ID    int64  `json:"id"`
-	Name  string `json:"name"`
-	URL   string `json:"url,omitempty"`
-	State string `json:"state"`
+	ID    int64   `json:"id"`
+	Name  string  `json:"name"`
+	URL   string  `json:"url,omitempty"`
+	State string  `json:"state"`
+	Logo  appLogo `json:"logo"`
 }
 
 type memberActivity struct {
@@ -113,7 +114,7 @@ func (s *Server) handleGetMember(w http.ResponseWriter, r *http.Request) {
 		}
 		for _, a := range apps {
 			resp := s.toAppResponse(a, u.DisplayName, u.AppsSuspended != 0, "", c, nil, "")
-			p.Apps = append(p.Apps, memberApp{ID: a.ID, Name: a.Name, URL: resp.URL, State: resp.State})
+			p.Apps = append(p.Apps, memberApp{ID: a.ID, Name: a.Name, URL: resp.URL, State: resp.State, Logo: resp.Logo})
 		}
 		p.PublicApps = int64(len(p.Apps))
 		events, err := s.store.ListMemberActivity(ctx, db.ListMemberActivityParams{OwnerID: u.ID, Limit: 10})

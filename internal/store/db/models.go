@@ -22,20 +22,23 @@ type AccountRequest struct {
 }
 
 type App struct {
-	ID         int64
-	Name       string
-	OwnerID    int64
-	NodeID     int64
-	Image      string
-	Port       int64
-	EnvSealed  string
-	Running    int64
-	MemoryMb   int64
-	Generation int64
-	DnsName    string
-	CreatedAt  int64
-	UpdatedAt  int64
-	Public     int64
+	ID            int64
+	Name          string
+	OwnerID       int64
+	NodeID        int64
+	Image         string
+	Port          int64
+	EnvSealed     string
+	Running       int64
+	MemoryMb      int64
+	Generation    int64
+	DnsName       string
+	CreatedAt     int64
+	UpdatedAt     int64
+	Public        int64
+	LogoMode      string
+	LogoColor     string
+	LogoUpdatedAt int64
 }
 
 type AppEvent struct {
@@ -44,6 +47,12 @@ type AppEvent struct {
 	At      int64
 	Kind    string
 	Message string
+}
+
+type AppLogo struct {
+	AppID       int64
+	ContentType string
+	Data        []byte
 }
 
 type Avatar struct {
@@ -65,6 +74,14 @@ type ContainerEvent struct {
 	At      int64
 	Kind    string
 	Message string
+}
+
+type ImageLogo struct {
+	Repo        string
+	Found       int64
+	ContentType string
+	Data        []byte
+	FetchedAt   int64
 }
 
 type LoginLink struct {

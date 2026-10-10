@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent } from 'react'
-import { api, errorMessage, type DiscordSettings } from './api'
+import { api, errorMessage, type DiscordSettings, type Instance } from './api'
 import { CopyField, DiscordAppSteps, Switch } from './ui'
 import DomainPanel from './Domain'
 
@@ -129,6 +129,7 @@ function GeneralPanel({ onRenamed }: { onRenamed: () => void }) {
   const [publicUrl, setPublicUrl] = useState('')
   const [savedUrl, setSavedUrl] = useState('')
   const [redirect, setRedirect] = useState('')
+  const [layout, setLayout] = useState<Instance['appsLayout']>('sidebar')
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
   const [busy, setBusy] = useState(false)
@@ -137,6 +138,7 @@ function GeneralPanel({ onRenamed }: { onRenamed: () => void }) {
     Promise.all([api.instance(), api.domainSettings()])
       .then(([i, d]) => {
         setName(i.name)
+        setLayout(i.appsLayout)
         setPublicUrl(d.publicUrl)
         setSavedUrl(d.publicUrl)
         setRedirect(d.discordRedirectUrl)
@@ -151,7 +153,7 @@ function GeneralPanel({ onRenamed }: { onRenamed: () => void }) {
     setError('')
     setNotice('')
     try {
-      const s = await api.saveGeneralSettings(name, publicUrl)
+      const s = await api.saveGeneralSettings(name, publicUrl, layout)
       setName(s.name)
       setPublicUrl(s.publicUrl)
       if (s.publicUrl !== savedUrl) {
@@ -181,6 +183,27 @@ function GeneralPanel({ onRenamed }: { onRenamed: () => void }) {
         <input type="url" value={publicUrl} onChange={(e) => setPublicUrl(e.target.value)} placeholder="https://forgeyard.mondomaine.com" required />
         <small>Utilisée pour la connexion Discord, les commandes des nodes et le lien de secours.</small>
       </label>
+      <div className="field">
+        <span>Affichage de l’onglet Apps</span>
+        <div className="layout-choices">
+          {(
+            [
+              ['sidebar', 'Nodes à gauche', 'La liste des nodes à gauche, les apps du node choisi en cartes détaillées.'],
+              ['nodes', 'Cartes de nodes', 'Une carte par node en haut, ses apps en tuiles en dessous.'],
+              ['launcher', 'Icônes', 'Des onglets de nodes et les apps en grandes icônes, comme un téléphone.'],
+            ] as const
+          ).map(([value, title, text]) => (
+            <button key={value} type="button" className={`auth-option ${layout === value ? 'selected' : ''}`} aria-pressed={layout === value} onClick={() => setLayout(value)}>
+              <strong>
+                {title}
+                {value === 'sidebar' && <span className="badge">par défaut</span>}
+              </strong>
+              <small>{text}</small>
+            </button>
+          ))}
+        </div>
+        <small>Pour tous les membres de l’instance.</small>
+      </div>
       <div className="field">
         <span>Redirection Discord</span>
         <CopyField value={redirect} />

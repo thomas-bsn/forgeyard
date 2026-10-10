@@ -302,6 +302,43 @@ export function Avatar({ url, name, size = 32 }: { url?: string; name: string; s
   )
 }
 
+/** Colours an app's initial is drawn on, picked from its name when none was chosen. */
+export const LOGO_COLORS = ['#4f46e5', '#0891b2', '#16a34a', '#d97706', '#dc2626', '#9333ea', '#db2777', '#0d9488']
+
+function nameColor(name: string): string {
+  let h = 0
+  for (const ch of name) h = (h * 31 + ch.charCodeAt(0)) >>> 0
+  return LOGO_COLORS[h % LOGO_COLORS.length]
+}
+
+/** An app's logo: its image (from Docker Hub or uploaded), else its initial on a colour. */
+export function AppLogo({ url, color, name, size = 40, faded }: { url?: string; color?: string; name: string; size?: number; faded?: boolean }) {
+  const [broken, setBroken] = useState(false)
+  useEffect(() => setBroken(false), [url])
+  const style = { width: size, height: size, borderRadius: Math.round(size * 0.26), opacity: faded ? 0.5 : undefined }
+  if (url && !broken) {
+    return (
+      <span className="app-logo app-logo-img" style={style} aria-hidden="true">
+        <img src={url} alt="" onError={() => setBroken(true)} />
+      </span>
+    )
+  }
+  return (
+    <span className="app-logo" style={{ ...style, background: color || nameColor(name), fontSize: size * 0.42 }} aria-hidden="true">
+      {name.trim().charAt(0).toUpperCase() || '?'}
+    </span>
+  )
+}
+
+/** How long something has been up, as « depuis … » reads it: quelques secondes, 5 min, 2 h, 3 jours. */
+export function upFor(unix: number): string {
+  const s = Math.max(0, Date.now() / 1000 - unix)
+  if (s < 60) return 'quelques secondes'
+  if (s < 3600) return `${Math.floor(s / 60)} min`
+  if (s < 48 * 3600) return `${Math.floor(s / 3600)} h`
+  return `${Math.floor(s / 86400)} jours`
+}
+
 /** An on/off switch. */
 export function Switch({ checked, onChange, label, disabled }: { checked: boolean; onChange: (v: boolean) => void; label: string; disabled?: boolean }) {
   return (
