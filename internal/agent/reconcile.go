@@ -1,6 +1,8 @@
 package agent
 
 import (
+	"archive/tar"
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -41,13 +43,14 @@ type Reconciler struct {
 	dc     *docker.Client
 	logger *slog.Logger
 
-	mu        sync.Mutex
-	desired   *agentpb.DesiredState // nil until the control plane sent one: nothing is removed before
-	progress  map[int64]string      // app → "pulling" or "creating" while it happens
-	lastError map[int64]string      // app → why its last deployment failed
-	cpuSeen   map[int64]cpuSample   // app → previous CPU counters, to compute use between two reports
-	failedOut map[int64]string      // app → spec hash of a new version that did not start, not retried
-	trigger   chan struct{}
+	mu         sync.Mutex
+	desired    *agentpb.DesiredState // nil until the control plane sent one: nothing is removed before
+	progress   map[int64]string      // app → "pulling" or "creating" while it happens
+	lastError  map[int64]string      // app → why its last deployment failed
+	cpuSeen    map[int64]cpuSample   // app → previous CPU counters, to compute use between two reports
+	failedOut  map[int64]string      // app → spec hash of a new version that did not start, not retried
+	relaysHash string                // the relays last written into Traefik's container
+	trigger    chan struct{}
 }
 
 // NewReconciler returns a Reconciler; call Run to start it.
@@ -123,8 +126,13 @@ func (r *Reconciler) reconcile(ctx context.Context) {
 		r.logger.Error("creating the forgeyard network failed", "err", err)
 		return
 	}
-	if err := r.ensureTraefik(ctx, d.GetIngress(), len(d.GetApps()) > 0); err != nil {
+	needed := len(d.GetApps()) > 0 || len(d.GetRelays()) > 0
+	if err := r.ensureTraefik(ctx, d.GetIngress(), d.GetRelays(), needed); err != nil {
 		r.logger.Error("starting Traefik failed", "err", err)
+	} else if needed {
+		if err := r.syncRelays(ctx, d.GetRelays(), d.GetIngress().GetMode()); err != nil {
+			r.logger.Error("updating the relays failed", "err", err)
+		}
 	}
 
 	wanted := map[string]bool{}
@@ -273,11 +281,12 @@ func appContainerConfig(app *agentpb.AppSpec, hash, ingressMode string) map[stri
 
 // ensureTraefik runs the ingress proxy that routes app domains to containers. It only runs while the node
 // has apps, so an empty node does not hold ports 80/443.
-func (r *Reconciler) ensureTraefik(ctx context.Context, ingress *agentpb.Ingress, needed bool) error {
+func (r *Reconciler) ensureTraefik(ctx context.Context, ingress *agentpb.Ingress, relays []*agentpb.Relay, needed bool) error {
 	if ingress == nil || !needed {
 		return r.dc.Remove(ctx, traefikName)
 	}
-	hash := specHash(ingress.GetMode(), strconv.Itoa(int(ingress.GetHttpPort())), traefikImage)
+	// "relays" marks the Traefik that reads its relays from a file, so older ones are replaced.
+	hash := specHash(ingress.GetMode(), strconv.Itoa(int(ingress.GetHttpPort())), traefikImage, "relays")
 	ct, err := r.dc.Inspect(ctx, traefikName)
 	if err == nil && ct.Config.Labels[labelIngress] == hash {
 		if !ct.State.Running && ct.State.Status != "restarting" {
@@ -298,6 +307,9 @@ func (r *Reconciler) ensureTraefik(ctx context.Context, ingress *agentpb.Ingress
 		"--providers.docker=true",
 		"--providers.docker.exposedByDefault=false",
 		"--providers.docker.network=" + networkName,
+		// Relays to other nodes come from a file the agent writes into the container.
+		"--providers.file.directory=" + relaysDir,
+		"--providers.file.watch=true",
 		"--entryPoints.web.address=:80",
 		"--log.level=WARN",
 	}
@@ -341,8 +353,83 @@ func (r *Reconciler) ensureTraefik(ctx context.Context, ingress *agentpb.Ingress
 	}); err != nil {
 		return err
 	}
+	// The relays file is there before Traefik starts, so its file provider finds its directory.
+	r.mu.Lock()
+	r.relaysHash = ""
+	r.mu.Unlock()
+	if err := r.syncRelays(ctx, relays, ingress.GetMode()); err != nil {
+		return err
+	}
 	r.logger.Info("Traefik started", "mode", ingress.GetMode())
 	return r.dc.Start(ctx, traefikName)
+}
+
+const (
+	relaysDir  = "/forgeyard"
+	relaysFile = "relays.yml"
+)
+
+// syncRelays writes the relays into Traefik's container when they changed; Traefik reloads the file.
+func (r *Reconciler) syncRelays(ctx context.Context, relays []*agentpb.Relay, mode string) error {
+	content := relaysConfig(relays, mode)
+	hash := specHash(string(content))
+	r.mu.Lock()
+	same := r.relaysHash == hash
+	r.mu.Unlock()
+	if same {
+		return nil
+	}
+	var buf bytes.Buffer
+	tw := tar.NewWriter(&buf)
+	dir := strings.TrimPrefix(relaysDir, "/")
+	tw.WriteHeader(&tar.Header{Name: dir + "/", Typeflag: tar.TypeDir, Mode: 0o755})
+	tw.WriteHeader(&tar.Header{Name: dir + "/" + relaysFile, Mode: 0o644, Size: int64(len(content))})
+	tw.Write(content)
+	if err := tw.Close(); err != nil {
+		return err
+	}
+	if err := r.dc.PutArchive(ctx, traefikName, "/", buf.Bytes()); err != nil {
+		return err
+	}
+	r.mu.Lock()
+	r.relaysHash = hash
+	r.mu.Unlock()
+	if len(relays) > 0 {
+		r.logger.Info("relays updated", "count", len(relays))
+	}
+	return nil
+}
+
+// relaysConfig is Traefik's dynamic configuration for the relays: one router per app domain, to the
+// Traefik of the app's node, keeping the Host header so that Traefik routes it.
+func relaysConfig(relays []*agentpb.Relay, mode string) []byte {
+	var b strings.Builder
+	if len(relays) == 0 {
+		return []byte("# No relay: every app of this public IP runs on this node.\n")
+	}
+	b.WriteString("http:\n  routers:\n")
+	name := func(host string) string {
+		return "relay-" + strings.Map(func(r rune) rune {
+			if r >= 'a' && r <= 'z' || r >= '0' && r <= '9' {
+				return r
+			}
+			return '-'
+		}, host)
+	}
+	for _, rl := range relays {
+		n := name(rl.GetHostname())
+		fmt.Fprintf(&b, "    %s:\n      rule: \"Host(`%s`)\"\n      service: %s\n", n, rl.GetHostname(), n)
+		if mode == "traefik" {
+			fmt.Fprintf(&b, "      entryPoints: [websecure]\n      tls:\n        certResolver: %s\n", certResolver)
+		} else {
+			b.WriteString("      entryPoints: [web]\n")
+		}
+	}
+	b.WriteString("  services:\n")
+	for _, rl := range relays {
+		fmt.Fprintf(&b, "    %s:\n      loadBalancer:\n        passHostHeader: true\n        servers:\n          - url: \"%s\"\n", name(rl.GetHostname()), rl.GetTarget())
+	}
+	return []byte(b.String())
 }
 
 type cpuSample struct {

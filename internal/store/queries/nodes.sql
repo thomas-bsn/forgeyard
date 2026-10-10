@@ -33,3 +33,6 @@ UPDATE nodes SET last_seen_at = ? WHERE id = ?;
 
 -- name: DeleteNode :exec
 DELETE FROM nodes WHERE id = ?;
+
+-- name: GetLocalNode :one
+SELECT * FROM nodes WHERE is_local = 1 LIMIT 1;

@@ -54,6 +54,16 @@ https:// {
 
 Quel que soit le proxy, la règle est la même : envoyer `*.mondomaine.com` vers `http://IP_LOCALE:8090`. La fenêtre « Réseau… » l'affiche avec l'IP et le domaine remplis, et donne l'exemple prêt à copier pour Caddy, Nginx, Traefik (configuration dynamique) et Nginx Proxy Manager.
 
+## Plusieurs nodes derrière la même box
+
+Derrière une seule IP publique, la box envoie tout le trafic web à une seule machine : celle de Forgeyard (son Traefik, ou votre proxy puis son Traefik). Les apps des autres nodes de la même IP y sont donc **relayées** :
+
+- ces nodes se mettent en mode « Mon reverse proxy » (Traefik en HTTP sur leur port d'entrée, 8090 par défaut ; pratique aussi quand le port 80 est déjà pris, par Pi-hole par exemple) ;
+- le Traefik de la machine de Forgeyard reçoit, pour chacune de leurs apps, une règle ``Host(`<app>.<domaine>`)`` vers `http://<IP locale du node>:<port>` ; le Traefik du node la sert ensuite à son app ;
+- l'agent écrit ces règles dans un fichier de configuration du conteneur Traefik (`/forgeyard/relays.yml`), que Traefik relit seul ; elles suivent les apps, les nodes et leurs IP locales.
+
+Un node avec sa propre IP publique (un VPS) n'est pas relayé : son DNS pointe sur lui et il gère ses ports 80/443 ou son propre proxy. La page Nodes signale un node derrière la même box resté en mode « Forgeyard gère les ports 80 et 443 ».
+
 ## Pourquoi Forgeyard ne modifie pas votre proxy
 
 La configuration de votre proxy ne change jamais : le wildcard envoie tout à Traefik, et c'est Traefik que Forgeyard met à jour. Forgeyard n'a donc besoin d'aucun accès à votre proxy et ne peut pas casser vos autres sites.

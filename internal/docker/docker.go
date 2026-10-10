@@ -312,6 +312,29 @@ func (c *Client) Output(ctx context.Context, name string) (string, error) {
 	return out.String(), nil
 }
 
+// PutArchive extracts a tar archive into a container's filesystem at path; the container may be created
+// but not started yet.
+func (c *Client) PutArchive(ctx context.Context, container, path string, archive []byte) error {
+	ctx, cancel := context.WithTimeout(ctx, 60*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodPut,
+		"http://docker/containers/"+url.PathEscape(container)+"/archive?path="+url.QueryEscape(path), bytes.NewReader(archive))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/x-tar")
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 300 {
+		raw, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+		return fmt.Errorf("docker put archive: %d %s", resp.StatusCode, strings.TrimSpace(string(raw)))
+	}
+	return nil
+}
+
 // Rename gives a container another name.
 func (c *Client) Rename(ctx context.Context, name, newName string) error {
 	return c.call(ctx, http.MethodPost, "/containers/"+url.PathEscape(name)+"/rename?name="+url.QueryEscape(newName), nil, nil)

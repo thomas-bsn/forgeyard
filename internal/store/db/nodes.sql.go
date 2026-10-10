@@ -84,6 +84,40 @@ func (q *Queries) DeleteNode(ctx context.Context, id int64) error {
 	return err
 }
 
+const getLocalNode = `-- name: GetLocalNode :one
+SELECT id, name, status, join_token_hash, join_expires_at, cert_serial, hostname, os, arch, cpus, memory_bytes, disk_bytes, docker_version, agent_version, last_seen_at, created_at, public_ip, ingress_mode, ingress_http_port, is_local, local_ip, docker_error FROM nodes WHERE is_local = 1 LIMIT 1
+`
+
+func (q *Queries) GetLocalNode(ctx context.Context) (Node, error) {
+	row := q.db.QueryRowContext(ctx, getLocalNode)
+	var i Node
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.Status,
+		&i.JoinTokenHash,
+		&i.JoinExpiresAt,
+		&i.CertSerial,
+		&i.Hostname,
+		&i.Os,
+		&i.Arch,
+		&i.Cpus,
+		&i.MemoryBytes,
+		&i.DiskBytes,
+		&i.DockerVersion,
+		&i.AgentVersion,
+		&i.LastSeenAt,
+		&i.CreatedAt,
+		&i.PublicIp,
+		&i.IngressMode,
+		&i.IngressHttpPort,
+		&i.IsLocal,
+		&i.LocalIp,
+		&i.DockerError,
+	)
+	return i, err
+}
+
 const getNode = `-- name: GetNode :one
 SELECT id, name, status, join_token_hash, join_expires_at, cert_serial, hostname, os, arch, cpus, memory_bytes, disk_bytes, docker_version, agent_version, last_seen_at, created_at, public_ip, ingress_mode, ingress_http_port, is_local, local_ip, docker_error FROM nodes WHERE id = ?
 `

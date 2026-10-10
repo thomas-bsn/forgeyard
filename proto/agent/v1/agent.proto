@@ -73,6 +73,14 @@ message Welcome {
 message DesiredState {
   repeated AppSpec apps = 1;
   Ingress ingress = 2;
+  // Relays are apps of other nodes behind the same public IP: this node's Traefik receives their
+  // requests and passes them on to those nodes over the local network.
+  repeated Relay relays = 3;
+}
+
+message Relay {
+  string hostname = 1; // the app's domain name
+  string target = 2;   // where its node's Traefik listens, e.g. http://192.168.1.20:8090
 }
 
 message AppSpec {

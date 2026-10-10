@@ -143,12 +143,56 @@ func (s *Server) desiredState(ctx context.Context, nodeID int64) (*agentpb.Desir
 			MemoryBytes: a.MemoryMb << 20, Generation: a.Generation,
 		})
 	}
+	if node.IsLocal != 0 {
+		if d.Relays, err = s.relays(ctx, node, c); err != nil {
+			return nil, err
+		}
+	}
 	return d, nil
 }
 
+// relays lists the apps Forgeyard's own machine passes on to other nodes. Behind one public IP (a home
+// box), web traffic reaches a single machine: the one running Forgeyard, whose proxy or Traefik receives
+// it. Apps on other nodes with the same public IP are relayed there over the local network, to their
+// node's Traefik in "behind my proxy" mode.
+func (s *Server) relays(ctx context.Context, front db.Node, c dnsConfig) ([]*agentpb.Relay, error) {
+	ip := nodeIP(front, c)
+	if ip == "" || c.Mode == "none" {
+		return nil, nil
+	}
+	nodeList, err := s.store.ListNodes(ctx)
+	if err != nil {
+		return nil, err
+	}
+	var out []*agentpb.Relay
+	for _, n := range nodeList {
+		if n.ID == front.ID || n.Status != "active" || nodeIP(n, c) != ip || n.LocalIp == "" || n.IngressMode != "proxy" {
+			continue
+		}
+		apps, err := s.store.ListAppsByNode(ctx, n.ID)
+		if err != nil {
+			return nil, err
+		}
+		target := "http://" + net.JoinHostPort(n.LocalIp, strconv.FormatInt(n.IngressHttpPort, 10))
+		for _, a := range apps {
+			if host := appHostname(c, a.Name); host != "" {
+				out = append(out, &agentpb.Relay{Hostname: host, Target: target})
+			}
+		}
+	}
+	return out, nil
+}
+
+// push sends a node its desired state, and Forgeyard's own machine too, whose relays follow the apps of
+// the other nodes.
 func (s *Server) push(ctx context.Context, nodeID int64) {
 	if err := s.nodes.Push(ctx, nodeID); err != nil {
 		s.logger.Error("sending the desired state failed", "node_id", nodeID, "err", err)
+	}
+	if local, err := s.store.GetLocalNode(ctx); err == nil && local.ID != nodeID {
+		if err := s.nodes.Push(ctx, local.ID); err != nil {
+			s.logger.Error("sending the desired state failed", "node_id", local.ID, "err", err)
+		}
 	}
 }
 

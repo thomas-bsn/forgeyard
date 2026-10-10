@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/netip"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -72,7 +73,7 @@ func connectFakeAgent(t *testing.T, ts string, server *Server, admin *http.Clien
 		t.Fatal(err)
 	}
 	stream.Send(&agentpb.AgentMessage{Msg: &agentpb.AgentMessage_Hello{Hello: &agentpb.Hello{
-		AgentVersion: "test", Info: &agentpb.NodeInfo{Hostname: name, Cpus: 2},
+		AgentVersion: "test", Info: &agentpb.NodeInfo{Hostname: name, Cpus: 2, LocalIp: "192.168.1." + strconv.Itoa(10+len(name))},
 	}}})
 	msg, err := stream.Recv()
 	if err != nil || msg.GetWelcome() == nil {
@@ -279,4 +280,21 @@ func TestDomainConfiguredAfterApps(t *testing.T) {
 	if ip := mem.Lookup("example.com.", "games", "A"); ip != "192.0.2.9" {
 		t.Fatalf("existing record changed: %q", ip)
 	}
+}
+
+// drainUntil reads desired states until one has relays matching ok.
+func (f *fakeAgent) drainUntil(t *testing.T, ok func(relays int, hosts, targets []string) bool) {
+	t.Helper()
+	for i := 0; i < 20; i++ {
+		d := f.desired(t)
+		var hosts, targets []string
+		for _, r := range d.GetRelays() {
+			hosts = append(hosts, r.GetHostname())
+			targets = append(targets, r.GetTarget())
+		}
+		if ok(len(d.GetRelays()), hosts, targets) {
+			return
+		}
+	}
+	t.Fatal("expected relays never arrived")
 }

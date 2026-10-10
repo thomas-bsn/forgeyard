@@ -12,7 +12,7 @@ Un seul flux gRPC bidirectionnel (`AgentService.Connect`, défini dans `proto/ag
 | agent → server | `ExternalContainers` (conteneurs que Forgeyard n'a pas créés, avec CPU et mémoire) | toutes les 10 s |
 | agent → server | `LogLine` | pendant qu'un utilisateur regarde des logs |
 | server → agent | `Welcome` (id et nom du node) | après `Hello` |
-| server → agent | `DesiredState` (toutes les apps du node + mode réseau) | à la connexion, puis à chaque changement |
+| server → agent | `DesiredState` (toutes les apps du node, mode réseau, et pour la machine de Forgeyard les relais vers les autres nodes de la même IP) | à la connexion, puis à chaque changement |
 | server → agent | `StartLogs` / `StopLogs` | ouverture / fermeture des logs dans l'UI (d'une app, ou d'un conteneur externe) |
 | server → agent | `ContainerAction` | démarrer, arrêter ou redémarrer un conteneur externe |
 | server → agent | `ExecStart` / `ExecInput` / `ExecResize` / `ExecClose` | terminal dans un conteneur |
