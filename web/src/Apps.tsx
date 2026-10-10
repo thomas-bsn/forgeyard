@@ -298,8 +298,9 @@ function AppList({
       title="Nouvelle app"
       submitLabel="Déployer"
       onClose={() => setCreating(false)}
-      onSubmit={async (input) => {
+      onSubmit={async (input, logo) => {
         const app = await api.createApp(input)
+        if (logo) await api.setAppLogo(app.id, { mode: 'custom', image: logo }).catch(() => {})
         setCreating(false)
         onChange()
         go(`apps/${app.id}`)
@@ -547,6 +548,20 @@ function LauncherIcon({ item: i }: { item: Item }) {
   )
 }
 
+/** The Docker Hub logo of an image, as the server serves it (see hubRepo on the server). */
+function hubLogoURL(image: string): string | undefined {
+  let ref = image.trim().toLowerCase().split('@')[0]
+  const colon = ref.lastIndexOf(':')
+  if (colon > ref.lastIndexOf('/')) ref = ref.slice(0, colon)
+  let parts = ref.split('/').filter(Boolean)
+  if (parts.length > 1 && (/[.:]/.test(parts[0]) || parts[0] === 'localhost')) {
+    if (!['docker.io', 'index.docker.io', 'registry-1.docker.io'].includes(parts[0])) return undefined
+    parts = parts.slice(1)
+  }
+  if (parts.length === 1) parts = ['library', parts[0]]
+  return parts.length === 2 ? `/api/logos?repo=${encodeURIComponent(parts.join('/'))}` : undefined
+}
+
 function AppFormModal({
   title,
   submitLabel,
@@ -557,11 +572,21 @@ function AppFormModal({
   title: string
   submitLabel: string
   initial?: App
-  onSubmit: (input: AppInput) => Promise<void>
+  // logo: a framed picture chosen at creation, as a data URL.
+  onSubmit: (input: AppInput, logo?: string) => Promise<void>
   onClose: () => void
 }) {
   const [name, setName] = useState(initial?.name ?? '')
   const [image, setImage] = useState(initial?.image ?? '')
+  const [logo, setLogo] = useState('')
+  // The logo preview follows the image once typing pauses, not at every key (each name is looked up).
+  const [settledImage, setSettledImage] = useState(image)
+  useEffect(() => {
+    const t = setTimeout(() => setSettledImage(image), 600)
+    return () => clearTimeout(t)
+  }, [image])
+  const [cropping, setCropping] = useState<File | null>(null)
+  const logoFile = useRef<HTMLInputElement>(null)
   const [port, setPort] = useState(String(initial?.port ?? 80))
   const [memory, setMemory] = useState(String(initial?.memoryMb ?? 512))
   const [env, setEnv] = useState<{ key: string; value: string }[]>(Object.entries(initial?.env ?? {}).map(([key, value]) => ({ key, value })))
@@ -575,7 +600,7 @@ function AppFormModal({
     try {
       const vars: Record<string, string> = {}
       for (const { key, value } of env) if (key.trim()) vars[key.trim()] = value
-      await onSubmit({ name: initial ? undefined : name, image, port: Number(port), memoryMb: Number(memory), env: vars })
+      await onSubmit({ name: initial ? undefined : name, image, port: Number(port), memoryMb: Number(memory), env: vars }, logo || undefined)
     } catch (err) {
       setError(errorMessage(err))
       setBusy(false)
@@ -609,6 +634,56 @@ function AppFormModal({
         <span>Image Docker</span>
         <input value={image} onChange={(e) => setImage(e.target.value)} placeholder="nginx:alpine" required autoFocus={!!initial} />
       </label>
+      {!initial && (
+        <div className="field">
+          <span>Logo</span>
+          <div className="logo-pick">
+            {logo ? (
+              <img className="app-logo app-logo-preview" src={logo} alt="" />
+            ) : (
+              <AppLogo url={hubLogoURL(settledImage)} name={name || '?'} size={48} />
+            )}
+            <span className="logo-pick-text">
+              <small className="muted">{logo ? 'Votre image.' : 'Automatique : le logo de l’image sur Docker Hub, sinon l’initiale.'}</small>
+              <span className="row-actions">
+                <button type="button" className="btn btn-small" onClick={() => logoFile.current?.click()}>
+                  {logo ? 'Changer' : 'Mon image'}
+                </button>
+                {logo && (
+                  <button type="button" className="btn btn-small" onClick={() => setLogo('')}>
+                    Automatique
+                  </button>
+                )}
+              </span>
+            </span>
+          </div>
+          <input
+            ref={logoFile}
+            type="file"
+            accept="image/png,image/jpeg,image/webp,image/gif"
+            hidden
+            onChange={(e) => {
+              const f = e.target.files?.[0]
+              e.target.value = ''
+              if (f) setCropping(f)
+            }}
+          />
+        </div>
+      )}
+      {cropping && (
+        <ImageCropper
+          file={cropping}
+          title="Cadrer le logo"
+          outWidth={256}
+          outHeight={256}
+          png
+          onCancel={() => setCropping(null)}
+          onSave={async (dataUrl) => {
+            setLogo(dataUrl)
+            setCropping(null)
+          }}
+        />
+      )}
       <div className="form-row">
         <label className="field">
           <span>Port de l’app</span>

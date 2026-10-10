@@ -2954,3 +2954,14 @@ a.link-btn {
   flex: 1;
   min-width: 0;
 }
+
+.logo-pick {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.logo-pick-text {
+  display: grid;
+  gap: 6px;
+}
