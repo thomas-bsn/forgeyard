@@ -39,8 +39,11 @@ type User struct {
 	Username   string `json:"username"`
 	GlobalName string `json:"global_name"`
 	Avatar     string `json:"avatar"`
-	Email      string `json:"email"`
-	Verified   bool   `json:"verified"`
+	Banner     string `json:"banner"`
+	// AccentColor is the profile colour, as 0xRRGGBB; nil when the user has none.
+	AccentColor *int64 `json:"accent_color"`
+	Email       string `json:"email"`
+	Verified    bool   `json:"verified"`
 }
 
 // DisplayName returns the name Discord shows for the user.
@@ -49,6 +52,14 @@ func (u User) DisplayName() string {
 		return u.GlobalName
 	}
 	return u.Username
+}
+
+// Accent returns the profile colour, or -1 when there is none.
+func (u User) Accent() int64 {
+	if u.AccentColor == nil {
+		return -1
+	}
+	return *u.AccentColor
 }
 
 // VerifiedEmail returns the email only when Discord has verified it.

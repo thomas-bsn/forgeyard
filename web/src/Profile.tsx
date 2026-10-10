@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { api, errorMessage, type Session, type User } from './api'
-import { Avatar } from './ui'
+import { Avatar, Switch } from './ui'
 
 type Section = 'profile' | 'security' | 'notifications' | 'ssh' | 'tokens'
 
@@ -85,16 +85,19 @@ function ComingSoon({ items }: { items: string[] }) {
   )
 }
 
-/** Resizes a picture to a 256×256 square, cropped at its centre, so uploads stay small. */
-function resizePicture(file: File): Promise<string> {
+/** Resizes an image to width×height, cropped at its centre, so uploads stay small. */
+function resizeImage(file: File, width: number, height: number): Promise<string> {
   return new Promise((resolve, reject) => {
     const url = URL.createObjectURL(file)
     const img = new Image()
     img.onload = () => {
-      const side = Math.min(img.width, img.height)
+      const scale = Math.max(width / img.width, height / img.height)
+      const sw = width / scale
+      const sh = height / scale
       const canvas = document.createElement('canvas')
-      canvas.width = canvas.height = 256
-      canvas.getContext('2d')!.drawImage(img, (img.width - side) / 2, (img.height - side) / 2, side, side, 0, 0, 256, 256)
+      canvas.width = width
+      canvas.height = height
+      canvas.getContext('2d')!.drawImage(img, (img.width - sw) / 2, (img.height - sh) / 2, sw, sh, 0, 0, width, height)
       URL.revokeObjectURL(url)
       const webp = canvas.toDataURL('image/webp', 0.85)
       // Browsers that cannot encode WebP give back a PNG: JPEG is lighter then.
@@ -108,16 +111,116 @@ function resizePicture(file: File): Promise<string> {
   })
 }
 
+/** The banner of a profile: an image, else the profile colour, else the theme's accent. */
+export function Banner({ url, color, height = 140 }: { url?: string; color?: string; height?: number }) {
+  return (
+    <div
+      className="banner-img"
+      style={{ height, backgroundColor: color || undefined, backgroundImage: url ? `url("${url}")` : undefined }}
+      aria-hidden="true"
+    />
+  )
+}
+
+/**
+ * Where a picture comes from: Discord or the user's own image. Choosing Discord drops the uploaded image;
+ * choosing "Mon image" asks for a file.
+ */
+function ImageSource({
+  label,
+  user,
+  custom,
+  fromDiscord,
+  missing,
+  busy,
+  onUpload,
+  onReset,
+}: {
+  label: string
+  user: User
+  custom: boolean
+  fromDiscord: string
+  missing: string
+  busy: boolean
+  onUpload: (f: File) => void
+  onReset: () => void
+}) {
+  const file = useRef<HTMLInputElement>(null)
+  const discord = user.method === 'discord'
+  return (
+    <div className="image-source">
+      <div className="image-source-head">
+        <strong>{label}</strong>
+        {discord && (
+          <div className="segmented segmented-small" role="radiogroup" aria-label={`Source de la ${label.toLowerCase()}`}>
+            <button type="button" role="radio" aria-checked={!custom} className={!custom ? 'on' : ''} disabled={busy} onClick={() => custom && onReset()}>
+              Discord
+            </button>
+            <button type="button" role="radio" aria-checked={custom} className={custom ? 'on' : ''} disabled={busy} onClick={() => file.current?.click()}>
+              Mon image
+            </button>
+          </div>
+        )}
+      </div>
+      <p className="muted">
+        {custom ? (
+          <>
+            Votre image.{' '}
+            <button type="button" className="link-btn" disabled={busy} onClick={() => file.current?.click()}>
+              En choisir une autre
+            </button>
+            {!discord && (
+              <>
+                {' · '}
+                <button type="button" className="link-btn" disabled={busy} onClick={onReset}>
+                  Retirer
+                </button>
+              </>
+            )}
+          </>
+        ) : discord ? (
+          missing ? (
+            <>
+              {missing}{' '}
+              <a className="link-btn" href="/api/auth/discord?return=profile">
+                Récupérer maintenant
+              </a>
+            </>
+          ) : (
+            fromDiscord
+          )
+        ) : (
+          <button type="button" className="btn" disabled={busy} onClick={() => file.current?.click()}>
+            Choisir une image
+          </button>
+        )}
+      </p>
+      <input
+        ref={file}
+        type="file"
+        accept="image/png,image/jpeg,image/webp,image/gif"
+        hidden
+        onChange={(e) => {
+          const f = e.target.files?.[0]
+          e.target.value = ''
+          if (f) onUpload(f)
+        }}
+      />
+    </div>
+  )
+}
+
 function ProfilePanel({ user, onChange }: { user: User; onChange: () => void }) {
   const discord = user.method === 'discord'
   const [followDiscord, setFollowDiscord] = useState(user.nameFromDiscord)
   const [name, setName] = useState(user.displayName)
   const [bio, setBio] = useState(user.bio)
   const [email, setEmail] = useState(user.email)
+  const [showApps, setShowApps] = useState(user.showApps)
+  const [showEmail, setShowEmail] = useState(user.showEmail)
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
   const [busy, setBusy] = useState(false)
-  const file = useRef<HTMLInputElement>(null)
 
   async function run(action: () => Promise<unknown>, done: string) {
     setBusy(true)
@@ -136,53 +239,58 @@ function ProfilePanel({ user, onChange }: { user: User; onChange: () => void }) 
 
   function save(e: FormEvent) {
     e.preventDefault()
-    run(() => api.saveProfile({ displayName: name, nameFromDiscord: followDiscord, bio, email }), 'Profil enregistré.')
+    run(() => api.saveProfile({ displayName: name, nameFromDiscord: followDiscord, bio, email, showApps, showEmail }), 'Profil enregistré.')
   }
+
+  const shownName = followDiscord && user.discordName ? user.discordName : name
 
   return (
     <>
-      <section className="panel">
-        <h2>Photo de profil</h2>
-        <div className="avatar-row">
-          <Avatar url={user.avatarUrl} name={user.displayName} size={72} />
-          <div className="avatar-actions">
-            <p className="muted">
-              {user.customAvatar
-                ? 'Votre propre photo.'
-                : discord && user.avatarUrl
-                  ? 'Celle de votre compte Discord, mise à jour à chaque connexion.'
-                  : discord
-                    ? 'Forgeyard n’a pas encore votre photo Discord : elle arrive à la prochaine connexion avec Discord.'
-                    : 'Votre initiale, tant que vous n’avez pas envoyé de photo.'}
-            </p>
-            <div className="row-actions">
-              <button type="button" className="btn" disabled={busy} onClick={() => file.current?.click()}>
-                Envoyer une photo
-              </button>
-              {discord && (
-                <a className="btn" href="/api/auth/discord?return=profile" title="Reprend votre photo et votre nom Discord">
-                  Mettre à jour depuis Discord
-                </a>
-              )}
-              {user.customAvatar && (
-                <button type="button" className="btn" disabled={busy} onClick={() => run(() => api.deleteAvatar(), 'Photo retirée.')}>
-                  {discord ? 'Reprendre celle de Discord' : 'Retirer la photo'}
-                </button>
-              )}
-            </div>
-            <input
-              ref={file}
-              type="file"
-              accept="image/png,image/jpeg,image/webp,image/gif"
-              hidden
-              onChange={(e) => {
-                const f = e.target.files?.[0]
-                e.target.value = ''
-                if (f) run(async () => api.uploadAvatar(await resizePicture(f)), 'Photo enregistrée.')
-              }}
-            />
+      <section className="panel profile-preview">
+        <Banner url={user.bannerUrl} color={user.accentColor} height={120} />
+        <div className="profile-preview-body">
+          <Avatar url={user.avatarUrl} name={shownName} size={76} />
+          <div>
+            <strong>{shownName}</strong>
+            <span className="muted">{bio || 'Pas encore de description.'}</span>
           </div>
+          <a className="btn btn-small" href={`#/u/${user.id}`}>
+            Voir mon profil public
+          </a>
         </div>
+      </section>
+
+      {error && <p className="error">{error}</p>}
+      {notice && (
+        <div className="banner banner-up" role="status">
+          <span className="dot dot-up" />
+          {notice}
+        </div>
+      )}
+
+      <section className="panel">
+        <h2>Apparence</h2>
+        <ImageSource
+          label="Photo"
+          user={user}
+          custom={user.customAvatar}
+          fromDiscord="Votre photo Discord, mise à jour à chaque connexion."
+          missing={user.avatarUrl ? '' : 'Forgeyard n’a pas encore votre photo Discord.'}
+          busy={busy}
+          onUpload={(f) => run(async () => api.uploadAvatar(await resizeImage(f, 256, 256)), 'Photo enregistrée.')}
+          onReset={() => run(() => api.deleteAvatar(), discord ? 'Photo Discord reprise.' : 'Photo retirée.')}
+        />
+        <ImageSource
+          label="Bannière"
+          user={user}
+          custom={user.customBanner}
+          fromDiscord={user.bannerUrl ? 'Votre bannière Discord, mise à jour à chaque connexion.' : 'Pas de bannière sur Discord : la couleur de votre profil Discord est utilisée.'}
+          missing={user.bannerUrl || user.accentColor ? '' : 'Forgeyard n’a pas encore votre bannière Discord.'}
+          busy={busy}
+          onUpload={(f) => run(async () => api.uploadBanner(await resizeImage(f, 1500, 500)), 'Bannière enregistrée.')}
+          onReset={() => run(() => api.deleteBanner(), discord ? 'Bannière Discord reprise.' : 'Bannière retirée.')}
+        />
+        <small className="muted">PNG, JPEG, WebP ou GIF, recadrés automatiquement.</small>
       </section>
 
       <form className="panel" onSubmit={save}>
@@ -194,19 +302,21 @@ function ProfilePanel({ user, onChange }: { user: User; onChange: () => void }) 
             <small>Il sert à vous connecter et ne change pas.</small>
           </label>
         )}
-        {discord && (
-          <label className="check">
-            <input type="checkbox" checked={followDiscord} onChange={(e) => setFollowDiscord(e.target.checked)} />
-            <span>
-              <b>Utiliser mon nom Discord</b>
-              <small>{user.discordName ? `« ${user.discordName} », mis à jour à chaque connexion.` : 'Mis à jour à chaque connexion.'}</small>
-            </span>
-          </label>
-        )}
-        <label className="field">
+        <div className="field">
           <span>Nom affiché</span>
-          <input value={followDiscord && user.discordName ? user.discordName : name} onChange={(e) => setName(e.target.value)} maxLength={64} required disabled={followDiscord} />
-        </label>
+          {discord && (
+            <div className="segmented segmented-small" role="radiogroup" aria-label="Source du nom">
+              <button type="button" role="radio" aria-checked={followDiscord} className={followDiscord ? 'on' : ''} onClick={() => setFollowDiscord(true)}>
+                Discord
+              </button>
+              <button type="button" role="radio" aria-checked={!followDiscord} className={!followDiscord ? 'on' : ''} onClick={() => setFollowDiscord(false)}>
+                Mon nom
+              </button>
+            </div>
+          )}
+          <input value={shownName} onChange={(e) => setName(e.target.value)} maxLength={64} required disabled={followDiscord} aria-label="Nom affiché" />
+          {followDiscord && <small>Votre nom Discord, mis à jour à chaque connexion.</small>}
+        </div>
         <label className="field">
           <span>Description</span>
           <textarea value={bio} onChange={(e) => setBio(e.target.value)} maxLength={280} rows={3} placeholder="Ce que vous faites, vos projets…" />
@@ -217,8 +327,23 @@ function ProfilePanel({ user, onChange }: { user: User; onChange: () => void }) 
           <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="vous@exemple.com" />
           <small>Pour les notifications, plus tard. {discord ? 'Prérempli avec celui de Discord.' : ''}</small>
         </label>
-        {error && <p className="error">{error}</p>}
-        {notice && <p className="muted">{notice}</p>}
+
+        <h2>Ce que voient les autres membres</h2>
+        <div className="setting-row">
+          <div className="header-title">
+            <strong>Mes apps sur mon profil</strong>
+            <p className="muted">Leur nom, leur adresse et leur état. Jamais leur configuration ni leurs logs. Chaque app peut aussi être masquée depuis sa page.</p>
+          </div>
+          <Switch checked={showApps} onChange={setShowApps} label="Afficher mes apps sur mon profil" />
+        </div>
+        <div className="setting-row">
+          <div className="header-title">
+            <strong>Mon email sur mon profil</strong>
+            <p className="muted">Pour qu’on puisse vous écrire{discord ? ' (Discord reste proposé)' : ''}.</p>
+          </div>
+          <Switch checked={showEmail && email !== ''} onChange={setShowEmail} disabled={email === ''} label="Afficher mon email sur mon profil" />
+        </div>
+
         <div className="panel-footer">
           <span className="muted">Membre depuis le {new Date(user.createdAt * 1000).toLocaleDateString('fr-FR')}</span>
           <span className="spacer" />

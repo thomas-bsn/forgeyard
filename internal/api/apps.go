@@ -226,6 +226,7 @@ type appResponse struct {
 	CPUPercent   float64           `json:"cpuPercent,omitempty"`
 	MemoryUsed   uint64            `json:"memoryUsedBytes,omitempty"`
 	Suspended    bool              `json:"suspended,omitempty"`
+	Public       bool              `json:"public"`
 	UpdatedAt    int64             `json:"updatedAt"`
 	Env          map[string]string `json:"env,omitempty"`
 }
@@ -236,7 +237,7 @@ func (s *Server) toAppResponse(a db.App, ownerName string, ownerSuspended bool, 
 	resp := appResponse{
 		ID: a.ID, Name: a.Name, OwnerID: a.OwnerID, OwnerName: ownerName, NodeID: a.NodeID, NodeName: nodeName,
 		Image: a.Image, Port: a.Port, MemoryMB: a.MemoryMb, Running: a.Running != 0, UpdatedAt: a.UpdatedAt,
-		State: "pending", Suspended: ownerSuspended,
+		State: "pending", Suspended: ownerSuspended, Public: a.Public != 0,
 	}
 	if host := appHostname(c, a.Name); host != "" {
 		resp.URL = "https://" + host
@@ -382,7 +383,7 @@ func (s *Server) handleListApps(w http.ResponseWriter, r *http.Request) {
 	for _, row := range rows {
 		a := db.App{ID: row.ID, Name: row.Name, OwnerID: row.OwnerID, NodeID: row.NodeID, Image: row.Image,
 			Port: row.Port, EnvSealed: row.EnvSealed, Running: row.Running, MemoryMb: row.MemoryMb,
-			Generation: row.Generation, DnsName: row.DnsName, CreatedAt: row.CreatedAt, UpdatedAt: row.UpdatedAt}
+			Generation: row.Generation, DnsName: row.DnsName, CreatedAt: row.CreatedAt, UpdatedAt: row.UpdatedAt, Public: row.Public}
 		out = append(out, s.toAppResponse(a, row.OwnerName, row.OwnerSuspended != 0, row.NodeName, c, byID[row.NodeID], s.publicHost(ctx, r)))
 	}
 	writeJSON(w, http.StatusOK, out)

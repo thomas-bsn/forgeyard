@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { api, errorMessage, type App, type AppEvent, type AppInput, type AppState, type AppUsage, type Container, type Node } from './api'
-import { AreaChart, formatBytes, Modal, since } from './ui'
+import { AreaChart, formatBytes, Modal, since, Switch } from './ui'
 
 const POLL_MS = 3000
 const USAGE_POLL_MS = 15000
@@ -578,8 +578,17 @@ function AppDetail({ app, onChange, go }: { app: App; onChange: () => void; go: 
           <dt>Mémoire</dt>
           <dd>{app.memoryMb} Mo max.</dd>
           <dt>Propriétaire</dt>
-          <dd>{app.ownerName}</dd>
+          <dd>
+            <a href={`#/u/${app.ownerId}`}>{app.ownerName}</a>
+          </dd>
         </dl>
+        <div className="setting-row small-setting">
+          <span className="header-title">
+            <strong>Visible sur le profil</strong>
+            <span className="muted"> de {app.ownerName}</span>
+          </span>
+          <Switch checked={app.public} disabled={busy} onChange={(v) => run(() => api.setAppPublic(app.id, v))} label="Visible sur le profil du propriétaire" />
+        </div>
 
         {error && <p className="error">{error}</p>}
         <div className="detail-actions">

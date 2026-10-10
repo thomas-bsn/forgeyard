@@ -14,8 +14,12 @@ import (
 	"github.com/thomas-bsn/forgeyard/internal/store/db"
 )
 
-// maxAvatarBytes bounds an uploaded picture; the browser resizes it to 256×256 first.
-const maxAvatarBytes = 512 << 10
+// maxAvatarBytes bounds an uploaded picture; the browser resizes it to 256×256 first. A banner, resized
+// to 1500×500, gets more room.
+const (
+	maxAvatarBytes = 512 << 10
+	maxBannerBytes = 700 << 10
+)
 
 // avatarTypes are the formats accepted for an uploaded picture: raster images only, never SVG, which
 // could carry scripts.
@@ -26,6 +30,8 @@ type profileRequest struct {
 	NameFromDiscord bool   `json:"nameFromDiscord"`
 	Bio             string `json:"bio"`
 	Email           string `json:"email"`
+	ShowApps        bool   `json:"showApps"`
+	ShowEmail       bool   `json:"showEmail"`
 }
 
 // handlePutProfile changes the current user's display name, description and email.
@@ -58,7 +64,8 @@ func (s *Server) handlePutProfile(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if err := s.store.UpdateProfile(ctx, db.UpdateProfileParams{
-		DisplayName: name, NameFromDiscord: boolInt(followDiscord), Bio: bio, Email: nullString(email), ID: u.ID,
+		DisplayName: name, NameFromDiscord: boolInt(followDiscord), Bio: bio, Email: nullString(email),
+		ShowApps: boolInt(body.ShowApps), ShowEmail: boolInt(body.ShowEmail && email != ""), ID: u.ID,
 	}); err != nil {
 		s.internalError(w, r, err)
 		return
@@ -75,33 +82,52 @@ func (s *Server) writeMe(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, toUserResponse(u))
 }
 
-// handlePutAvatar stores a picture the user uploaded, sent as a data URL.
-func (s *Server) handlePutAvatar(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
+// readImage decodes an uploaded image sent as a data URL, checking its size and its real format.
+func readImage(w http.ResponseWriter, r *http.Request, maxBytes int) ([]byte, string, bool) {
 	var body struct {
 		Image string `json:"image"`
 	}
 	if !decodeJSON(w, r, &body) {
-		return
+		return nil, "", false
 	}
 	_, encoded, ok := strings.Cut(body.Image, ";base64,")
 	if !ok {
 		writeError(w, http.StatusBadRequest, "image invalide")
-		return
+		return nil, "", false
 	}
 	data, err := base64.StdEncoding.DecodeString(encoded)
 	if err != nil || len(data) == 0 {
 		writeError(w, http.StatusBadRequest, "image invalide")
-		return
+		return nil, "", false
 	}
-	if len(data) > maxAvatarBytes {
-		writeError(w, http.StatusBadRequest, "image trop lourde (512 Ko au plus)")
-		return
+	if len(data) > maxBytes {
+		writeError(w, http.StatusBadRequest, "image trop lourde ("+strconv.Itoa(maxBytes>>10)+" Ko au plus)")
+		return nil, "", false
 	}
 	// The type comes from the bytes, not from what the browser claims.
 	contentType := http.DetectContentType(data)
 	if !avatarTypes[contentType] {
 		writeError(w, http.StatusBadRequest, "format refusé : PNG, JPEG, WebP ou GIF")
+		return nil, "", false
+	}
+	return data, contentType, true
+}
+
+// serveImage sends an uploaded image so that a browser can only display it.
+func serveImage(w http.ResponseWriter, contentType string, data []byte) {
+	w.Header().Set("Content-Type", contentType)
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	w.Header().Set("Content-Security-Policy", "default-src 'none'")
+	// The URL changes with the image, so it can be cached for long.
+	w.Header().Set("Cache-Control", "private, max-age=31536000, immutable")
+	w.Write(data)
+}
+
+// handlePutAvatar stores a picture the user uploaded, sent as a data URL.
+func (s *Server) handlePutAvatar(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	data, contentType, ok := readImage(w, r, maxAvatarBytes)
+	if !ok {
 		return
 	}
 	u := currentUser(r)
@@ -149,12 +175,62 @@ func (s *Server) handleGetAvatar(w http.ResponseWriter, r *http.Request) {
 		s.internalError(w, r, err)
 		return
 	}
-	w.Header().Set("Content-Type", a.ContentType)
-	w.Header().Set("X-Content-Type-Options", "nosniff")
-	w.Header().Set("Content-Security-Policy", "default-src 'none'")
-	// The URL changes with the picture, so it can be cached for long.
-	w.Header().Set("Cache-Control", "private, max-age=31536000, immutable")
-	w.Write(a.Data)
+	serveImage(w, a.ContentType, a.Data)
+}
+
+// handlePutBanner stores a banner the user uploaded, in place of their Discord banner.
+func (s *Server) handlePutBanner(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	data, contentType, ok := readImage(w, r, maxBannerBytes)
+	if !ok {
+		return
+	}
+	u := currentUser(r)
+	if err := s.store.InTx(ctx, func(q *db.Queries) error {
+		if err := q.SetBanner(ctx, db.SetBannerParams{UserID: u.ID, ContentType: contentType, Data: data}); err != nil {
+			return err
+		}
+		return q.SetBannerUpdatedAt(ctx, db.SetBannerUpdatedAtParams{BannerUpdatedAt: time.Now().UnixMilli(), ID: u.ID})
+	}); err != nil {
+		s.internalError(w, r, err)
+		return
+	}
+	s.writeMe(w, r)
+}
+
+// handleDeleteBanner goes back to the Discord banner, or to the profile colour.
+func (s *Server) handleDeleteBanner(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	u := currentUser(r)
+	if err := s.store.InTx(ctx, func(q *db.Queries) error {
+		if err := q.DeleteBanner(ctx, u.ID); err != nil {
+			return err
+		}
+		return q.SetBannerUpdatedAt(ctx, db.SetBannerUpdatedAtParams{BannerUpdatedAt: 0, ID: u.ID})
+	}); err != nil {
+		s.internalError(w, r, err)
+		return
+	}
+	s.writeMe(w, r)
+}
+
+// handleGetBanner serves an uploaded banner to signed-in users.
+func (s *Server) handleGetBanner(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	b, err := s.store.GetBanner(r.Context(), id)
+	if errors.Is(err, sql.ErrNoRows) {
+		http.NotFound(w, r)
+		return
+	}
+	if err != nil {
+		s.internalError(w, r, err)
+		return
+	}
+	serveImage(w, b.ContentType, b.Data)
 }
 
 // handlePutPassword changes the password of an account that signs in with one.

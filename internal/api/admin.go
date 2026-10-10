@@ -93,7 +93,7 @@ func (s *Server) handleAcceptRequest(w http.ResponseWriter, r *http.Request) {
 			return err
 		}
 		if err := q.UpdateDiscordProfile(r.Context(), db.UpdateDiscordProfileParams{
-			DiscordName: req.DisplayName, DiscordAvatar: req.Avatar.String, Email: req.Email, ID: user.ID,
+			DiscordName: req.DisplayName, DiscordAvatar: req.Avatar.String, DiscordAccent: -1, Email: req.Email, ID: user.ID,
 		}); err != nil {
 			return err
 		}

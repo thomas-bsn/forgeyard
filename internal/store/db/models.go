@@ -35,6 +35,7 @@ type App struct {
 	DnsName    string
 	CreatedAt  int64
 	UpdatedAt  int64
+	Public     int64
 }
 
 type AppEvent struct {
@@ -46,6 +47,12 @@ type AppEvent struct {
 }
 
 type Avatar struct {
+	UserID      int64
+	ContentType string
+	Data        []byte
+}
+
+type Banner struct {
 	UserID      int64
 	ContentType string
 	Data        []byte
@@ -121,4 +128,9 @@ type User struct {
 	NameFromDiscord int64
 	Bio             string
 	AvatarUpdatedAt int64
+	DiscordBanner   string
+	DiscordAccent   int64
+	BannerUpdatedAt int64
+	ShowApps        int64
+	ShowEmail       int64
 }

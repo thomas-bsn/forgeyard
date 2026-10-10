@@ -8,11 +8,36 @@ export type User = {
   method: 'discord' | 'password'
   avatarUrl?: string
   customAvatar: boolean
+  bannerUrl?: string
+  customBanner: boolean
+  accentColor?: string
+  showApps: boolean
+  showEmail: boolean
   email: string
   bio: string
   discordName?: string
   nameFromDiscord: boolean
   createdAt: number
+}
+
+export type Member = {
+  id: number
+  displayName: string
+  role: Role
+  avatarUrl?: string
+  bio: string
+  publicApps: number
+  createdAt: number
+}
+
+export type MemberProfile = Member & {
+  bannerUrl?: string
+  accentColor?: string
+  discordId?: string
+  email?: string
+  showApps: boolean
+  apps: { id: number; name: string; url?: string; state: AppState }[]
+  activity: { at: number; kind: AppEvent['kind']; app: string; message: string }[]
 }
 
 export type Session = {
@@ -115,6 +140,7 @@ export type App = {
   cpuPercent?: number
   memoryUsedBytes?: number
   suspended?: boolean
+  public: boolean
   updatedAt: number
   env?: Record<string, string>
 }
@@ -286,10 +312,15 @@ export const api = {
   updateUser: (id: number, body: { role?: 'user' | 'admin'; disabled?: boolean; appsSuspended?: boolean }) =>
     request<void>('PUT', `/api/admin/users/${id}`, body),
   deleteUser: (id: number) => request<void>('DELETE', `/api/admin/users/${id}`, {}),
-  saveProfile: (body: { displayName: string; nameFromDiscord: boolean; bio: string; email: string }) =>
+  saveProfile: (body: { displayName: string; nameFromDiscord: boolean; bio: string; email: string; showApps: boolean; showEmail: boolean }) =>
     request<User>('PUT', '/api/me/profile', body),
   uploadAvatar: (image: string) => request<User>('PUT', '/api/me/avatar', { image }),
   deleteAvatar: () => request<User>('DELETE', '/api/me/avatar', {}),
+  uploadBanner: (image: string) => request<User>('PUT', '/api/me/banner', { image }),
+  deleteBanner: () => request<User>('DELETE', '/api/me/banner', {}),
+  members: () => request<Member[]>('GET', '/api/members'),
+  member: (id: number) => request<MemberProfile>('GET', `/api/members/${id}`),
+  setAppPublic: (id: number, value: boolean) => request<App>('PUT', `/api/apps/${id}/public`, { public: value }),
   changePassword: (current: string, next: string) => request<void>('PUT', '/api/me/password', { current, new: next }),
   sessions: () => request<Session[]>('GET', '/api/me/sessions'),
   deleteSession: (id: string) => request<void>('DELETE', `/api/me/sessions/${id}`, {}),

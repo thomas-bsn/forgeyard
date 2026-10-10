@@ -6,6 +6,7 @@ import Nodes from './Nodes'
 import Apps from './Apps'
 import Users from './Users'
 import Profile from './Profile'
+import { MemberGrid, MemberPage } from './Members'
 
 const roleLabels: Record<User['role'], string> = {
   superadmin: 'superadmin',
@@ -39,8 +40,9 @@ export default function Dashboard({
     onLogout()
   }
 
-  // An app or an external container opens under Apps.
-  const page = route[0] === 'containers' ? 'apps' : (route[0] ?? 'apps')
+  // An app or an external container opens under Apps, a member's profile under Members.
+  const aliases: Record<string, string> = { containers: 'apps', users: 'members', u: 'members' }
+  const page = aliases[route[0]] ?? route[0] ?? 'apps'
   const tab = (value: string, label: string, count?: number) => (
     <a href={`#/${value}`} className={`chip ${page === value ? 'on' : ''}`} aria-current={page === value ? 'page' : undefined}>
       {label}
@@ -58,7 +60,7 @@ export default function Dashboard({
         <nav className="tabs" aria-label="Sections">
           {tab('apps', 'Apps')}
           {admin && tab('nodes', 'Nodes')}
-          {admin && tab('users', 'Utilisateurs', pending)}
+          {tab('members', 'Membres', admin ? pending : 0)}
         </nav>
         <span className="spacer" />
         <UserMenu user={user} admin={admin} pending={pending} onLogout={logout} />
@@ -66,7 +68,11 @@ export default function Dashboard({
 
       {page === 'apps' && <Apps admin={admin} superadmin={user.role === 'superadmin'} route={route.length ? route : ['apps']} go={go} />}
       {page === 'nodes' && admin && <Nodes localSupported={instance.localNodeSupported} />}
-      {page === 'users' && admin && <Users me={user} onRequestsChange={setPending} />}
+      {route[0] === 'u' && route[1] ? (
+        <MemberPage id={Number(route[1])} me={user} />
+      ) : (
+        page === 'members' && (admin ? <Users me={user} onRequestsChange={setPending} /> : <MemberGrid />)
+      )}
       {page === 'settings' && admin && <Settings superadmin={user.role === 'superadmin'} section={route[1]} onRenamed={onRefresh} />}
       {page === 'profile' && <Profile user={user} section={route[1]} onChange={onRefresh} />}
     </div>

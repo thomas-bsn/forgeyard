@@ -35,7 +35,7 @@ export default function Users({ me, onRequestsChange }: { me: User; onRequestsCh
     <div className="section">
       <div className="toolbar">
         <h1 className="toolbar-title">
-          Utilisateurs{' '}
+          Membres{' '}
           <span className="muted">
             {users?.length ?? 0} compte{(users?.length ?? 0) > 1 ? 's' : ''}
           </span>
@@ -77,7 +77,9 @@ export default function Users({ me, onRequestsChange }: { me: User; onRequestsCh
                     <td>
                       <span className="user-cell">
                         <Avatar url={u.avatarUrl} name={u.displayName} size={32} />
-                        <strong>{u.displayName}</strong>
+                        <a href={`#/u/${u.id}`} className="user-link">
+                          <strong>{u.displayName}</strong>
+                        </a>
                       </span>
                     </td>
                     <td>{u.method === 'discord' ? 'Discord' : 'Mot de passe'}</td>

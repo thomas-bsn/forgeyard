@@ -26,6 +26,10 @@ Toutes les écritures sont en JSON. Les routes sont déclarées dans `internal/a
 | `PUT`, `DELETE /api/me/avatar` | Envoyer une photo (data URL) ou revenir à Discord / l'initiale |
 | `GET /api/users/{id}/avatar` | Photo envoyée par un utilisateur |
 | `PUT /api/me/password` | Changer de mot de passe (comptes locaux) |
+| `PUT`, `DELETE /api/me/banner` | Envoyer une bannière ou revenir à celle de Discord |
+| `GET /api/users/{id}/banner` | Bannière envoyée par un utilisateur |
+| `GET /api/members`, `GET /api/members/{id}` | Membres, et profil public (apps publiques, activité) |
+| `PUT /api/apps/{id}/public` | Afficher ou masquer une app sur le profil de son propriétaire |
 | `GET /api/me/sessions`, `DELETE /api/me/sessions/{id\|others}` | Appareils connectés, en déconnecter un ou tous les autres |
 | `GET`, `POST /api/apps` | Lister, créer |
 | `GET`, `PUT`, `DELETE /api/apps/{id}` | Voir, modifier, supprimer |

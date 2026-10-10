@@ -3,6 +3,7 @@ package api
 import (
 	"database/sql"
 	"errors"
+	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
@@ -19,6 +20,11 @@ type userResponse struct {
 	Method          string `json:"method"` // "discord" or "password"
 	AvatarURL       string `json:"avatarUrl,omitempty"`
 	CustomAvatar    bool   `json:"customAvatar"`
+	BannerURL       string `json:"bannerUrl,omitempty"`
+	CustomBanner    bool   `json:"customBanner"`
+	AccentColor     string `json:"accentColor,omitempty"`
+	ShowApps        bool   `json:"showApps"`
+	ShowEmail       bool   `json:"showEmail"`
 	Email           string `json:"email"`
 	Bio             string `json:"bio"`
 	DiscordName     string `json:"discordName,omitempty"`
@@ -30,8 +36,30 @@ func toUserResponse(u db.User) userResponse {
 	return userResponse{
 		ID: u.ID, Username: u.Username.String, DisplayName: u.DisplayName, Role: u.Role, Method: signInMethod(u),
 		AvatarURL: avatarURL(u), CustomAvatar: u.AvatarUpdatedAt > 0, Email: u.Email.String, Bio: u.Bio,
+		BannerURL: bannerURL(u), CustomBanner: u.BannerUpdatedAt > 0, AccentColor: accentColor(u),
+		ShowApps: u.ShowApps != 0, ShowEmail: u.ShowEmail != 0,
 		DiscordName: u.DiscordName, NameFromDiscord: u.DiscordID.Valid && u.NameFromDiscord != 0, CreatedAt: u.CreatedAt,
 	}
+}
+
+// bannerURL is the banner the user uploaded, else their Discord banner, else empty (the UI uses their
+// profile colour).
+func bannerURL(u db.User) string {
+	switch {
+	case u.BannerUpdatedAt > 0:
+		return "/api/users/" + strconv.FormatInt(u.ID, 10) + "/banner?v=" + strconv.FormatInt(u.BannerUpdatedAt, 10)
+	case u.DiscordID.Valid && u.DiscordBanner != "":
+		return "https://cdn.discordapp.com/banners/" + u.DiscordID.String + "/" + u.DiscordBanner + ".png?size=600"
+	}
+	return ""
+}
+
+// accentColor is the Discord profile colour as #rrggbb, or empty.
+func accentColor(u db.User) string {
+	if u.DiscordAccent < 0 {
+		return ""
+	}
+	return fmt.Sprintf("#%06x", u.DiscordAccent&0xffffff)
 }
 
 func signInMethod(u db.User) string {

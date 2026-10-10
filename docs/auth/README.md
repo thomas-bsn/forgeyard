@@ -57,6 +57,15 @@ Le menu sous la photo, en haut à droite, mène à « Mon profil » (et aux rég
 - **Sécurité** : changer de mot de passe (comptes locaux ; déconnecte les autres appareils), liste des appareils connectés avec leur IP, déconnexion d'un appareil ou de tous les autres.
 - **Notifications, clés SSH, jetons d'API** : à venir, la page décrit ce qu'ils feront.
 
+## Membres et profils publics
+
+L'onglet **Membres** liste tous les inscrits (pour les admins, avec les demandes et les actions de gestion). Chaque profil (`#/u/<id>`) montre :
+
+- la bannière (celle de Discord, sinon sa couleur de profil, ou une image envoyée), la photo, le nom, le rôle, la date d'inscription et la description ;
+- les **apps publiques** du membre : nom, adresse et état seulement, jamais la configuration, les variables ni les logs. Chacun peut masquer toutes ses apps (Mon profil) ou une seule (interrupteur « Visible sur le profil » sur la page de l'app) ;
+- leur **activité récente** (déploiements, mises en ligne, crashs de ces apps) ;
+- **« Écrire sur Discord »** (ouvre son profil Discord) et son email s'il a choisi de l'afficher.
+
 ## Rôles
 
 | Rôle | Peut |

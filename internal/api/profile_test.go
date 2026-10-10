@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"image"
 	"image/png"
 	"io"
@@ -98,5 +99,50 @@ func TestProfile(t *testing.T) {
 	get(t, c, ts.URL+"/api/me/sessions", &sessions)
 	if len(sessions) != 1 || !sessions[0].Current {
 		t.Fatalf("sessions after signing out the others: %+v", sessions)
+	}
+}
+
+func TestMembers(t *testing.T) {
+	ts, server := newTestServerWithHandle(t)
+	admin := newClient()
+	post(t, admin, ts.URL+"/api/setup", setupRequest{Token: testToken, InstanceName: "F", Username: "boss",
+		Password: "a-long-enough-password", PublicURL: "https://forgeyard.example.com"})
+	fa := connectFakeAgent(t, ts.URL, server, admin, "node-a")
+	fa.desired(t)
+
+	var app, hidden appResponse
+	postJSON(t, admin, ts.URL+"/api/apps", appInput{Name: "blog", Image: "nginx", Port: 80, Env: map[string]string{"SECRET": "x"}}, &app)
+	postJSON(t, admin, ts.URL+"/api/apps", appInput{Name: "private", Image: "nginx", Port: 80}, &hidden)
+	if code := putJSON(t, admin, ts.URL+"/api/apps/"+itoa(hidden.ID)+"/public", map[string]bool{"public": false}, &hidden); code != http.StatusOK || hidden.Public {
+		t.Fatalf("hide app: %d %+v", code, hidden)
+	}
+	putJSON(t, admin, ts.URL+"/api/me/profile", profileRequest{DisplayName: "Boss", Bio: "Hello", Email: "boss@example.com", ShowApps: true}, nil)
+
+	var members []memberSummary
+	get(t, admin, ts.URL+"/api/members", &members)
+	if len(members) != 1 || members[0].PublicApps != 1 || members[0].Bio != "Hello" {
+		t.Fatalf("members: %+v", members)
+	}
+	var raw map[string]any
+	get(t, admin, ts.URL+"/api/members/"+itoa(members[0].ID), &raw)
+	apps, _ := raw["apps"].([]any)
+	if len(apps) != 1 || apps[0].(map[string]any)["name"] != "blog" {
+		t.Fatalf("public apps: %+v", raw["apps"])
+	}
+	if _, ok := raw["email"]; ok {
+		t.Fatal("email shown without consent")
+	}
+	for _, leak := range []string{"env", "image", "SECRET"} {
+		if strings.Contains(fmt.Sprint(raw), leak) {
+			t.Fatalf("profile leaks %q: %v", leak, raw)
+		}
+	}
+
+	// Hiding one's apps hides them all, and the count with them.
+	putJSON(t, admin, ts.URL+"/api/me/profile", profileRequest{DisplayName: "Boss", ShowApps: false, ShowEmail: true, Email: "boss@example.com"}, nil)
+	var p memberProfile
+	get(t, admin, ts.URL+"/api/members/"+itoa(members[0].ID), &p)
+	if len(p.Apps) != 0 || len(p.Activity) != 0 || p.Email != "boss@example.com" {
+		t.Fatalf("profile with hidden apps: %+v", p)
 	}
 }

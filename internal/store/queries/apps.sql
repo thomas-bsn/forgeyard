@@ -52,3 +52,9 @@ SELECT * FROM apps WHERE owner_id = ? ORDER BY id;
 
 -- name: StopAppsByOwner :exec
 UPDATE apps SET running = 0, updated_at = ? WHERE owner_id = ?;
+
+-- name: SetAppPublic :exec
+UPDATE apps SET public = ? WHERE id = ?;
+
+-- name: ListPublicAppsByOwner :many
+SELECT * FROM apps WHERE owner_id = ? AND public = 1 ORDER BY name;
