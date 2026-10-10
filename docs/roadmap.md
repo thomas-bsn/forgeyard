@@ -23,7 +23,8 @@
 - [ ] Bot Discord : messages privés, photos et bannières à jour sans reconnexion
 - [x] Notifications Discord (webhook) : salon des admins et webhook personnel
 - [x] Métriques et graphiques par app, journal d'événements
-- [ ] Capacité et placement selon les ressources
+- [x] Placement sur la machine qui a le plus de mémoire libre, choix du node par les admins, déplacement d'une app entre nodes sans coupure
+- [ ] Capacité : réservations de CPU et de RAM par app
 - [x] Gestion des crashs et suspension (3 crashs en 5 minutes)
 - [x] Conteneurs externes : détection, logs, démarrer / arrêter / redémarrer
 - [ ] Conteneurs externes : adoption (en faire une vraie app Forgeyard)
@@ -47,7 +48,7 @@
 - Stacks docker-compose
 - Preview deployments par pull request
 - Réseau privé WireGuard entre nodes
-- Migration d'apps entre nodes
+- Volumes persistants (les données suivraient aussi un changement de node)
 - Option Postgres pour le server
 - Bot Discord (messages privés)
 - Utiliser directement le Traefik de l'utilisateur s'il en a déjà un

@@ -40,6 +40,8 @@ type App struct {
 	LogoColor      string
 	LogoUpdatedAt  int64
 	CrashSuspended int64
+	MovingFrom     int64
+	MovedAt        int64
 }
 
 type AppEvent struct {

@@ -93,6 +93,9 @@ message AppSpec {
   bool running = 7;
   int64 memory_bytes = 8;
   int64 generation = 9; // bumped to force a redeploy (fresh pull, new container)
+  // leaving: the app moves to another node and keeps running here until it is online there; its status is
+  // not reported, the new node's is.
+  bool leaving = 10;
 }
 
 message Ingress {

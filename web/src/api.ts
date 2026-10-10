@@ -151,6 +151,7 @@ export type App = {
   suspended?: boolean
   public: boolean
   crashSuspended?: boolean
+  movingFrom?: number
   logo: { mode: 'auto' | 'custom' | 'initial'; url?: string; color?: string; autoUrl?: string }
   updatedAt: number
   env?: Record<string, string>
@@ -199,6 +200,17 @@ export type AppInput = {
   port: number
   memoryMb: number
   env: Record<string, string>
+  nodeId?: number
+}
+
+export type NodeChoice = {
+  id: number
+  name: string
+  cpus: number
+  memoryBytes: number
+  freeMemoryBytes: number
+  apps: number
+  recommended: boolean
 }
 
 export type JoinCommand = {
@@ -338,6 +350,8 @@ export const api = {
   member: (id: number) => request<MemberProfile>('GET', `/api/members/${id}`),
   setAppLogo: (id: number, body: { mode: 'auto' | 'custom' | 'initial'; color?: string; image?: string }) =>
     request<App>('PUT', `/api/apps/${id}/logo`, body),
+  nodeChoices: () => request<NodeChoice[]>('GET', '/api/admin/nodes/choices'),
+  moveApp: (id: number, nodeId: number) => request<App>('POST', `/api/admin/apps/${id}/move`, { nodeId }),
   setAppPublic: (id: number, value: boolean) => request<App>('PUT', `/api/apps/${id}/public`, { public: value }),
   changePassword: (current: string, next: string) => request<void>('PUT', '/api/me/password', { current, new: next }),
   sessions: () => request<Session[]>('GET', '/api/me/sessions'),

@@ -45,6 +45,7 @@ func (s *Server) onAppStateChange(appID int64, from, to *agentpb.AppStatus) {
 	switch to.GetState() {
 	case "running":
 		s.appEvent(appID, eventSuccess, "En ligne")
+		go s.appOnline(appID)
 	case "exited":
 		msg := fmt.Sprintf("Plantée (code %d)", to.GetExitCode())
 		if to.GetOomKilled() {

@@ -85,3 +85,13 @@ UPDATE apps SET running = 0, crash_suspended = 1, updated_at = ? WHERE id = ? AN
 
 -- name: ClearCrashSuspension :exec
 UPDATE apps SET crash_suspended = 0 WHERE id = ?;
+
+-- name: ListAppsForNode :many
+-- The apps a node runs: its own, and the ones leaving it for another node.
+SELECT * FROM apps WHERE node_id = ?1 OR moving_from = ?1 ORDER BY id;
+
+-- name: MoveApp :one
+UPDATE apps SET moving_from = ?, node_id = ?, moved_at = ?, updated_at = ? WHERE id = ? RETURNING *;
+
+-- name: FinishMove :one
+UPDATE apps SET moving_from = 0 WHERE id = ? AND moving_from != 0 RETURNING *;

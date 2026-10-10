@@ -27,7 +27,7 @@ Les conteneurs externes ont le logo automatique de leur image.
 ## Création
 
 1. Validation, puis vérification que `nom.domaine` n'existe pas déjà dans le DNS (sinon 409 : ce nom sert déjà à un autre site).
-2. **Placement** : le node en ligne qui a le moins d'apps. Aucun node en ligne : refus. L'app reste ensuite sur ce node.
+2. **Placement** : un admin choisit la machine dans le formulaire ; sinon (et toujours pour un utilisateur), c'est la **machine recommandée** : celle qui a le plus de mémoire libre, puis le plus de CPU, puis le moins d'apps. Aucun node en ligne : refus.
 3. Création de l'enregistrement DNS (si un fournisseur est configuré). En cas d'échec, l'app est annulée.
 4. Envoi de l'état voulu au node, qui télécharge l'image et lance le conteneur (voir [agent](../nodes/agent.md#réconciliation)).
 
@@ -57,6 +57,16 @@ Partout « Tous » montre tous les nodes, le node choisi est retenu par le navig
 
 - **Avec un domaine** : `https://<nom>.<domaine>`, routée par Traefik (voir [network](../network/README.md)).
 - **Sans domaine** : le port de l'app est publié sur un port libre au hasard du node, et l'adresse est `http://<IP du node>:<port>`. L'IP est celle du node, sinon celle des réglages du domaine, sinon (node local) l'hôte de l'adresse de Forgeyard.
+
+## Changer de node
+
+Un admin déplace une app depuis sa page (Node › « Déplacer… ») :
+
+1. l'app démarre sur le nouveau node pendant que l'ancien continue de la servir (« Déplacement depuis … ») ; l'ancien ne remonte plus son état, seul le nouveau le fait ;
+2. dès qu'elle est en ligne sur le nouveau node, l'ancien arrête son conteneur ;
+3. si les deux nodes n'ont pas la même IP publique, l'enregistrement DNS change tout de suite et l'ancien node la garde encore 6 minutes (le TTL du DNS est de 5 minutes).
+
+Derrière la même box, le relais de la machine de Forgeyard suit : son propre routeur pour l'app reste prioritaire tant qu'elle y tourne, puis le relais vers le nouveau node prend le relais. Les données écrites dans le conteneur ne suivent pas (pas encore de volumes). Une app arrêtée change simplement de node.
 
 ## Déploiement sans coupure
 

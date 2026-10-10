@@ -1,5 +1,5 @@
 import { lazy, Suspense, useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react'
-import { api, errorMessage, type App, type AppEvent, type AppInput, type AppState, type AppUsage, type Container, type Node } from './api'
+import { api, errorMessage, type App, type AppEvent, type AppInput, type AppState, type AppUsage, type Container, type Node, type NodeChoice } from './api'
 import { AppLogo, AreaChart, formatBytes, LOGO_COLORS, Modal, since, Switch, upFor } from './ui'
 import { ImageCropper } from './Cropper'
 // xterm.js is large: it loads only when a terminal opens.
@@ -105,7 +105,7 @@ export default function Apps({
     const app = apps?.find((a) => a.id === Number(route[1]))
     if (!apps) return null
     if (!app) return <NotFound what="Cette app n’existe plus." go={go} />
-    return <AppDetail app={app} onChange={load} go={go} />
+    return <AppDetail app={app} admin={admin} nodes={nodes} onChange={load} go={go} />
   }
   if (route[0] === 'containers' && route[2]) {
     const c = containers.find((x) => x.nodeId === Number(route[1]) && x.id === route[2])
@@ -298,6 +298,7 @@ function AppList({
   const createModal = creating && (
     <AppFormModal
       title="Nouvelle app"
+      admin={admin}
       submitLabel="Déployer"
       onClose={() => setCreating(false)}
       onSubmit={async (input, logo) => {
@@ -564,16 +565,23 @@ function hubLogoURL(image: string): string | undefined {
   return parts.length === 2 ? `/api/logos?repo=${encodeURIComponent(parts.join('/'))}` : undefined
 }
 
+function nodeChoiceLabel(c: NodeChoice): string {
+  return `${c.name} · ${formatBytes(c.freeMemoryBytes)} libres · ${c.cpus} CPU · ${c.apps} app${c.apps > 1 ? 's' : ''}${c.recommended ? ' (recommandée)' : ''}`
+}
+
 function AppFormModal({
   title,
   submitLabel,
   initial,
+  admin,
   onSubmit,
   onClose,
 }: {
   title: string
   submitLabel: string
   initial?: App
+  // Admins pick the node of a new app; users' apps go to the recommended one.
+  admin?: boolean
   // logo: a framed picture chosen at creation, as a data URL.
   onSubmit: (input: AppInput, logo?: string) => Promise<void>
   onClose: () => void
@@ -581,6 +589,15 @@ function AppFormModal({
   const [name, setName] = useState(initial?.name ?? '')
   const [image, setImage] = useState(initial?.image ?? '')
   const [logo, setLogo] = useState('')
+  const [choices, setChoices] = useState<NodeChoice[]>([])
+  const [nodeId, setNodeId] = useState(0)
+  useEffect(() => {
+    if (!admin || initial) return
+    api.nodeChoices().then((c) => {
+      setChoices(c)
+      setNodeId(c.find((x) => x.recommended)?.id ?? 0)
+    }, () => {})
+  }, [admin, initial])
   // The logo preview follows the image once typing pauses, not at every key (each name is looked up).
   const [settledImage, setSettledImage] = useState(image)
   useEffect(() => {
@@ -602,7 +619,10 @@ function AppFormModal({
     try {
       const vars: Record<string, string> = {}
       for (const { key, value } of env) if (key.trim()) vars[key.trim()] = value
-      await onSubmit({ name: initial ? undefined : name, image, port: Number(port), memoryMb: Number(memory), env: vars }, logo || undefined)
+      await onSubmit(
+        { name: initial ? undefined : name, image, port: Number(port), memoryMb: Number(memory), env: vars, nodeId: nodeId || undefined },
+        logo || undefined,
+      )
     } catch (err) {
       setError(errorMessage(err))
       setBusy(false)
@@ -686,6 +706,19 @@ function AppFormModal({
           }}
         />
       )}
+      {choices.length > 1 && (
+        <label className="field">
+          <span>Machine</span>
+          <select value={nodeId} onChange={(e) => setNodeId(Number(e.target.value))}>
+            {choices.map((c) => (
+              <option key={c.id} value={c.id}>
+                {nodeChoiceLabel(c)}
+              </option>
+            ))}
+          </select>
+          <small>La recommandée est celle qui a le plus de mémoire libre. Les utilisateurs n’ont pas ce choix : leurs apps y vont d’office.</small>
+        </label>
+      )}
       <div className="form-row">
         <label className="field">
           <span>Port de l’app</span>
@@ -723,11 +756,12 @@ function AppFormModal({
 
 type DetailTab = 'observability' | 'logs' | 'terminal' | 'events'
 
-function AppDetail({ app, onChange, go }: { app: App; onChange: () => void; go: (path: string) => void }) {
+function AppDetail({ app, admin, nodes, onChange, go }: { app: App; admin: boolean; nodes: Node[]; onChange: () => void; go: (path: string) => void }) {
   const [full, setFull] = useState<App | null>(null)
   const [editing, setEditing] = useState(false)
   const [tab, setTab] = useState<DetailTab>('observability')
   const [choosingLogo, setChoosingLogo] = useState(false)
+  const [moving, setMoving] = useState(false)
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
 
@@ -790,6 +824,15 @@ function AppDetail({ app, onChange, go }: { app: App; onChange: () => void; go: 
           </p>
         )}
 
+        {app.movingFrom ? (
+          <div className="banner banner-warn">
+            <span className="dot dot-warn" />
+            <span>
+              Déplacement depuis {nodes.find((n) => n.id === app.movingFrom)?.name ?? 'l’ancien node'} : il continue de la servir jusqu’à ce
+              qu’elle soit en ligne sur {app.nodeName}.
+            </span>
+          </div>
+        ) : null}
         {app.crashSuspended && !app.running && (
           <div className="banner banner-down">
             <span className="dot dot-down" />
@@ -811,7 +854,17 @@ function AppDetail({ app, onChange, go }: { app: App; onChange: () => void; go: 
           <dt>Image</dt>
           <dd className="mono">{app.image}</dd>
           <dt>Node</dt>
-          <dd>{app.nodeName}</dd>
+          <dd>
+            {app.nodeName}
+            {admin && !app.movingFrom && (
+              <>
+                {' · '}
+                <button type="button" className="link-btn" onClick={() => setMoving(true)}>
+                  Déplacer…
+                </button>
+              </>
+            )}
+          </dd>
           <dt>Port</dt>
           <dd>{app.port}</dd>
           <dt>Mémoire</dt>
@@ -893,6 +946,16 @@ function AppDetail({ app, onChange, go }: { app: App; onChange: () => void; go: 
         {tab === 'events' && <Events eventsKey={`app-${app.id}`} load={() => api.appEvents(app.id)} />}
       </main>
 
+      {moving && (
+        <MoveApp
+          app={app}
+          onClose={() => setMoving(false)}
+          onMoved={() => {
+            setMoving(false)
+            onChange()
+          }}
+        />
+      )}
       {choosingLogo && (
         <LogoChooser
           app={app}
@@ -1400,5 +1463,72 @@ function LogoChooser({ app, onClose, onSaved }: { app: App; onClose: () => void;
         />
       )}
     </>
+  )
+}
+
+/** Admins: move an app to another node, without a gap when it runs. */
+function MoveApp({ app, onClose, onMoved }: { app: App; onClose: () => void; onMoved: () => void }) {
+  const [choices, setChoices] = useState<NodeChoice[] | null>(null)
+  const [nodeId, setNodeId] = useState(0)
+  const [error, setError] = useState('')
+  const [busy, setBusy] = useState(false)
+
+  useEffect(() => {
+    api.nodeChoices().then((c) => {
+      const others = c.filter((x) => x.id !== app.nodeId)
+      setChoices(others)
+      setNodeId(others[0]?.id ?? 0)
+    }, (err) => setError(errorMessage(err)))
+  }, [app.nodeId])
+
+  async function move() {
+    setBusy(true)
+    setError('')
+    try {
+      await api.moveApp(app.id, nodeId)
+      onMoved()
+    } catch (err) {
+      setError(errorMessage(err))
+      setBusy(false)
+    }
+  }
+
+  return (
+    <Modal
+      title={`Déplacer « ${app.name} »`}
+      subtitle={`Aujourd’hui sur ${app.nodeName}.`}
+      onClose={onClose}
+      footer={
+        <>
+          <button type="button" className="btn" onClick={onClose} disabled={busy}>
+            Annuler
+          </button>
+          <button type="button" className="btn btn-primary" onClick={move} disabled={busy || !nodeId}>
+            Déplacer
+          </button>
+        </>
+      }
+    >
+      {choices && choices.length === 0 ? (
+        <p className="muted">Aucun autre node en ligne.</p>
+      ) : (
+        <label className="field">
+          <span>Vers</span>
+          <select value={nodeId} onChange={(e) => setNodeId(Number(e.target.value))}>
+            {(choices ?? []).map((c) => (
+              <option key={c.id} value={c.id}>
+                {nodeChoiceLabel(c)}
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
+      <p className="muted">
+        L’app démarre sur le nouveau node pendant que l’ancien continue de la servir ; l’ancien l’arrête dès qu’elle est en ligne. Si les
+        deux nodes n’ont pas la même IP publique, son DNS change et l’ancien la garde encore quelques minutes. Les données écrites dans le
+        conteneur ne suivent pas.
+      </p>
+      {error && <p className="error">{error}</p>}
+    </Modal>
   )
 }

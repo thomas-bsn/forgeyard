@@ -463,6 +463,9 @@ func (r *Reconciler) Statuses(ctx context.Context) []*agentpb.AppStatus {
 	}
 	out := make([]*agentpb.AppStatus, 0, len(d.GetApps()))
 	for _, app := range d.GetApps() {
+		if app.GetLeaving() {
+			continue // moving to another node, which reports it
+		}
 		st := &agentpb.AppStatus{AppId: app.GetId()}
 		r.mu.Lock()
 		progress, lastErr := r.progress[app.GetId()], r.lastError[app.GetId()]

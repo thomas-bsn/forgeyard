@@ -5,6 +5,8 @@ import (
 	"net/http"
 	"testing"
 
+	"github.com/thomas-bsn/forgeyard/internal/agentpb"
+
 	"github.com/thomas-bsn/forgeyard/internal/dns"
 	"github.com/thomas-bsn/forgeyard/internal/dns/dnstest"
 )
@@ -48,4 +50,81 @@ func TestRelays(t *testing.T) {
 		t.Fatalf("pi ingress: %d", code)
 	}
 	front.drainUntil(t, func(relays int, _, _ []string) bool { return relays == 0 })
+}
+
+func TestNodeChoice(t *testing.T) {
+	ts, server := newTestServerWithHandle(t)
+	admin := newClient()
+	post(t, admin, ts.URL+"/api/setup", setupRequest{Token: testToken, InstanceName: "F", Username: "boss",
+		Password: "a-long-enough-password", PublicURL: "https://forgeyard.example.com"})
+	a := connectFakeAgent(t, ts.URL, server, admin, "nas")
+	a.desired(t)
+	b := connectFakeAgent(t, ts.URL, server, admin, "pi")
+	b.desired(t)
+
+	var choices []nodeChoice
+	get(t, admin, ts.URL+"/api/admin/nodes/choices", &choices)
+	if len(choices) != 2 || !choices[0].Recommended || choices[1].Recommended {
+		t.Fatalf("choices: %+v", choices)
+	}
+	// Whoever creates the app picks its node.
+	var app appResponse
+	if code := postJSON(t, admin, ts.URL+"/api/apps", appInput{Name: "here", Image: "nginx", Port: 80, NodeID: b.nodeID}, &app); code != http.StatusCreated || app.NodeName != "pi" {
+		t.Fatalf("chosen node: %d %+v", code, app)
+	}
+	if code := postJSON(t, admin, ts.URL+"/api/apps", appInput{Name: "nowhere", Image: "nginx", Port: 80, NodeID: 999}, nil); code != http.StatusConflict {
+		t.Fatalf("unknown node: %d", code)
+	}
+}
+
+// Moving an app: it starts on the new node while the old one keeps it, which drops it once the new node
+// reports it online.
+func TestMoveApp(t *testing.T) {
+	ts, server := newTestServerWithHandle(t)
+	admin := newClient()
+	post(t, admin, ts.URL+"/api/setup", setupRequest{Token: testToken, InstanceName: "F", Username: "boss",
+		Password: "a-long-enough-password", PublicURL: "https://forgeyard.example.com"})
+	nas := connectFakeAgent(t, ts.URL, server, admin, "nas")
+	nas.desired(t)
+	pi := connectFakeAgent(t, ts.URL, server, admin, "pi")
+	pi.desired(t)
+
+	var app appResponse
+	postJSON(t, admin, ts.URL+"/api/apps", appInput{Name: "web", Image: "nginx", Port: 80, NodeID: nas.nodeID}, &app)
+	nas.desired(t)
+
+	var moved appResponse
+	if code := postJSON(t, admin, ts.URL+"/api/admin/apps/"+itoa(app.ID)+"/move", map[string]int64{"nodeId": pi.nodeID}, &moved); code != http.StatusOK {
+		t.Fatalf("move: %d", code)
+	}
+	if moved.NodeName != "pi" || moved.MovingFrom != nas.nodeID {
+		t.Fatalf("moved app: %+v", moved)
+	}
+	if d := pi.desired(t); len(d.GetApps()) != 1 || d.GetApps()[0].GetLeaving() {
+		t.Fatalf("new node: %v", d.GetApps())
+	}
+	if d := nas.desired(t); len(d.GetApps()) != 1 || !d.GetApps()[0].GetLeaving() {
+		t.Fatalf("old node while moving: %v", d.GetApps())
+	}
+	if code := postJSON(t, admin, ts.URL+"/api/admin/apps/"+itoa(app.ID)+"/move", map[string]int64{"nodeId": nas.nodeID}, nil); code != http.StatusConflict {
+		t.Fatalf("second move during a move: %d", code)
+	}
+
+	// Online on the new node: the old one drops it.
+	pi.stream.Send(&agentpb.AgentMessage{Msg: &agentpb.AgentMessage_AppStatuses{AppStatuses: &agentpb.AppStatuses{
+		Apps: []*agentpb.AppStatus{{AppId: app.ID, State: "running"}},
+	}}})
+	if d := nas.desired(t); len(d.GetApps()) != 0 {
+		t.Fatalf("old node after the move: %v", d.GetApps())
+	}
+	var after appResponse
+	get(t, admin, ts.URL+"/api/apps/"+itoa(app.ID), &after)
+	if after.MovingFrom != 0 || after.NodeName != "pi" {
+		t.Fatalf("app after the move: %+v", after)
+	}
+
+	// Users cannot pick nor move.
+	if code := get(t, newClient(), ts.URL+"/api/admin/nodes/choices", nil); code != http.StatusUnauthorized {
+		t.Fatalf("anonymous choices: %d", code)
+	}
 }

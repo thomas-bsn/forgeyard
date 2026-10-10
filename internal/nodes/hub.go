@@ -174,6 +174,14 @@ func (h *Hub) AppUsage(appID int64) []UsageSample {
 	return append([]UsageSample(nil), h.usage[appID]...)
 }
 
+// ResetApp forgets what was reported for an app, as if pending: when it moves, the new node's first report
+// is then a change, even when the app comes up at once.
+func (h *Hub) ResetApp(appID int64) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.statuses[appID] = AppStatus{Status: &agentpb.AppStatus{AppId: appID, State: "pending"}, ReportedAt: time.Now()}
+}
+
 // ForgetApp drops the status of a deleted app.
 func (h *Hub) ForgetApp(appID int64) {
 	h.mu.Lock()

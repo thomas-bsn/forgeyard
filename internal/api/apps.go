@@ -11,6 +11,7 @@ import (
 	"net/netip"
 	"net/url"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -35,6 +36,7 @@ type appInput struct {
 	Port     int               `json:"port"`
 	Env      map[string]string `json:"env"`
 	MemoryMB int               `json:"memoryMb"`
+	NodeID   int64             `json:"nodeId"` // at creation: where it runs, 0 for the recommended node
 }
 
 func (in *appInput) validate(creating bool) string {
@@ -127,7 +129,7 @@ func (s *Server) desiredState(ctx context.Context, nodeID int64) (*agentpb.Desir
 	if err != nil {
 		return nil, err
 	}
-	apps, err := s.store.ListAppsByNode(ctx, nodeID)
+	apps, err := s.store.ListAppsForNode(ctx, nodeID)
 	if err != nil {
 		return nil, err
 	}
@@ -140,7 +142,7 @@ func (s *Server) desiredState(ctx context.Context, nodeID int64) (*agentpb.Desir
 		d.Apps = append(d.Apps, &agentpb.AppSpec{
 			Id: a.ID, Name: a.Name, Image: a.Image, Port: int32(a.Port), Env: env,
 			Hostname: appHostname(c, a.Name), Running: a.Running != 0,
-			MemoryBytes: a.MemoryMb << 20, Generation: a.Generation,
+			MemoryBytes: a.MemoryMb << 20, Generation: a.Generation, Leaving: a.MovingFrom == nodeID,
 		})
 	}
 	if node.IsLocal != 0 {
@@ -201,36 +203,101 @@ func (s *Server) pushRelays(ctx context.Context, changedNodeID int64) {
 	}
 }
 
-// pickNode chooses where a new app runs: the online node with the fewest apps.
-func (s *Server) pickNode(ctx context.Context) (db.Node, error) {
+// nodeChoice is a node an app can be created on, with what it has left.
+type nodeChoice struct {
+	ID          int64  `json:"id"`
+	Name        string `json:"name"`
+	Cpus        int64  `json:"cpus"`
+	MemoryBytes int64  `json:"memoryBytes"`
+	FreeMemory  int64  `json:"freeMemoryBytes"`
+	Apps        int64  `json:"apps"`
+	Recommended bool   `json:"recommended"`
+}
+
+// nodeChoices lists the online nodes, the recommended one first: the one with the most free memory, then
+// the most CPUs, then the fewest apps. A Raspberry Pi next to a NAS gets the apps only when chosen.
+func (s *Server) nodeChoices(ctx context.Context) ([]nodeChoice, error) {
 	list, err := s.store.ListNodes(ctx)
 	if err != nil {
-		return db.Node{}, err
+		return nil, err
 	}
 	counts, err := s.store.CountAppsByNode(ctx)
 	if err != nil {
-		return db.Node{}, err
+		return nil, err
 	}
 	perNode := map[int64]int64{}
 	for _, c := range counts {
 		perNode[c.NodeID] = c.Count
 	}
-	var best *db.Node
-	for i, n := range list {
-		if _, online := s.nodes.Live(n.ID); !online || n.Status != "active" {
+	var out []nodeChoice
+	for _, n := range list {
+		live, online := s.nodes.Live(n.ID)
+		if !online || n.Status != "active" {
 			continue
 		}
-		if best == nil || perNode[n.ID] < perNode[best.ID] {
-			best = &list[i]
+		free := n.MemoryBytes
+		if k := len(live.Metrics); k > 0 {
+			free = max(0, n.MemoryBytes-int64(live.Metrics[k-1].GetMemoryUsedBytes()))
 		}
+		out = append(out, nodeChoice{ID: n.ID, Name: n.Name, Cpus: n.Cpus, MemoryBytes: n.MemoryBytes, FreeMemory: free, Apps: perNode[n.ID]})
 	}
-	if best == nil {
-		return db.Node{}, errNoNode
+	sort.SliceStable(out, func(i, j int) bool {
+		a, b := out[i], out[j]
+		if a.FreeMemory != b.FreeMemory {
+			return a.FreeMemory > b.FreeMemory
+		}
+		if a.Cpus != b.Cpus {
+			return a.Cpus > b.Cpus
+		}
+		return a.Apps < b.Apps
+	})
+	if len(out) > 0 {
+		out[0].Recommended = true
 	}
-	return *best, nil
+	return out, nil
 }
 
-var errNoNode = errors.New("no online node")
+// pickNode chooses where a new app runs: the chosen node if it is online, else the recommended one.
+func (s *Server) pickNode(ctx context.Context, chosen int64) (db.Node, error) {
+	choices, err := s.nodeChoices(ctx)
+	if err != nil {
+		return db.Node{}, err
+	}
+	if len(choices) == 0 {
+		return db.Node{}, errNoNode
+	}
+	id := choices[0].ID
+	if chosen != 0 {
+		found := false
+		for _, c := range choices {
+			if c.ID == chosen {
+				found = true
+			}
+		}
+		if !found {
+			return db.Node{}, errNodeUnavailable
+		}
+		id = chosen
+	}
+	return s.store.GetNode(ctx, id)
+}
+
+func (s *Server) handleNodeChoices(w http.ResponseWriter, r *http.Request) {
+	choices, err := s.nodeChoices(r.Context())
+	if err != nil {
+		s.internalError(w, r, err)
+		return
+	}
+	if choices == nil {
+		choices = []nodeChoice{}
+	}
+	writeJSON(w, http.StatusOK, choices)
+}
+
+var (
+	errNoNode          = errors.New("no online node")
+	errNodeUnavailable = errors.New("chosen node offline or unknown")
+)
 
 // errSuspended is shown when an admin suspended the apps of the app's owner.
 const errSuspended = "les apps de ce compte sont suspendues par un admin"
@@ -278,6 +345,7 @@ type appResponse struct {
 	Public         bool              `json:"public"`
 	Logo           appLogo           `json:"logo"`
 	CrashSuspended bool              `json:"crashSuspended,omitempty"`
+	MovingFrom     int64             `json:"movingFrom,omitempty"` // the node it leaves, while it moves
 	UpdatedAt      int64             `json:"updatedAt"`
 	Env            map[string]string `json:"env,omitempty"`
 }
@@ -288,7 +356,7 @@ func (s *Server) toAppResponse(a db.App, ownerName string, ownerSuspended bool, 
 	resp := appResponse{
 		ID: a.ID, Name: a.Name, OwnerID: a.OwnerID, OwnerName: ownerName, NodeID: a.NodeID, NodeName: nodeName,
 		Image: a.Image, Port: a.Port, MemoryMB: a.MemoryMb, Running: a.Running != 0, UpdatedAt: a.UpdatedAt,
-		State: "pending", Suspended: ownerSuspended, Public: a.Public != 0, Logo: toAppLogo(a), CrashSuspended: a.CrashSuspended != 0,
+		State: "pending", Suspended: ownerSuspended, Public: a.Public != 0, Logo: toAppLogo(a), CrashSuspended: a.CrashSuspended != 0, MovingFrom: a.MovingFrom,
 	}
 	if host := appHostname(c, a.Name); host != "" {
 		resp.URL = "https://" + host
@@ -435,7 +503,8 @@ func (s *Server) handleListApps(w http.ResponseWriter, r *http.Request) {
 		a := db.App{ID: row.ID, Name: row.Name, OwnerID: row.OwnerID, NodeID: row.NodeID, Image: row.Image,
 			Port: row.Port, EnvSealed: row.EnvSealed, Running: row.Running, MemoryMb: row.MemoryMb,
 			Generation: row.Generation, DnsName: row.DnsName, CreatedAt: row.CreatedAt, UpdatedAt: row.UpdatedAt, Public: row.Public,
-			LogoMode: row.LogoMode, LogoColor: row.LogoColor, LogoUpdatedAt: row.LogoUpdatedAt, CrashSuspended: row.CrashSuspended}
+			LogoMode: row.LogoMode, LogoColor: row.LogoColor, LogoUpdatedAt: row.LogoUpdatedAt, CrashSuspended: row.CrashSuspended,
+			MovingFrom: row.MovingFrom, MovedAt: row.MovedAt}
 		out = append(out, s.toAppResponse(a, row.OwnerName, row.OwnerSuspended != 0, row.NodeName, c, byID[row.NodeID], s.publicHost(ctx, r)))
 	}
 	writeJSON(w, http.StatusOK, out)
@@ -530,9 +599,18 @@ func (s *Server) handleCreateApp(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	node, err := s.pickNode(ctx)
+	// Only admins pick the node; users' apps go to the recommended one.
+	if in.NodeID != 0 && !isAdmin(currentUser(r)) {
+		writeError(w, http.StatusForbidden, "seul un admin choisit la machine d'une app")
+		return
+	}
+	node, err := s.pickNode(ctx, in.NodeID)
 	if errors.Is(err, errNoNode) {
 		writeError(w, http.StatusServiceUnavailable, "aucun node en ligne pour accueillir l'app")
+		return
+	}
+	if errors.Is(err, errNodeUnavailable) {
+		writeError(w, http.StatusConflict, "cette machine n'est pas en ligne : choisissez-en une autre")
 		return
 	}
 	if err != nil {
@@ -707,6 +785,9 @@ func (s *Server) removeApp(ctx context.Context, a db.App) error {
 	}
 	s.nodes.ForgetApp(a.ID)
 	s.push(ctx, a.NodeID)
+	if a.MovingFrom != 0 {
+		s.push(ctx, a.MovingFrom) // it still ran there too
+	}
 	return nil
 }
 
