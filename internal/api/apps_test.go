@@ -164,8 +164,16 @@ func TestAppLifecycle(t *testing.T) {
 	if spec.GetHostname() != "blog.example.com" || spec.GetEnv()["SECRET"] != "s3cret" || !spec.GetRunning() || spec.GetMemoryBytes() != 512<<20 {
 		t.Fatalf("app spec: %v", spec)
 	}
-	if stored, _ := server.store.GetApp(context.Background(), app.ID); strings.Contains(stored.EnvSealed, "s3cret") {
+	stored, _ := server.store.GetApp(context.Background(), app.ID)
+	if strings.Contains(stored.EnvSealed, "s3cret") {
 		t.Fatal("environment stored in clear")
+	}
+	// The port set in the form is the one Traefik routes to.
+	if stored.PortSource != "user" || spec.GetPort() != 80 {
+		t.Fatalf("port: %d from %q, sent %d", stored.Port, stored.PortSource, spec.GetPort())
+	}
+	if _, err := server.store.DB.Exec(`UPDATE apps SET port_source = 'guess' WHERE id = ?`, app.ID); err == nil {
+		t.Fatal("unknown port source accepted")
 	}
 	if code := postJSON(t, admin, ts.URL+"/api/apps", appInput{Name: "blog", Image: "nginx", Port: 80}, nil); code != http.StatusConflict {
 		t.Fatalf("duplicate name: %d", code)

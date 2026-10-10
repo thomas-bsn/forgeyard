@@ -44,6 +44,7 @@ type App struct {
 	MovedAt        int64
 	Dockerfile     string
 	Kind           string
+	PortSource     string
 }
 
 type AppEvent struct {
