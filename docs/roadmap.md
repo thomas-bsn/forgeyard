@@ -33,7 +33,8 @@
 - [ ] Build depuis un Dockerfile
 - [ ] GitHub App (manifest flow), déploiement à chaque push
 - [ ] Railpack ou Nixpacks
-- [ ] Déploiement sans coupure, rollback
+- [x] Déploiement sans coupure (l'ancienne version reste en ligne si la nouvelle ne démarre pas)
+- [ ] Rollback vers une version précédente
 
 ## v0.4 : confort
 - [ ] Passerelle SSH et terminal web
@@ -53,7 +54,7 @@
 
 ## Limites actuelles
 - Une app ne peut pas être renommée.
-- Redéployer coupe l'app quelques secondes (502 de Traefik le temps que le nouveau conteneur démarre).
+- Le déploiement sans coupure ne vaut que pour les apps web (avec un domaine) : une app publiée sur un port du node change de port à chaque version.
 - Les photos Discord ne se mettent à jour qu'à la connexion Discord (pas de bot).
 - Les logos Docker Hub viennent d'une API non documentée : sans logo, l'initiale.
 - L'historique CPU / mémoire n'est gardé qu'en mémoire : il repart de zéro quand le server redémarre.

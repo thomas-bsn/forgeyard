@@ -119,6 +119,7 @@ export type AppState =
   | 'pending'
   | 'pulling'
   | 'creating'
+  | 'deploying'
   | 'running'
   | 'restarting'
   | 'stopped'

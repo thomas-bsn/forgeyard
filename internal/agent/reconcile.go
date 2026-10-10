@@ -46,6 +46,7 @@ type Reconciler struct {
 	progress  map[int64]string      // app → "pulling" or "creating" while it happens
 	lastError map[int64]string      // app → why its last deployment failed
 	cpuSeen   map[int64]cpuSample   // app → previous CPU counters, to compute use between two reports
+	failedOut map[int64]string      // app → spec hash of a new version that did not start, not retried
 	trigger   chan struct{}
 }
 
@@ -54,6 +55,7 @@ func NewReconciler(dc *docker.Client, logger *slog.Logger) *Reconciler {
 	return &Reconciler{
 		dc: dc, logger: logger, trigger: make(chan struct{}, 1),
 		progress: map[int64]string{}, lastError: map[int64]string{}, cpuSeen: map[int64]cpuSample{},
+		failedOut: map[int64]string{},
 	}
 }
 
@@ -176,6 +178,9 @@ func (r *Reconciler) ensureApp(ctx context.Context, app *agentpb.AppSpec, ingres
 		return err
 	}
 	if exists && ct.Config.Labels[labelSpec] != hash {
+		if app.GetRunning() && ct.State.Running {
+			return r.rollOut(ctx, app, hash, ingressMode)
+		}
 		r.logger.Info("app changed, recreating its container", "app", app.GetName())
 		if err := r.dc.Remove(ctx, name); err != nil {
 			return err
@@ -238,10 +243,14 @@ func appContainerConfig(app *agentpb.AppSpec, hash, ingressMode string) map[stri
 		"LogConfig":   map[string]any{"Type": "json-file", "Config": map[string]string{"max-size": "10m", "max-file": "3"}},
 	}
 	if host := app.GetHostname(); host != "" {
-		router := "forgeyard-app-" + strconv.FormatInt(app.GetId(), 10)
+		// Each version gets its own router, of a higher priority than the one before: Traefik sends every
+		// request to the newest version as soon as it sees it, so the old one can stop without losing any.
+		router := "forgeyard-app-" + strconv.FormatInt(app.GetId(), 10) + "-" + hash
 		labels["traefik.enable"] = "true"
 		labels["traefik.docker.network"] = networkName
 		labels["traefik.http.routers."+router+".rule"] = "Host(`" + host + "`)"
+		labels["traefik.http.routers."+router+".priority"] = strconv.FormatInt(time.Now().Unix(), 10)
+		labels["traefik.http.routers."+router+".service"] = router
 		labels["traefik.http.services."+router+".loadbalancer.server.port"] = strconv.Itoa(int(app.GetPort()))
 		if ingressMode == "traefik" {
 			labels["traefik.http.routers."+router+".entrypoints"] = "websecure"
@@ -376,7 +385,9 @@ func (r *Reconciler) Statuses(ctx context.Context) []*agentpb.AppStatus {
 		switch {
 		case progress != "":
 			st.State = progress
-		case lastErr != "":
+		// A failed deployment with the previous version still running is reported with the version that
+		// runs, and the error alongside.
+		case lastErr != "" && (err != nil || !ct.State.Running):
 			st.State, st.Error = "error", lastErr
 		case errors.Is(err, docker.ErrNotFound):
 			st.State = "stopped"
@@ -386,6 +397,7 @@ func (r *Reconciler) Statuses(ctx context.Context) []*agentpb.AppStatus {
 		case err != nil:
 			st.State, st.Error = "error", err.Error()
 		default:
+			st.Error = lastErr
 			st.ExitCode = int32(ct.State.ExitCode)
 			st.OomKilled = ct.State.OOMKilled
 			st.RestartCount = int32(ct.RestartCount)
@@ -422,4 +434,107 @@ func (r *Reconciler) Statuses(ctx context.Context) []*agentpb.AppStatus {
 	}
 	r.mu.Unlock()
 	return out
+}
+
+const (
+	// readyAfter is how long a new container without a health check must run without restarting before
+	// it takes over; readyTimeout is how long it gets to become ready.
+	readyAfter   = 5 * time.Second
+	readyTimeout = 90 * time.Second
+	// drainDelay lets Traefik switch to the new version's router before the old version stops (Traefik
+	// applies Docker changes about every 2 seconds).
+	drainDelay = 3 * time.Second
+)
+
+// rollOut replaces a running app's container without a gap: the new one starts next to the old one (both
+// carry the app's Traefik router, so Traefik spreads requests over both), the old one goes once the new one
+// is ready, and the new one takes the app's container name. A new version that does not start is removed
+// and the old one keeps serving.
+func (r *Reconciler) rollOut(ctx context.Context, app *agentpb.AppSpec, hash, ingressMode string) error {
+	name := containerName(app.GetId())
+	next := name + "-next"
+	r.mu.Lock()
+	failed := r.failedOut[app.GetId()] == hash
+	r.mu.Unlock()
+	if failed {
+		return errors.New("la nouvelle version n'a pas démarré : l'ancienne reste en ligne (redéployez pour réessayer)")
+	}
+	r.dc.Remove(ctx, next) // a leftover from an interrupted rollout
+
+	r.setProgress(app.GetId(), "pulling")
+	defer r.setProgress(app.GetId(), "")
+	if err := r.dc.Pull(ctx, app.GetImage()); err != nil {
+		return fmt.Errorf("téléchargement de l'image %s : %w", app.GetImage(), err)
+	}
+	r.setProgress(app.GetId(), "deploying")
+	if err := r.dc.Create(ctx, next, appContainerConfig(app, hash, ingressMode)); err != nil {
+		return fmt.Errorf("création du conteneur : %w", err)
+	}
+	if err := r.dc.Start(ctx, next); err != nil {
+		r.dc.Remove(ctx, next)
+		return fmt.Errorf("démarrage de la nouvelle version : %w", err)
+	}
+	if err := r.waitReady(ctx, next); err != nil {
+		r.dc.Remove(ctx, next)
+		r.mu.Lock()
+		r.failedOut[app.GetId()] = hash
+		r.mu.Unlock()
+		r.logger.Warn("new version did not start, keeping the old one", "app", app.GetName(), "err", err)
+		return fmt.Errorf("la nouvelle version n'a pas démarré (%v) : l'ancienne reste en ligne", err)
+	}
+	// The new version's router has the higher priority: once Traefik has seen it, the old version gets no
+	// more requests, and it stops with its grace period for the ones in flight.
+	select {
+	case <-ctx.Done():
+	case <-time.After(drainDelay):
+	}
+	if err := r.dc.Stop(ctx, name); err != nil && !errors.Is(err, docker.ErrNotFound) {
+		r.logger.Warn("stopping the old version failed", "app", app.GetName(), "err", err)
+	}
+	if err := r.dc.Remove(ctx, name); err != nil {
+		return err
+	}
+	if err := r.dc.Rename(ctx, next, name); err != nil {
+		return err
+	}
+	r.mu.Lock()
+	delete(r.failedOut, app.GetId())
+	r.mu.Unlock()
+	r.logger.Info("app rolled out without downtime", "app", app.GetName(), "image", app.GetImage())
+	return nil
+}
+
+// waitReady waits for a container to be ready: healthy when its image has a health check, otherwise
+// running for readyAfter without restarting.
+func (r *Reconciler) waitReady(ctx context.Context, name string) error {
+	deadline := time.Now().Add(readyTimeout)
+	for {
+		ct, err := r.dc.Inspect(ctx, name)
+		if err != nil {
+			return err
+		}
+		switch {
+		case ct.RestartCount > 0 || ct.State.Status == "exited" || ct.State.Status == "dead":
+			if ct.State.OOMKilled {
+				return errors.New("manque de mémoire")
+			}
+			return fmt.Errorf("elle s'est arrêtée, code %d", ct.State.ExitCode)
+		case ct.State.Health != nil && ct.State.Health.Status == "healthy":
+			return nil
+		case ct.State.Health != nil && ct.State.Health.Status == "unhealthy":
+			return errors.New("son health check échoue")
+		case ct.State.Health == nil && ct.State.Running:
+			if t, err := time.Parse(time.RFC3339Nano, ct.State.StartedAt); err == nil && time.Since(t) >= readyAfter {
+				return nil
+			}
+		}
+		if time.Now().After(deadline) {
+			return errors.New("elle n'est pas prête après 90 secondes")
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(time.Second):
+		}
+	}
 }

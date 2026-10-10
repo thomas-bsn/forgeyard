@@ -10,6 +10,7 @@ const stateLabels: Record<AppState, { label: string; tone: 'up' | 'warn' | 'down
   pending: { label: 'En attente', tone: '' },
   pulling: { label: 'Téléchargement de l’image…', tone: 'warn' },
   creating: { label: 'Démarrage…', tone: 'warn' },
+  deploying: { label: 'Mise à jour sans coupure…', tone: 'warn' },
   running: { label: 'En ligne', tone: 'up' },
   restarting: { label: 'Redémarre en boucle', tone: 'down' },
   stopped: { label: 'Arrêtée', tone: '' },

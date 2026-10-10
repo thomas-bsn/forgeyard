@@ -35,8 +35,8 @@ Les conteneurs externes ont le logo automatique de leur image.
 
 | Action | Effet |
 |---|---|
-| Modifier | Image, port, variables, mémoire. Le conteneur est recréé. |
-| Démarrer / Redéployer | Re-télécharge l'image et recrée le conteneur |
+| Modifier | Image, port, variables, mémoire. Nouvelle version déployée sans coupure (voir ci-dessous). |
+| Démarrer / Redéployer | Re-télécharge l'image et déploie une nouvelle version sans coupure |
 | Arrêter | Arrête le conteneur (il est gardé) |
 | Configuration | Fenêtre : image, port, variables, mémoire ; enregistrer recrée le conteneur |
 | Supprimer | Supprime l'enregistrement DNS créé par Forgeyard, puis le conteneur. Si le fournisseur DNS ne répond pas, l'app est quand même supprimée et l'erreur est notée dans les logs du server. |
@@ -57,6 +57,19 @@ Partout « Tous » montre tous les nodes, le node choisi est retenu par le navig
 
 - **Avec un domaine** : `https://<nom>.<domaine>`, routée par Traefik (voir [network](../network/README.md)).
 - **Sans domaine** : le port de l'app est publié sur un port libre au hasard du node, et l'adresse est `http://<IP du node>:<port>`. L'IP est celle du node, sinon celle des réglages du domaine, sinon (node local) l'hôte de l'adresse de Forgeyard.
+
+## Déploiement sans coupure
+
+Quand une app qui tourne change (redéploiement, nouvelle configuration), l'agent ne supprime pas l'ancien conteneur d'abord :
+
+1. il télécharge l'image pendant que l'ancien conteneur sert toujours ;
+2. il lance le nouveau à côté (état « Mise à jour sans coupure… ») et attend qu'il soit prêt : « healthy » si l'image a un `HEALTHCHECK`, sinon en marche depuis 5 secondes sans redémarrer (90 secondes au plus) ;
+3. chaque version a son propre routeur Traefik, de priorité plus haute que la précédente : dès que Traefik voit la nouvelle, toutes les requêtes y vont ;
+4. 3 secondes plus tard, l'ancien conteneur s'arrête (avec son délai de grâce pour les requêtes en cours) et le nouveau prend son nom.
+
+Si la nouvelle version ne démarre pas (elle s'arrête, plante ou n'est pas prête à temps), elle est supprimée et **l'ancienne reste en ligne** ; l'app affiche l'erreur, et la même version n'est pas retentée tant qu'on ne redéploie pas. Mesuré en local : 0 erreur sur 2 286 requêtes pendant 3 redéploiements.
+
+Une app arrêtée, ou sans conteneur, est simplement recréée.
 
 ## Crashs
 

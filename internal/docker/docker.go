@@ -204,6 +204,10 @@ type Container struct {
 		ExitCode  int    `json:"ExitCode"`
 		Error     string `json:"Error"`
 		StartedAt string `json:"StartedAt"`
+		// Health is set when the image declares a HEALTHCHECK.
+		Health *struct {
+			Status string `json:"Status"` // starting, healthy, unhealthy
+		} `json:"Health"`
 	} `json:"State"`
 	RestartCount    int `json:"RestartCount"`
 	NetworkSettings struct {
@@ -304,6 +308,11 @@ func (c *Client) Output(ctx context.Context, name string) (string, error) {
 		return "", err
 	}
 	return out.String(), nil
+}
+
+// Rename gives a container another name.
+func (c *Client) Rename(ctx context.Context, name, newName string) error {
+	return c.call(ctx, http.MethodPost, "/containers/"+url.PathEscape(name)+"/rename?name="+url.QueryEscape(newName), nil, nil)
 }
 
 // Restart restarts a container.

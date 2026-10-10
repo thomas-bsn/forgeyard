@@ -27,7 +27,7 @@ Le server n'envoie pas d'ordres (« démarre X ») mais l'**état voulu** comple
 Pour chaque app :
 
 - conteneur `forgeyard-app-<id>`, labels `forgeyard.app=<id>` et `forgeyard.spec=<hash>` ;
-- le hash couvre image, port, variables, adresse, mémoire, mode réseau et **génération** (incrémentée à chaque redéploiement ou modification) : s'il change, le conteneur est recréé (avec un nouveau `pull`) ;
+- le hash couvre image, port, variables, adresse, mémoire, mode réseau et **génération** (incrémentée à chaque redéploiement ou modification) : s'il change, une nouvelle version est déployée sans coupure si l'app tourne (voir [apps](../apps/README.md#déploiement-sans-coupure)), sinon le conteneur est recréé ;
 - conteneur absent et app voulue démarrée : pull, création, démarrage ;
 - app arrêtée : conteneur arrêté (10 s pour s'arrêter proprement) ;
 - conteneur `forgeyard.app` qui n'est plus dans l'état voulu : supprimé.

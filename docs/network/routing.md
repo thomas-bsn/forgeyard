@@ -1,6 +1,6 @@
 # Traefik et reverse proxy
 
-Chaque node fait tourner un Traefik géré par l'agent (`forgeyard-traefik`, image `traefik:v3.6`). Il lit les labels des conteneurs d'apps via le socket Docker (lecture seule) : chaque app a un routeur ``Host(`<nom>.<domaine>`)`` vers son port. Rien n'est écrit dans des fichiers de configuration.
+Chaque node fait tourner un Traefik géré par l'agent (`forgeyard-traefik`, image `traefik:v3.6`). Il lit les labels des conteneurs d'apps via le socket Docker (lecture seule) : chaque version d'une app a un routeur ``Host(`<nom>.<domaine>`)`` vers son port, de priorité plus haute que la version précédente (c'est ce qui permet le déploiement sans coupure). Rien n'est écrit dans des fichiers de configuration.
 
 Traefik n'existe que si le node a au moins une app.
 
