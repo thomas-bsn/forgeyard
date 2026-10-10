@@ -2,6 +2,10 @@
 
 Code : `internal/auth`, `internal/discord`, `internal/api/{auth,discord,admin,loginlink}.go`.
 
+## Page de connexion
+
+Une carte centrée sous une illustration, avec l'icône et le nom de l'instance : « Continuer avec Discord » en premier, « Utiliser un identifiant » si la connexion par mot de passe est active, et un mot pour les nouveaux (se connecter avec Discord, un admin valide). Les messages de retour (demande en attente, refusée, compte désactivé…) s'affichent dans la carte.
+
 ## Deux méthodes, une par compte
 
 Chaque compte a **une seule** méthode : Discord **ou** identifiant / mot de passe.
@@ -38,7 +42,7 @@ Pas encore fait : notifications (webhook Discord, email). Voir la [roadmap](../r
 
 ## Gérer les comptes
 
-Onglet **Utilisateurs** (admins) : les demandes en attente en haut, puis tous les comptes avec leur méthode, leur rôle et leur nombre d'apps. « Gérer… » permet de :
+Onglet **Membres**, vu par un admin : les demandes en attente en haut, puis tous les comptes avec leur méthode, leur rôle et leur nombre d'apps. « Gérer… » permet de :
 
 - changer le rôle (`user` ↔ `admin`) ;
 - **suspendre ses apps** : elles sont arrêtées et ni lui ni un admin ne peut les relancer avant la réactivation (qui ne les redémarre pas) ;

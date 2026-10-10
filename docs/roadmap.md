@@ -13,9 +13,13 @@
 
 ## v0.2 : comptes et multi-node
 - [x] Discord SSO, demandes de compte, rôles
+- [x] Profils : photo et bannière (Discord ou envoyées, recadrées), description, appareils connectés, mot de passe
+- [x] Membres : liste, profils publics (apps publiques, activité, contact Discord)
+- [x] Interface : menu du compte, trois vues de l'onglet Apps, logos d'apps (Docker Hub, image, initiale), icône de l'instance, page de connexion
 - [x] Ajout de machines (commande `docker run` ou binaire)
 - [x] Gestion des comptes : liste, changement de rôle, suspension des apps, désactivation, suppression
 - [ ] Création directe de comptes, transfert du superadmin
+- [ ] Notifications, clés SSH et jetons d'API (onglets « bientôt » du profil)
 - [ ] Webhook Discord de notification
 - [x] Métriques et graphiques par app, journal d'événements
 - [ ] Capacité et placement selon les ressources
@@ -48,6 +52,9 @@
 
 ## Limites actuelles
 - Une app ne peut pas être renommée.
+- Redéployer coupe l'app quelques secondes (502 de Traefik le temps que le nouveau conteneur démarre).
+- Les photos Discord ne se mettent à jour qu'à la connexion Discord (pas de bot).
+- Les logos Docker Hub viennent d'une API non documentée : sans logo, l'initiale.
 - L'historique CPU / mémoire n'est gardé qu'en mémoire : il repart de zéro quand le server redémarre.
 - Changer de domaine ne supprime pas les anciens enregistrements DNS.
 - Pas d'en-têtes de sécurité HTTP ni d'email ACME (voir [sécurité](security/README.md#limites-connues)).
@@ -69,9 +76,8 @@
 4. L'admin est notifié ; bouton « Relancer » après diagnostic.
 
 ### Conteneurs externes (admin)
-- L'agent détecte les conteneurs du node qui n'ont pas le label `forgeyard.app` (hors agent et Traefik).
-- Onglet par node : image, statut, ports, consommation ; logs, démarrer, arrêter, supprimer, shell.
-- **Adopter** : recréer le conteneur à l'identique comme app Forgeyard (volumes conservés).
+- Fait : détection, logs, observabilité, événements, démarrer / arrêter / redémarrer.
+- Reste : supprimer, shell, et **adopter** : recréer le conteneur à l'identique comme app Forgeyard (volumes conservés).
 - Leur consommation compte dans la capacité du node.
 
 ### Domaines et ports
