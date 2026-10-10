@@ -7,14 +7,14 @@ RETURNING *;
 SELECT * FROM apps WHERE id = ?;
 
 -- name: ListApps :many
-SELECT apps.*, users.display_name AS owner_name, users.apps_suspended AS owner_suspended, nodes.name AS node_name
+SELECT sqlc.embed(apps), users.display_name AS owner_name, users.apps_suspended AS owner_suspended, nodes.name AS node_name
 FROM apps
 JOIN users ON users.id = apps.owner_id
 JOIN nodes ON nodes.id = apps.node_id
 ORDER BY apps.name;
 
 -- name: ListAppsByOwner :many
-SELECT apps.*, users.display_name AS owner_name, users.apps_suspended AS owner_suspended, nodes.name AS node_name
+SELECT sqlc.embed(apps), users.display_name AS owner_name, users.apps_suspended AS owner_suspended, nodes.name AS node_name
 FROM apps
 JOIN users ON users.id = apps.owner_id
 JOIN nodes ON nodes.id = apps.node_id

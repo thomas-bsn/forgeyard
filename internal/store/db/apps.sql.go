@@ -241,27 +241,7 @@ ORDER BY apps.name
 `
 
 type ListAppsRow struct {
-	ID             int64
-	Name           string
-	OwnerID        int64
-	NodeID         int64
-	Image          string
-	Port           int64
-	EnvSealed      string
-	Running        int64
-	MemoryMb       int64
-	Generation     int64
-	DnsName        string
-	CreatedAt      int64
-	UpdatedAt      int64
-	Public         int64
-	LogoMode       string
-	LogoColor      string
-	LogoUpdatedAt  int64
-	CrashSuspended int64
-	MovingFrom     int64
-	MovedAt        int64
-	Dockerfile     string
+	App            App
 	OwnerName      string
 	OwnerSuspended int64
 	NodeName       string
@@ -277,27 +257,27 @@ func (q *Queries) ListApps(ctx context.Context) ([]ListAppsRow, error) {
 	for rows.Next() {
 		var i ListAppsRow
 		if err := rows.Scan(
-			&i.ID,
-			&i.Name,
-			&i.OwnerID,
-			&i.NodeID,
-			&i.Image,
-			&i.Port,
-			&i.EnvSealed,
-			&i.Running,
-			&i.MemoryMb,
-			&i.Generation,
-			&i.DnsName,
-			&i.CreatedAt,
-			&i.UpdatedAt,
-			&i.Public,
-			&i.LogoMode,
-			&i.LogoColor,
-			&i.LogoUpdatedAt,
-			&i.CrashSuspended,
-			&i.MovingFrom,
-			&i.MovedAt,
-			&i.Dockerfile,
+			&i.App.ID,
+			&i.App.Name,
+			&i.App.OwnerID,
+			&i.App.NodeID,
+			&i.App.Image,
+			&i.App.Port,
+			&i.App.EnvSealed,
+			&i.App.Running,
+			&i.App.MemoryMb,
+			&i.App.Generation,
+			&i.App.DnsName,
+			&i.App.CreatedAt,
+			&i.App.UpdatedAt,
+			&i.App.Public,
+			&i.App.LogoMode,
+			&i.App.LogoColor,
+			&i.App.LogoUpdatedAt,
+			&i.App.CrashSuspended,
+			&i.App.MovingFrom,
+			&i.App.MovedAt,
+			&i.App.Dockerfile,
 			&i.OwnerName,
 			&i.OwnerSuspended,
 			&i.NodeName,
@@ -374,27 +354,7 @@ ORDER BY apps.name
 `
 
 type ListAppsByOwnerRow struct {
-	ID             int64
-	Name           string
-	OwnerID        int64
-	NodeID         int64
-	Image          string
-	Port           int64
-	EnvSealed      string
-	Running        int64
-	MemoryMb       int64
-	Generation     int64
-	DnsName        string
-	CreatedAt      int64
-	UpdatedAt      int64
-	Public         int64
-	LogoMode       string
-	LogoColor      string
-	LogoUpdatedAt  int64
-	CrashSuspended int64
-	MovingFrom     int64
-	MovedAt        int64
-	Dockerfile     string
+	App            App
 	OwnerName      string
 	OwnerSuspended int64
 	NodeName       string
@@ -410,27 +370,27 @@ func (q *Queries) ListAppsByOwner(ctx context.Context, ownerID int64) ([]ListApp
 	for rows.Next() {
 		var i ListAppsByOwnerRow
 		if err := rows.Scan(
-			&i.ID,
-			&i.Name,
-			&i.OwnerID,
-			&i.NodeID,
-			&i.Image,
-			&i.Port,
-			&i.EnvSealed,
-			&i.Running,
-			&i.MemoryMb,
-			&i.Generation,
-			&i.DnsName,
-			&i.CreatedAt,
-			&i.UpdatedAt,
-			&i.Public,
-			&i.LogoMode,
-			&i.LogoColor,
-			&i.LogoUpdatedAt,
-			&i.CrashSuspended,
-			&i.MovingFrom,
-			&i.MovedAt,
-			&i.Dockerfile,
+			&i.App.ID,
+			&i.App.Name,
+			&i.App.OwnerID,
+			&i.App.NodeID,
+			&i.App.Image,
+			&i.App.Port,
+			&i.App.EnvSealed,
+			&i.App.Running,
+			&i.App.MemoryMb,
+			&i.App.Generation,
+			&i.App.DnsName,
+			&i.App.CreatedAt,
+			&i.App.UpdatedAt,
+			&i.App.Public,
+			&i.App.LogoMode,
+			&i.App.LogoColor,
+			&i.App.LogoUpdatedAt,
+			&i.App.CrashSuspended,
+			&i.App.MovingFrom,
+			&i.App.MovedAt,
+			&i.App.Dockerfile,
 			&i.OwnerName,
 			&i.OwnerSuspended,
 			&i.NodeName,

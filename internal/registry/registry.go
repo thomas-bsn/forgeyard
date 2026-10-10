@@ -180,6 +180,8 @@ func (c *session) get(ctx context.Context, path, accept string, out any) error {
 		switch {
 		case resp.StatusCode == http.StatusNotFound:
 			return errors.New("image introuvable sur son registre")
+		case resp.StatusCode == http.StatusTooManyRequests:
+			return errors.New("le registre limite les lectures anonymes (Docker Hub : quelques-unes par heure et par IP) : réessaie plus tard")
 		case resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden:
 			return errors.New("image privée : le registre refuse de la décrire")
 		case resp.StatusCode != http.StatusOK:

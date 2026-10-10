@@ -33,13 +33,18 @@ func (s *Server) handleImagePorts(w http.ResponseWriter, r *http.Request) {
 	s.mu.Lock()
 	cached, ok := s.imagePorts[image]
 	s.mu.Unlock()
-	if !ok || time.Since(cached.at) > imagePortsTTL {
+	ttl := imagePortsTTL
+	if cached.err != "" {
+		ttl = time.Minute // a failure may pass: a rate limit, a registry down
+	}
+	if !ok || time.Since(cached.at) > ttl {
 		ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
 		ports, err := registry.ExposedPorts(ctx, s.registryClient, image)
 		cancel()
 		cached = imagePorts{ports: ports, at: time.Now()}
 		if err != nil {
 			cached.err = err.Error()
+			s.logger.Warn("reading an image's ports failed", "image", image, "err", err)
 		}
 		s.mu.Lock()
 		if len(s.imagePorts) > 1000 {

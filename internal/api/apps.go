@@ -538,12 +538,7 @@ func (s *Server) handleListApps(w http.ResponseWriter, r *http.Request) {
 	}
 	out := make([]appResponse, 0, len(rows))
 	for _, row := range rows {
-		a := db.App{ID: row.ID, Name: row.Name, OwnerID: row.OwnerID, NodeID: row.NodeID, Image: row.Image,
-			Port: row.Port, EnvSealed: row.EnvSealed, Running: row.Running, MemoryMb: row.MemoryMb,
-			Generation: row.Generation, DnsName: row.DnsName, CreatedAt: row.CreatedAt, UpdatedAt: row.UpdatedAt, Public: row.Public,
-			LogoMode: row.LogoMode, LogoColor: row.LogoColor, LogoUpdatedAt: row.LogoUpdatedAt, CrashSuspended: row.CrashSuspended,
-			MovingFrom: row.MovingFrom, MovedAt: row.MovedAt}
-		out = append(out, s.toAppResponse(a, row.OwnerName, row.OwnerSuspended != 0, row.NodeName, c, byID[row.NodeID], s.publicHost(ctx, r)))
+		out = append(out, s.toAppResponse(row.App, row.OwnerName, row.OwnerSuspended != 0, row.NodeName, c, byID[row.App.NodeID], s.publicHost(ctx, r)))
 	}
 	writeJSON(w, http.StatusOK, out)
 }

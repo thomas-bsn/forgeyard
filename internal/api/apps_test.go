@@ -321,6 +321,11 @@ func TestDockerfileApp(t *testing.T) {
 	if app.Logo.AutoURL != imageLogoURL("nginx:alpine") {
 		t.Fatalf("logo from the base image: %q", app.Logo.AutoURL)
 	}
+	var list []appResponse
+	get(t, admin, ts.URL+"/api/apps", &list)
+	if len(list) != 1 || list[0].Logo.AutoURL != imageLogoURL("nginx:alpine") || list[0].Dockerfile != "" {
+		t.Fatalf("listed app: %+v", list)
+	}
 	spec := fa.desired(t).GetApps()[0]
 	if spec.GetImage() != app.Image || spec.GetDockerfile() != app.Dockerfile {
 		t.Fatalf("spec: %v", spec)

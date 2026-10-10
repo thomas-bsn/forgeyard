@@ -300,7 +300,7 @@ function AppList({
     <AppFormModal
       title="Nouvelle app"
       admin={admin}
-      submitLabel="Déployer"
+      submitLabel="Créer et démarrer"
       onClose={() => setCreating(false)}
       onSubmit={async (input, logo) => {
         const app = await api.createApp(input)
@@ -676,8 +676,35 @@ function nodeChoiceLabel(c: NodeChoice): string {
 
 type Source = 'image' | 'dockerfile'
 
+const sourceIcons: Record<string, ReactNode> = {
+  // A whale carrying containers.
+  image: (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" aria-hidden="true">
+      <path d="M2.5 12.5h16.8c.9-1.6 2.2-2.2 3.2-2.1-.2 1.2-.9 2-1.9 2.3-1.3 4.3-5 6.8-10 6.8-4.6 0-7.4-2.8-8.1-7Z" />
+      <path d="M5 9.5h3v3H5zM8 9.5h3v3H8zM11 9.5h3v3h-3zM8 6.5h3v3H8zM11 6.5h3v3h-3z" strokeWidth="1.4" />
+    </svg>
+  ),
+  dockerfile: (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8Z" />
+      <path d="M14 3v5h5M9 13h6M9 17h4" />
+    </svg>
+  ),
+  sandbox: (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <rect x="3" y="4" width="18" height="16" rx="2" />
+      <path d="m7 9 3 3-3 3M13 15h4" />
+    </svg>
+  ),
+  github: (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+      <path d="M12 .3a12 12 0 0 0-3.8 23.4c.6.1.8-.3.8-.6v-2c-3.3.7-4-1.6-4-1.6-.6-1.4-1.4-1.8-1.4-1.8-1-.7.1-.7.1-.7 1.2.1 1.8 1.2 1.8 1.2 1.1 1.8 2.8 1.3 3.5 1 .1-.8.4-1.3.8-1.6-2.7-.3-5.5-1.3-5.5-5.9 0-1.3.5-2.4 1.2-3.2-.1-.3-.5-1.5.1-3.2 0 0 1-.3 3.3 1.2a11.5 11.5 0 0 1 6 0C17.3 4.7 18.3 5 18.3 5c.6 1.7.2 2.9.1 3.2.8.8 1.2 1.9 1.2 3.2 0 4.6-2.8 5.6-5.5 5.9.4.4.8 1.1.8 2.2v3.3c0 .3.2.7.8.6A12 12 0 0 0 12 .3" />
+    </svg>
+  ),
+}
+
 const sources: { key: Source | 'sandbox' | 'github'; label: string; soon?: boolean }[] = [
-  { key: 'image', label: 'Image Docker' },
+  { key: 'image', label: 'Image' },
   { key: 'dockerfile', label: 'Dockerfile' },
   { key: 'sandbox', label: 'Sandbox', soon: true },
   { key: 'github', label: 'GitHub', soon: true },
@@ -759,13 +786,13 @@ function AppFormModal({
   const [port, setPort] = useState(String(initial?.port ?? 80))
   // The port fills in from what the image (or the Dockerfile) declares, until it is typed by hand.
   const [portTouched, setPortTouched] = useState(!!initial)
-  const [declared, setDeclared] = useState<{ image: string; ports: number[] } | null>(null)
+  const [declared, setDeclared] = useState<{ image: string; ports: number[]; error?: string } | null>(null)
   useEffect(() => {
     if (!settledImage.trim()) return
     let live = true
     api.imagePorts(settledImage).then(
-      (r) => live && setDeclared({ image: settledImage, ports: r.ports }),
-      () => live && setDeclared({ image: settledImage, ports: [] }),
+      (r) => live && setDeclared({ image: settledImage, ports: r.ports, error: r.error }),
+      (err) => live && setDeclared({ image: settledImage, ports: [], error: errorMessage(err) }),
     )
     return () => {
       live = false
@@ -814,33 +841,42 @@ function AppFormModal({
   const node = initial ? initial.nodeName : choices.find((c) => c.id === nodeId)
   const setCount = env.filter((v) => v.key.trim()).length
 
+  const chosen = typeof node === 'object' ? node : undefined
+  // No free memory figure (no measure yet): the row is left out rather than shown as full.
+  const freeAfter = chosen?.freeMemoryBytes ? chosen.freeMemoryBytes - Number(memory) * 1024 * 1024 : undefined
   const aside = (
     <>
       <span className="aside-label">Aperçu</span>
       <div className="app-preview">
-        {initial ? (
-          <AppLogo url={initial.logo.url} color={initial.logo.color} name={initial.name} size={64} />
-        ) : logo ? (
-          <img className="app-logo" src={logo} alt="" style={{ width: 64, height: 64 }} />
-        ) : (
-          <AppLogo url={hubLogoURL(settledImage)} name={shownName} size={64} />
-        )}
-        <strong>{shownName}</strong>
-        {address && <span className="app-preview-url">{address}</span>}
+        <span className="app-preview-logo">
+          {initial ? (
+            <AppLogo url={initial.logo.url} color={initial.logo.color} name={initial.name} size={72} />
+          ) : logo ? (
+            <img className="app-logo" src={logo} alt="" style={{ width: 72, height: 72 }} />
+          ) : (
+            <AppLogo url={hubLogoURL(settledImage)} name={shownName} size={72} />
+          )}
+        </span>
+        <strong className="app-preview-name">{shownName}</strong>
+        {address ? <span className="app-preview-url">{address}</span> : <span className="muted app-preview-meta">pas encore d’adresse web</span>}
         {!initial && (
-          <span className="row-actions">
-            <button type="button" className="btn btn-small" onClick={() => logoFile.current?.click()}>
-              {logo ? 'Changer le logo' : 'Mon logo'}
+          <span className="app-preview-meta muted">
+            {logo ? 'Ton logo' : 'Logo de l’image'} ·{' '}
+            <button type="button" className="link-button" onClick={() => logoFile.current?.click()}>
+              changer
             </button>
             {logo && (
-              <button type="button" className="btn btn-small" onClick={() => setLogo('')}>
-                Automatique
-              </button>
+              <>
+                {' · '}
+                <button type="button" className="link-button" onClick={() => setLogo('')}>
+                  automatique
+                </button>
+              </>
             )}
           </span>
         )}
       </div>
-      {choices.length > 1 ? (
+      {choices.length > 1 && (
         <label className="field">
           <span>Node</span>
           <select value={nodeId} onChange={(e) => setNodeId(Number(e.target.value))}>
@@ -851,22 +887,39 @@ function AppFormModal({
               </option>
             ))}
           </select>
-          {typeof node === 'object' && node && (
-            <small>
-              {formatBytes(node.freeMemoryBytes)} libres · {node.cpus} CPU · {node.apps} app{node.apps > 1 ? 's' : ''}
-            </small>
-          )}
         </label>
-      ) : (
-        <p className="muted aside-note">{typeof node === 'string' ? `Node : ${node}` : 'Node : le plus puissant, choisi automatiquement.'}</p>
       )}
+      <dl className="aside-facts">
+        {choices.length <= 1 && (
+          <>
+            <dt>Node</dt>
+            <dd>{typeof node === 'string' ? node : chosen ? chosen.name : 'le plus puissant (auto)'}</dd>
+          </>
+        )}
+        {chosen && (
+          <>
+            <dt>Machine</dt>
+            <dd>
+              {chosen.cpus} CPU · {chosen.apps} app{chosen.apps > 1 ? 's' : ''}
+            </dd>
+            {freeAfter !== undefined && (
+              <>
+                <dt>Mémoire libre après</dt>
+                <dd className={freeAfter < 0 ? 'state-down' : ''}>{freeAfter > 0 ? formatBytes(freeAfter) : 'insuffisante'}</dd>
+              </>
+            )}
+          </>
+        )}
+        <dt>Source</dt>
+        <dd>{source === 'dockerfile' ? 'construite' : 'téléchargée'}</dd>
+      </dl>
       {initial && <p className="muted aside-note">Enregistrer redéploie l’app sans coupure.</p>}
       <span className="aside-spacer" />
       {error && <p className="error">{error}</p>}
-      <button type="submit" className="btn btn-primary btn-block" disabled={busy}>
+      <button type="submit" className="btn btn-primary btn-block btn-big" disabled={busy}>
         {busy ? 'Envoi…' : submitLabel}
       </button>
-      <button type="button" className="btn btn-ghost btn-block" onClick={onClose} disabled={busy}>
+      <button type="button" className="link-button aside-cancel" onClick={onClose} disabled={busy}>
         Annuler
       </button>
     </>
@@ -885,6 +938,7 @@ function AppFormModal({
             disabled={s.soon || busy}
             onClick={() => setSource(s.key as Source)}
           >
+            {sourceIcons[s.key]}
             {s.label}
             {s.soon && <span className="soon">bientôt</span>}
           </button>
@@ -925,7 +979,7 @@ function AppFormModal({
             title="Le port sur lequel l’app écoute dans son conteneur"
           />
           {suggested.length > 0 && suggested.includes(Number(port)) ? (
-            <small>{exposed.length ? 'Celui du Dockerfile (EXPOSE).' : 'Celui que l’image indique.'}</small>
+            <small>{exposed.length ? 'Du Dockerfile ✓' : 'Lu dans l’image ✓'}</small>
           ) : suggested.length > 0 ? (
             <small>
               {exposed.length ? 'Le Dockerfile indique' : 'L’image indique'}{' '}
@@ -936,7 +990,7 @@ function AppFormModal({
               ))}
             </small>
           ) : (
-            fromImage && <small>L’image n’indique pas de port : voir sa doc.</small>
+            fromImage && <small>{declared?.error ? `Port introuvable : ${declared.error}.` : 'L’image n’indique pas de port : voir sa doc.'}</small>
           )}
         </label>
         <label className="field">
@@ -1071,12 +1125,13 @@ function AppDetail({ app, admin, nodes, onChange, go }: { app: App; admin: boole
             <rect x="3" y="13" width="18" height="7" rx="2" />
             <path d="M7 7.5h.01M7 16.5h.01" />
           </svg>
-          <span>
-            Tourne sur <strong>{app.nodeName}</strong>
+          <span className="node-line-text">
+            <small className="muted">Tourne sur</small>
+            <strong>{app.nodeName}</strong>
           </span>
           {admin && (
-            <button type="button" className="btn btn-small" disabled={busy || !!app.movingFrom} onClick={() => setMoving(true)}>
-              Changer de node
+            <button type="button" className="btn btn-small" disabled={busy || !!app.movingFrom} onClick={() => setMoving(true)} title="Changer de node">
+              Changer
             </button>
           )}
         </div>
