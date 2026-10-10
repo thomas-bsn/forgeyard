@@ -1,10 +1,10 @@
 import { useEffect, useState } from 'react'
 import { api, type Instance, type User } from './api'
-import { Logo, ThemeToggle } from './ui'
-import Requests from './Requests'
+import { Logo, ThemeToggle, useRoute } from './ui'
 import Settings from './Settings'
 import Nodes from './Nodes'
 import Apps from './Apps'
+import Users from './Users'
 
 const roleLabels: Record<User['role'], string> = {
   superadmin: 'superadmin',
@@ -12,11 +12,19 @@ const roleLabels: Record<User['role'], string> = {
   user: 'utilisateur',
 }
 
-type Tab = 'apps' | 'nodes' | 'requests' | 'settings'
-
-export default function Dashboard({ instance, user, onLogout }: { instance: Instance; user: User; onLogout: () => void }) {
+export default function Dashboard({
+  instance,
+  user,
+  onLogout,
+  onRefresh,
+}: {
+  instance: Instance
+  user: User
+  onLogout: () => void
+  onRefresh: () => void
+}) {
   const admin = user.role === 'admin' || user.role === 'superadmin'
-  const [tab, setTab] = useState<Tab>('apps')
+  const [route, go] = useRoute()
   const [pending, setPending] = useState(0)
 
   useEffect(() => {
@@ -28,11 +36,13 @@ export default function Dashboard({ instance, user, onLogout }: { instance: Inst
     onLogout()
   }
 
-  const tabButton = (value: Tab, label: string, count?: number) => (
-    <button type="button" className={`chip ${tab === value ? 'on' : ''}`} onClick={() => setTab(value)} aria-pressed={tab === value}>
+  // An app or an external container opens under Apps.
+  const page = route[0] === 'containers' ? 'apps' : (route[0] ?? 'apps')
+  const tab = (value: string, label: string, count?: number) => (
+    <a href={`#/${value}`} className={`chip ${page === value ? 'on' : ''}`} aria-current={page === value ? 'page' : undefined}>
       {label}
       {count ? <span className="count">{count}</span> : null}
-    </button>
+    </a>
   )
 
   return (
@@ -40,11 +50,17 @@ export default function Dashboard({ instance, user, onLogout }: { instance: Inst
       <header className="header">
         <Logo size={36} />
         <div className="header-title">
-          <h1>{instance.name}</h1>
+          <div className="brand-name">{instance.name}</div>
           <p className="muted">
-            Connecté en tant que {user.displayName} ({roleLabels[user.role]})
+            {user.displayName} ({roleLabels[user.role]})
           </p>
         </div>
+        <nav className="tabs" aria-label="Sections">
+          {tab('apps', 'Apps')}
+          {admin && tab('nodes', 'Nodes')}
+          {admin && tab('users', 'Utilisateurs', pending)}
+          {admin && tab('settings', 'Réglages')}
+        </nav>
         <div className="header-actions">
           <ThemeToggle />
           <button type="button" className="btn" onClick={logout}>
@@ -53,17 +69,10 @@ export default function Dashboard({ instance, user, onLogout }: { instance: Inst
         </div>
       </header>
 
-      <nav className="tabs" aria-label="Sections">
-        {tabButton('apps', 'Apps')}
-        {admin && tabButton('nodes', 'Nodes')}
-        {admin && tabButton('requests', 'Demandes', pending)}
-        {admin && tabButton('settings', 'Réglages')}
-      </nav>
-
-      {tab === 'apps' && <Apps admin={admin} />}
-      {tab === 'nodes' && admin && <Nodes localSupported={instance.localNodeSupported} />}
-      {tab === 'requests' && admin && <Requests onCountChange={setPending} />}
-      {tab === 'settings' && admin && <Settings superadmin={user.role === 'superadmin'} />}
+      {page === 'apps' && <Apps admin={admin} superadmin={user.role === 'superadmin'} route={route.length ? route : ['apps']} go={go} />}
+      {page === 'nodes' && admin && <Nodes localSupported={instance.localNodeSupported} />}
+      {page === 'users' && admin && <Users me={user} onRequestsChange={setPending} />}
+      {page === 'settings' && admin && <Settings superadmin={user.role === 'superadmin'} section={route[1]} onRenamed={onRefresh} />}
     </div>
   )
 }

@@ -1,33 +1,24 @@
 import { useEffect, useState, type FormEvent } from 'react'
-import { api, errorMessage, type JoinCommand, type Node } from './api'
-import { CopyField, ProxySnippet } from './ui'
+import { api, errorMessage, type App, type Container, type JoinCommand, type Node } from './api'
+import { CopyField, formatBytes, Modal, ProxySnippet, since } from './ui'
 
 const POLL_MS = 5000
 
-export function formatBytes(n: number): string {
-  if (n >= 1e12) return `${(n / 1e12).toFixed(1)} To`
-  if (n >= 1e9) return `${(n / 1e9).toFixed(1)} Go`
-  if (n >= 1e6) return `${Math.round(n / 1e6)} Mo`
-  return `${Math.round(n / 1e3)} Ko`
-}
-
-function since(unix?: number): string {
-  if (!unix) return 'jamais'
-  const min = Math.round((Date.now() / 1000 - unix) / 60)
-  if (min < 1) return "à l'instant"
-  if (min < 60) return `il y a ${min} min`
-  if (min < 48 * 60) return `il y a ${Math.round(min / 60)} h`
-  return new Date(unix * 1000).toLocaleDateString('fr-FR')
-}
-
 export default function Nodes({ localSupported }: { localSupported: boolean }) {
   const [nodes, setNodes] = useState<Node[] | null>(null)
+  const [apps, setApps] = useState<App[]>([])
+  const [containers, setContainers] = useState<Container[]>([])
   const [error, setError] = useState('')
+  const [adding, setAdding] = useState(false)
   const [join, setJoin] = useState<JoinCommand | null>(null)
+  const [network, setNetwork] = useState<Node | null>(null)
 
   async function load() {
     try {
-      setNodes(await api.nodes())
+      const [n, a, c] = await Promise.all([api.nodes(), api.apps(), api.containers()])
+      setNodes(n)
+      setApps(a)
+      setContainers(c)
       setError('')
     } catch (err) {
       setError(errorMessage(err))
@@ -40,37 +31,71 @@ export default function Nodes({ localSupported }: { localSupported: boolean }) {
     return () => clearInterval(id)
   }, [])
 
+  const online = nodes?.filter((n) => n.state === 'online').length ?? 0
+  const joined = nodes?.filter((n) => n.state !== 'pending').length ?? 0
+
   return (
     <div className="section">
-      {nodes && (
+      <div className="toolbar">
+        <h1 className="toolbar-title">
+          Nodes{' '}
+          <span className="muted">
+            {online} en ligne sur {joined}
+          </span>
+        </h1>
+        <button type="button" className="btn btn-primary" onClick={() => setAdding(true)}>
+          + Ajouter un node
+        </button>
+      </div>
+      {error && <p className="error">{error}</p>}
+      {nodes && nodes.length === 0 && (
+        <div className="empty-state">
+          <strong>Aucun node</strong>
+          <span>Un node est une machine qui fait tourner les apps. Ajoutez-en un pour commencer.</span>
+        </div>
+      )}
+      {nodes && nodes.length > 0 && (
+        <div className="node-grid">
+          {nodes.map((n) => (
+            <NodeCard
+              key={n.id}
+              node={n}
+              apps={apps.filter((a) => a.nodeId === n.id)}
+              externals={containers.filter((c) => c.nodeId === n.id)}
+              onJoin={setJoin}
+              onNetwork={() => setNetwork(n)}
+              onChange={load}
+            />
+          ))}
+        </div>
+      )}
+      {adding && nodes && (
         <AddNode
           localAvailable={localSupported && !nodes.some((n) => n.isLocal)}
+          onClose={() => setAdding(false)}
           onCreated={(j) => {
+            setAdding(false)
             setJoin(j)
             load()
           }}
         />
       )}
       {join && <JoinInstructions join={join} onClose={() => setJoin(null)} />}
-      {error && <p className="error">{error}</p>}
-      {nodes && nodes.length === 0 && (
-        <div className="empty-state">
-          <strong>Aucun node</strong>
-          <span>Un node est une machine qui fait tourner les conteneurs. Ajoutez-en un pour commencer.</span>
-        </div>
-      )}
-      {nodes && nodes.length > 0 && (
-        <div className="node-grid">
-          {nodes.map((n) => (
-            <NodeCard key={n.id} node={n} onJoin={setJoin} onChange={load} />
-          ))}
-        </div>
+      {network && (
+        <NetworkSettings
+          node={network}
+          onClose={() => setNetwork(null)}
+          onSaved={() => {
+            setNetwork(null)
+            load()
+          }}
+        />
       )}
     </div>
   )
 }
 
-function AddNode({ localAvailable, onCreated }: { localAvailable: boolean; onCreated: (j: JoinCommand) => void }) {
+function AddNode({ localAvailable, onCreated, onClose }: { localAvailable: boolean; onCreated: (j: JoinCommand) => void; onClose: () => void }) {
   const [where, setWhere] = useState<'local' | 'remote'>(localAvailable ? 'local' : 'remote')
   const local = localAvailable && where === 'local'
   const [name, setName] = useState('')
@@ -83,17 +108,29 @@ function AddNode({ localAvailable, onCreated }: { localAvailable: boolean; onCre
     setError('')
     try {
       onCreated(await api.createNode(local ? 'local' : name, local))
-      setName('')
     } catch (err) {
       setError(errorMessage(err))
-    } finally {
       setBusy(false)
     }
   }
 
   return (
-    <form className="panel" onSubmit={submit}>
-      <h2>Ajouter un node</h2>
+    <Modal
+      title="Ajouter un node"
+      subtitle="Une machine avec Docker qui fera tourner des apps."
+      onClose={onClose}
+      onSubmit={submit}
+      footer={
+        <>
+          <button type="button" className="btn" onClick={onClose} disabled={busy}>
+            Annuler
+          </button>
+          <button type="submit" className="btn btn-primary" disabled={busy}>
+            {busy ? 'Création…' : local ? 'Activer cette machine' : 'Créer'}
+          </button>
+        </>
+      }
+    >
       {localAvailable && (
         <div className="auth-options">
           <button type="button" className={`auth-option ${where === 'local' ? 'selected' : ''}`} onClick={() => setWhere('local')} aria-pressed={where === 'local'}>
@@ -106,76 +143,71 @@ function AddNode({ localAvailable, onCreated }: { localAvailable: boolean; onCre
           </button>
         </div>
       )}
-      <div className="add-node">
-        {!local && (
-          <label className="field">
-            <span>Nom du node</span>
-            <input
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="serveur-b"
-              pattern="[a-zA-Z0-9][a-zA-Z0-9\-]{0,31}"
-              title="1 à 32 caractères : lettres, chiffres et -"
-              required
-            />
-          </label>
-        )}
-        <button type="submit" className="btn btn-primary" disabled={busy}>
-          {busy ? 'Création…' : local ? 'Activer cette machine' : 'Créer'}
-        </button>
-      </div>
+      {!local && (
+        <label className="field">
+          <span>Nom du node</span>
+          <input
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="serveur-b"
+            pattern="[a-z0-9][a-z0-9\-]{0,31}"
+            title="1 à 32 caractères : a-z, 0-9 et -"
+            required
+            autoFocus
+          />
+        </label>
+      )}
       {error && <p className="error">{error}</p>}
-    </form>
+    </Modal>
   )
 }
 
 function JoinInstructions({ join, onClose }: { join: JoinCommand; onClose: () => void }) {
   const expires = new Date(join.expiresAt * 1000).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })
   return (
-    <div className="panel join-panel">
-      <div className="header">
-        <h2 className="header-title">{join.node.isLocal ? 'Cette machine' : `Connecter « ${join.node.name} »`}</h2>
-        <button type="button" className="btn btn-ghost" onClick={onClose}>
-          Fermer
+    <Modal
+      title={join.node.isLocal ? 'Cette machine' : `Connecter « ${join.node.name} »`}
+      onClose={onClose}
+      wide
+      footer={
+        <button type="button" className="btn btn-primary" onClick={onClose}>
+          Terminé
         </button>
-      </div>
+      }
+    >
       {join.node.isLocal ? (
         <p>
-          L’agent de cette machine va se connecter tout seul dans quelques secondes : rien à faire. S’il n’apparaît pas en
-          ligne, vérifiez qu’il tourne avec <code>docker compose ps</code>.
+          L’agent de cette machine va se connecter tout seul dans quelques secondes : rien à faire. S’il n’apparaît pas en ligne,
+          vérifiez qu’il tourne avec <code>docker compose ps</code>.
         </p>
       ) : (
         <>
-          <p className="muted">
-            Rien à installer à part Docker : l’agent Forgeyard est une image Docker, téléchargée et lancée automatiquement.
-          </p>
+          <p className="muted">Rien à installer à part Docker : l’agent Forgeyard est une image Docker, téléchargée et lancée automatiquement.</p>
           <ol className="steps-help">
             <li>
               Sur la machine à ajouter, lancez cette commande dans un terminal :
               <CopyField value={join.dockerCommand} />
             </li>
-            <li>Le node apparaît en ligne ci-dessous en quelques secondes. L’agent redémarre tout seul avec la machine.</li>
+            <li>Le node apparaît en ligne en quelques secondes. L’agent redémarre tout seul avec la machine.</li>
           </ol>
           <p className="muted">
-            Cette commande ne sert qu’une fois et expire à {expires}. Elle n’est plus jamais affichée : en cas de besoin,
-            générez-en une nouvelle depuis la carte du node.
+            Cette commande ne sert qu’une fois et expire à {expires}. Elle n’est plus jamais affichée : en cas de besoin, générez-en une
+            nouvelle depuis la carte du node.
           </p>
         </>
       )}
-    </div>
+    </Modal>
   )
 }
 
-function Bar({ used, total, label }: { used: number; total: number; label: string }) {
-  const pct = total > 0 ? Math.min(100, (used / total) * 100) : 0
+function Meter({ label, used, total, pct: rawPct, text }: { label: string; used?: number; total?: number; pct?: number; text?: string }) {
+  const pct = Math.min(100, rawPct ?? (total ? ((used ?? 0) / total) * 100 : 0))
   const tone = pct >= 90 ? 'down' : pct >= 75 ? 'warn' : 'ok'
   return (
     <div className="meter">
       <div className="meter-label">
         <span>{label}</span>
-        <span className="muted">
-          {formatBytes(used)} / {formatBytes(total)}
-        </span>
+        <span className={tone === 'ok' ? 'muted' : `text-${tone}`}>{text ?? `${formatBytes(used ?? 0)} / ${formatBytes(total ?? 0)}`}</span>
       </div>
       <div className="meter-track" role="meter" aria-label={label} aria-valuenow={Math.round(pct)} aria-valuemin={0} aria-valuemax={100}>
         <div className={`meter-fill meter-${tone}`} style={{ width: `${pct}%` }} />
@@ -184,7 +216,21 @@ function Bar({ used, total, label }: { used: number; total: number; label: strin
   )
 }
 
-function NodeCard({ node, onJoin, onChange }: { node: Node; onJoin: (j: JoinCommand) => void; onChange: () => void }) {
+function NodeCard({
+  node,
+  apps,
+  externals,
+  onJoin,
+  onNetwork,
+  onChange,
+}: {
+  node: Node
+  apps: App[]
+  externals: Container[]
+  onJoin: (j: JoinCommand) => void
+  onNetwork: () => void
+  onChange: () => void
+}) {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const m = node.metrics
@@ -202,19 +248,21 @@ function NodeCard({ node, onJoin, onChange }: { node: Node; onJoin: (j: JoinComm
   }
 
   const stateLabel = { pending: 'En attente', online: 'En ligne', offline: 'Hors ligne' }[node.state]
-  const dot = { pending: '', online: 'dot-up', offline: 'dot-down' }[node.state]
+  const tone = { pending: '', online: 'up', offline: 'down' }[node.state]
+  const appsOnline = apps.filter((a) => a.state === 'running').length
+  const externalsRunning = externals.filter((c) => c.state === 'running').length
 
   return (
-    <div className="panel node-card">
+    <article className="panel node-card">
       <div className="node-head">
-        <span className={`dot ${dot}`} />
-        <strong className="node-name">{node.name}</strong>
-        {node.isLocal && <span className="muted">cette machine</span>}
-        <span className="muted">{stateLabel}</span>
+        <span className={`dot ${tone ? `dot-${tone}` : ''}`} />
+        <h2 className="node-name">{node.name}</h2>
+        {node.isLocal && <span className="badge badge-accent">cette machine</span>}
+        <span className={`node-state ${tone ? `text-${tone}` : 'muted'}`}>{stateLabel}</span>
       </div>
 
       {node.state === 'pending' ? (
-        <p className="muted">La machine n'a pas encore rejoint le PaaS.</p>
+        <p className="muted">La machine n’a pas encore rejoint Forgeyard.</p>
       ) : (
         <>
           <p className="muted node-specs">
@@ -222,35 +270,53 @@ function NodeCard({ node, onJoin, onChange }: { node: Node; onJoin: (j: JoinComm
             {node.dockerVersion ? ` · Docker ${node.dockerVersion}` : ' · Docker injoignable'}
           </p>
           {m ? (
-            <>
-              <div className="meter">
-                <div className="meter-label">
-                  <span>CPU</span>
-                  <span className="muted">{m.cpuPercent.toFixed(0)} %</span>
-                </div>
-                <div className="meter-track" role="meter" aria-label="CPU" aria-valuenow={Math.round(m.cpuPercent)} aria-valuemin={0} aria-valuemax={100}>
-                  <div className={`meter-fill meter-${m.cpuPercent >= 90 ? 'down' : m.cpuPercent >= 75 ? 'warn' : 'ok'}`} style={{ width: `${Math.min(100, m.cpuPercent)}%` }} />
-                </div>
-              </div>
-              <Bar label="RAM" used={m.memoryUsedBytes} total={node.memoryBytes} />
-              <Bar label="Disque" used={m.diskUsedBytes} total={node.diskBytes} />
-              <p className="muted">
-                {m.containersRunning} conteneur{m.containersRunning > 1 ? 's' : ''} en cours
-              </p>
-            </>
+            <div className="meters-row">
+              <Meter label="CPU" pct={m.cpuPercent} text={`${m.cpuPercent.toFixed(0)} %`} />
+              <Meter label="RAM" used={m.memoryUsedBytes} total={node.memoryBytes} />
+              <Meter label="Disque" used={m.diskUsedBytes} total={node.diskBytes} />
+            </div>
           ) : (
             <p className="muted">Vu pour la dernière fois {since(node.lastSeenAt)}.</p>
           )}
+          <div className="tiles tiles-2">
+            <div className="tile">
+              <div className="k">Apps</div>
+              <div className="v">
+                {apps.length} <small>{apps.length ? `dont ${appsOnline} en ligne` : ''}</small>
+              </div>
+            </div>
+            <div className="tile">
+              <div className="k">Conteneurs en cours</div>
+              <div className="v">
+                {m ? m.containersRunning : '–'} <small>{externalsRunning ? `dont ${externalsRunning} hors Forgeyard` : ''}</small>
+              </div>
+            </div>
+          </div>
+          <div className="network-line">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <circle cx="12" cy="12" r="9" />
+              <path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18" />
+            </svg>
+            <div>
+              <strong>{node.ingressMode === 'traefik' ? 'Forgeyard gère les ports 80 et 443' : 'Derrière votre reverse proxy'}</strong>
+              <span className="muted">
+                {node.ingressMode === 'traefik' ? 'HTTPS automatique' : `Apps reçues sur le port ${node.ingressHttpPort}`}
+                {node.publicIp ? ` · IP publique ${node.publicIp}` : ''}
+              </span>
+            </div>
+          </div>
         </>
       )}
 
-      {node.state !== 'pending' && <IngressSettings node={node} onSaved={onChange} />}
-
       {error && <p className="error">{error}</p>}
-      <div className="panel-footer">
-        {node.state === 'pending' && (
+      <div className="card-actions">
+        {node.state === 'pending' ? (
           <button type="button" className="btn" disabled={busy} onClick={() => run(async () => onJoin(await api.newJoinCommand(node.id)))}>
             {node.isLocal ? 'Relancer la connexion' : 'Nouvelle commande'}
+          </button>
+        ) : (
+          <button type="button" className="btn" onClick={onNetwork}>
+            Réseau…
           </button>
         )}
         <span className="spacer" />
@@ -270,13 +336,12 @@ function NodeCard({ node, onJoin, onChange }: { node: Node; onJoin: (j: JoinComm
           Retirer
         </button>
       </div>
-    </div>
+    </article>
   )
 }
 
 /** How the node receives the web traffic of its apps. */
-function IngressSettings({ node, onSaved }: { node: Node; onSaved: () => void }) {
-  const [open, setOpen] = useState(false)
+function NetworkSettings({ node, onClose, onSaved }: { node: Node; onClose: () => void; onSaved: () => void }) {
   const [ip, setIp] = useState(node.publicIp)
   const [mode, setMode] = useState(node.ingressMode)
   const [port, setPort] = useState(String(node.ingressHttpPort))
@@ -285,8 +350,9 @@ function IngressSettings({ node, onSaved }: { node: Node; onSaved: () => void })
   const [busy, setBusy] = useState(false)
 
   useEffect(() => {
-    if (open && mode === 'proxy' && !domain) api.domainSettings().then((d) => setDomain(d.domain), () => {})
-  }, [open, mode, domain])
+    // Only the superadmin may read the domain settings; others see a placeholder domain in the example.
+    api.domainSettings().then((d) => setDomain(d.domain), () => {})
+  }, [])
 
   async function save(e: FormEvent) {
     e.preventDefault()
@@ -294,65 +360,59 @@ function IngressSettings({ node, onSaved }: { node: Node; onSaved: () => void })
     setError('')
     try {
       await api.setNodeIngress(node.id, { publicIp: ip, ingressMode: mode, ingressHttpPort: Number(port) })
-      setOpen(false)
       onSaved()
     } catch (err) {
       setError(errorMessage(err))
-    } finally {
       setBusy(false)
     }
   }
 
-  const summary =
-    node.ingressMode === 'traefik' ? 'Traefik sur 80/443, HTTPS automatique' : `Derrière un proxy, port ${node.ingressHttpPort}`
-
-  if (!open) {
-    return (
-      <div className="ingress-summary">
-        <span className="muted">
-          Réseau : {summary}
-          {node.publicIp ? ` · IP ${node.publicIp}` : ''}
-        </span>
-        <button type="button" className="btn btn-ghost" onClick={() => setOpen(true)}>
-          Modifier
-        </button>
-      </div>
-    )
-  }
-
   return (
-    <form className="form" onSubmit={save}>
-      <label className="field">
-        <span>IP publique</span>
-        <input value={ip} onChange={(e) => setIp(e.target.value)} placeholder="Celle des Réglages par défaut" />
-        <small>L’adresse vers laquelle pointent les domaines des apps de ce node.</small>
-      </label>
-      <label className="field">
-        <span>Trafic web</span>
-        <select value={mode} onChange={(e) => setMode(e.target.value as Node['ingressMode'])}>
-          <option value="traefik">Forgeyard prend les ports 80/443 et gère le HTTPS</option>
-          <option value="proxy">Mon reverse proxy (Caddy, Nginx…) les garde</option>
-        </select>
-      </label>
+    <Modal
+      title={`Réseau de « ${node.name} »`}
+      onClose={onClose}
+      onSubmit={save}
+      wide
+      footer={
+        <>
+          <button type="button" className="btn" onClick={onClose} disabled={busy}>
+            Annuler
+          </button>
+          <button type="submit" className="btn btn-primary" disabled={busy}>
+            Enregistrer
+          </button>
+        </>
+      }
+    >
+      <div className="field">
+        <span>Qui gère les ports 80 et 443 de cette machine ?</span>
+        <div className="auth-options">
+          <button type="button" className={`auth-option ${mode === 'traefik' ? 'selected' : ''}`} onClick={() => setMode('traefik')} aria-pressed={mode === 'traefik'}>
+            <strong>Forgeyard</strong>
+            <small>HTTPS automatique, rien à configurer.</small>
+          </button>
+          <button type="button" className={`auth-option ${mode === 'proxy' ? 'selected' : ''}`} onClick={() => setMode('proxy')} aria-pressed={mode === 'proxy'}>
+            <strong>Mon reverse proxy</strong>
+            <small>Caddy, Nginx… garde 80/443 et envoie les apps à Forgeyard.</small>
+          </button>
+        </div>
+      </div>
       {mode === 'proxy' && (
         <>
           <label className="field">
-            <span>Port HTTP</span>
+            <span>Port d’entrée HTTP</span>
             <input type="number" min={1} max={65535} value={port} onChange={(e) => setPort(e.target.value)} required />
+            <small>Le port de cette machine où Forgeyard reçoit les apps. Laissez 8090 sauf s’il est déjà pris.</small>
           </label>
           <ProxySnippet domain={domain} port={Number(port) || 8090} />
         </>
       )}
+      <label className="field">
+        <span>IP publique (facultatif)</span>
+        <input value={ip} onChange={(e) => setIp(e.target.value)} placeholder="Celle des réglages du domaine" />
+        <small>L’adresse vers laquelle pointent les domaines des apps de ce node.</small>
+      </label>
       {error && <p className="error">{error}</p>}
-      <div className="panel-footer">
-        <span className="spacer" />
-        <button type="button" className="btn" onClick={() => setOpen(false)} disabled={busy}>
-          Annuler
-        </button>
-        <button type="submit" className="btn btn-primary" disabled={busy}>
-          Enregistrer
-        </button>
-      </div>
-    </form>
+    </Modal>
   )
 }

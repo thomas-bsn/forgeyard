@@ -35,12 +35,13 @@ Pas de microservices : un binaire est plus simple à installer et à mettre à j
 | Table | Contenu |
 |---|---|
 | `settings` | Réglages clé / valeur (nom, adresse, domaine, Discord…), secrets chiffrés |
-| `users` | Comptes : Discord ou local, rôle, désactivé |
+| `users` | Comptes : Discord ou local, rôle, désactivé, apps suspendues |
 | `sessions` | Hash des tokens de session |
 | `account_requests` | Demandes de compte Discord (en attente, refusées) |
 | `login_links` | Liens de secours |
 | `nodes` | Machines : hash du token de join, série du certificat, mode réseau, IP publique, local |
 | `apps` | Apps : node, propriétaire, image, port, variables chiffrées, mémoire, état voulu, génération, nom DNS |
+| `app_events` | Ce qui arrive à chaque app (200 derniers) |
 
 ## Développement
 

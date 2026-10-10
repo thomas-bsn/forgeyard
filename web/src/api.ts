@@ -92,8 +92,46 @@ export type App = {
   restartCount?: number
   startedAt?: number
   hostPort?: number
+  cpuPercent?: number
+  memoryUsedBytes?: number
+  suspended?: boolean
   updatedAt: number
   env?: Record<string, string>
+}
+
+export type AppEvent = { at: number; kind: 'info' | 'success' | 'warning' | 'error'; message: string }
+
+export type AppUsage = {
+  memoryLimitBytes: number
+  samples: { t: number; cpu: number; mem: number }[]
+}
+
+/** A container of a node that Forgeyard did not create, shown with the apps and owned by the superadmin. */
+export type Container = {
+  nodeId: number
+  nodeName: string
+  id: string
+  name: string
+  image: string
+  state: string
+  status: string
+  createdAt: number
+  ports: string[]
+  cpuPercent?: number
+  memoryUsedBytes?: number
+  composeProject?: string
+  ownerName: string
+}
+
+export type Account = {
+  id: number
+  displayName: string
+  method: 'discord' | 'password'
+  role: 'superadmin' | 'admin' | 'user'
+  disabled: boolean
+  appsSuspended: boolean
+  appCount: number
+  createdAt: number
 }
 
 export type AppInput = {
@@ -215,6 +253,17 @@ export const api = {
   updateApp: (id: number, input: AppInput) => request<App>('PUT', `/api/apps/${id}`, input),
   appAction: (id: number, action: 'start' | 'stop' | 'redeploy') => request<App>('POST', `/api/apps/${id}/${action}`, {}),
   deleteApp: (id: number) => request<void>('DELETE', `/api/apps/${id}`, {}),
+  appEvents: (id: number) => request<AppEvent[]>('GET', `/api/apps/${id}/events`),
+  appUsage: (id: number) => request<AppUsage>('GET', `/api/apps/${id}/usage`),
+  containers: () => request<Container[]>('GET', '/api/admin/containers'),
+  containerAction: (c: Container, action: 'start' | 'stop' | 'restart') =>
+    request<void>('POST', `/api/admin/nodes/${c.nodeId}/containers/${c.id}/${action}`, {}),
+  users: () => request<Account[]>('GET', '/api/admin/users'),
+  updateUser: (id: number, body: { role?: 'user' | 'admin'; disabled?: boolean; appsSuspended?: boolean }) =>
+    request<void>('PUT', `/api/admin/users/${id}`, body),
+  deleteUser: (id: number) => request<void>('DELETE', `/api/admin/users/${id}`, {}),
+  saveGeneralSettings: (name: string, publicUrl: string) =>
+    request<{ name: string; publicUrl: string }>('PUT', '/api/admin/settings/general', { name, publicUrl }),
   nodes: () => request<Node[]>('GET', '/api/admin/nodes'),
   setNodeIngress: (id: number, body: { publicIp: string; ingressMode: 'traefik' | 'proxy'; ingressHttpPort: number }) =>
     request<Node>('PUT', `/api/admin/nodes/${id}/ingress`, body),

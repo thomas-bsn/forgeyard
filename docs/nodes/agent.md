@@ -8,11 +8,13 @@ Un seul flux gRPC bidirectionnel (`AgentService.Connect`, défini dans `proto/ag
 |---|---|---|
 | agent → server | `Hello` (hostname, OS, arch, CPU, RAM, disque, version Docker) | premier message |
 | agent → server | `Metrics` (CPU %, RAM et disque utilisés, conteneurs actifs) | toutes les 5 s |
-| agent → server | `AppStatuses` (état, code de sortie, OOM, port publié, redémarrages… par app) | toutes les 3 s |
+| agent → server | `AppStatuses` (état, code de sortie, OOM, port publié, redémarrages, CPU et mémoire… par app) | toutes les 3 s |
+| agent → server | `ExternalContainers` (conteneurs que Forgeyard n'a pas créés, avec CPU et mémoire) | toutes les 10 s |
 | agent → server | `LogLine` | pendant qu'un utilisateur regarde des logs |
 | server → agent | `Welcome` (id et nom du node) | après `Hello` |
 | server → agent | `DesiredState` (toutes les apps du node + mode réseau) | à la connexion, puis à chaque changement |
-| server → agent | `StartLogs` / `StopLogs` | ouverture / fermeture des logs dans l'UI |
+| server → agent | `StartLogs` / `StopLogs` | ouverture / fermeture des logs dans l'UI (d'une app, ou d'un conteneur externe) |
+| server → agent | `ContainerAction` | démarrer, arrêter ou redémarrer un conteneur externe |
 
 - Coupure : l'agent se reconnecte avec un délai qui double de 1 s à 30 s. Les conteneurs continuent de tourner pendant ce temps.
 - Si le server répond « node retiré » ou « certificat révoqué », l'agent s'arrête.

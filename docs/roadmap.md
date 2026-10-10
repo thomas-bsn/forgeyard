@@ -14,11 +14,14 @@
 ## v0.2 : comptes et multi-node
 - [x] Discord SSO, demandes de compte, rôles
 - [x] Ajout de machines (commande `docker run` ou binaire)
-- [ ] Gestion des comptes : liste, changement de rôle, désactivation, création directe, transfert du superadmin
+- [x] Gestion des comptes : liste, changement de rôle, suspension des apps, désactivation, suppression
+- [ ] Création directe de comptes, transfert du superadmin
 - [ ] Webhook Discord de notification
-- [ ] Capacité et placement selon les ressources, graphiques de métriques
+- [x] Métriques et graphiques par app, journal d'événements
+- [ ] Capacité et placement selon les ressources
 - [ ] Gestion des crashs et suspension
-- [ ] Conteneurs externes : détection, gestion, adoption
+- [x] Conteneurs externes : détection, logs, démarrer / arrêter / redémarrer
+- [ ] Conteneurs externes : adoption (en faire une vraie app Forgeyard)
 - [ ] Demandes de domaines personnalisés et de ports publics, validation admin
 
 ## v0.3 : build et GitHub
@@ -44,8 +47,8 @@
 - Scaling via Kubernetes
 
 ## Limites actuelles
-- Le nom de l'instance ne se change pas après le wizard.
 - Une app ne peut pas être renommée.
+- L'historique CPU / mémoire n'est gardé qu'en mémoire : il repart de zéro quand le server redémarre.
 - Changer de domaine ne supprime pas les anciens enregistrements DNS.
 - Pas d'en-têtes de sécurité HTTP ni d'email ACME (voir [sécurité](security/README.md#limites-connues)).
 

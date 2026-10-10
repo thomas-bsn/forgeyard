@@ -26,6 +26,8 @@ Toutes les écritures sont en JSON. Les routes sont déclarées dans `internal/a
 | `GET`, `PUT`, `DELETE /api/apps/{id}` | Voir, modifier, supprimer |
 | `POST /api/apps/{id}/{start\|stop\|redeploy}` | Actions |
 | `GET /api/apps/{id}/logs?tail=` | Logs en direct (SSE) |
+| `GET /api/apps/{id}/usage` | CPU et mémoire de la dernière heure |
+| `GET /api/apps/{id}/events` | Derniers événements |
 
 Les routes d'app vérifient que l'utilisateur est le propriétaire ou un admin.
 
@@ -40,11 +42,18 @@ Les routes d'app vérifient que l'utilisateur est le propriétaire ou un admin.
 | `POST /api/admin/nodes/{id}/join-command` | Nouvelle commande (node en attente) |
 | `PUT /api/admin/nodes/{id}/ingress` | IP publique et mode réseau |
 | `DELETE /api/admin/nodes/{id}` | Retirer (refusé s'il a des apps) |
+| `GET /api/admin/containers` | Conteneurs externes de tous les nodes en ligne |
+| `GET /api/admin/users` | Comptes, avec leur nombre d'apps |
+| `PUT /api/admin/users/{id}` | Rôle, désactivé, apps suspendues (jamais le superadmin ni soi-même) |
+| `DELETE /api/admin/users/{id}` | Supprimer un compte et ses apps |
 
 ## Superadmin
 
 | Route | Rôle |
 |---|---|
-| `GET`, `PUT /api/admin/settings/domain` | Adresse de Forgeyard, domaine, fournisseur DNS |
+| `PUT /api/admin/settings/general` | Nom de l'instance, adresse de Forgeyard |
+| `GET`, `PUT /api/admin/settings/domain` | Domaine, fournisseur DNS (et adresse de Forgeyard) |
+| `POST /api/admin/nodes/{node}/containers/{id}/{start\|stop\|restart}` | Agir sur un conteneur externe |
+| `GET /api/admin/nodes/{node}/containers/{id}/logs` | Logs d'un conteneur externe (SSE) |
 | `POST /api/admin/settings/domain/check` | Vérifier le domaine |
 | `GET`, `PUT /api/admin/settings/login` | Connexion par mot de passe |

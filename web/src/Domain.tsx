@@ -8,7 +8,7 @@ const modes: { value: DomainMode; title: string; text: string }[] = [
   { value: 'provider', title: 'API du fournisseur', text: 'Forgeyard crée lui-même un enregistrement par app.' },
 ]
 
-/** Superadmin only: Forgeyard's address and how app subdomains reach the servers. */
+/** Superadmin only: how app subdomains reach the servers. Forgeyard's own address is in General settings. */
 export default function DomainPanel() {
   const [saved, setSaved] = useState<DomainSettings | null>(null)
   const [publicUrl, setPublicUrl] = useState('')
@@ -49,7 +49,7 @@ export default function DomainPanel() {
       apply(s)
       setNotice(
         (addressChanged
-          ? 'Enregistré. L’adresse a changé : mettez à jour la redirection de votre application Discord (ci-dessous) et ouvrez désormais Forgeyard depuis la nouvelle adresse.'
+          ? 'Enregistré.'
           : 'Enregistré. Les apps existantes ont été mises à jour.') + (s.warning ? ` Attention : ${s.warning}` : ''),
       )
     } catch (err) {
@@ -76,25 +76,58 @@ export default function DomainPanel() {
   const sameProvider = provider === saved.provider
   const credsChanged = JSON.stringify(creds) !== JSON.stringify(sameProvider ? saved.credentials : {})
   const dirty =
-    publicUrl !== saved.publicUrl ||
     mode !== saved.mode ||
     domain !== saved.domain ||
     publicIp !== saved.publicIp ||
     (mode === 'provider' && (!sameProvider || credsChanged))
   const host = domain.trim().toLowerCase() || 'mondomaine.com'
 
-  return (
-    <form className="panel" onSubmit={save}>
-      <h2>Adresse et domaine</h2>
+  const savedKind = saved.providers.find((p) => p.name === saved.provider)
 
-      <label className="field">
-        <span>Adresse de Forgeyard</span>
-        <input type="url" value={publicUrl} onChange={(e) => setPublicUrl(e.target.value)} placeholder="https://forgeyard.mondomaine.com" required />
-        <small>Utilisée pour la connexion Discord et les commandes des nodes.</small>
-      </label>
+  return (
+    <>
+      <section className="panel summary-card">
+        <div className="summary-head">
+          <span className={`dot ${saved.mode === 'none' ? '' : check ? (check.ok ? 'dot-up' : 'dot-warn') : 'dot-up'}`} />
+          <div className="header-title">
+            <strong>
+              {saved.mode === 'none'
+                ? 'Pas de domaine : les apps sont joignables par IP et port'
+                : saved.mode === 'provider'
+                  ? `${saved.domain} · ${savedKind?.label ?? saved.provider}`
+                  : `${saved.domain} · wildcard manuel`}
+            </strong>
+            {check && <p className="muted">{check.message}</p>}
+          </div>
+          {saved.mode !== 'none' && (
+            <button type="button" className="btn" onClick={runCheck} disabled={busy}>
+              Vérifier
+            </button>
+          )}
+        </div>
+        {saved.mode !== 'none' && (
+          <div className="tiles">
+            <div className="tile">
+              <div className="k">Adresse d’une app</div>
+              <div className="v v-small">monapp.{saved.domain}</div>
+            </div>
+            <div className="tile">
+              <div className="k">IP publique</div>
+              <div className="v v-small">{saved.publicIp || '–'}</div>
+            </div>
+            <div className="tile">
+              <div className="k">DNS</div>
+              <div className="v v-small">{saved.mode === 'provider' ? 'créés par Forgeyard' : 'gérés par vous'}</div>
+            </div>
+          </div>
+        )}
+      </section>
+
+    <form className="panel" onSubmit={save}>
+      <h2>Modifier</h2>
 
       <div className="field">
-        <span>Domaine des apps</span>
+        <span>Mode</span>
         <div className="auth-options">
           {modes.map((m) => (
             <button
@@ -185,34 +218,15 @@ export default function DomainPanel() {
         </>
       )}
 
-      <div className="field">
-        <span>Redirection Discord</span>
-        <CopyField value={saved.discordRedirectUrl} />
-      </div>
-
       {error && <p className="error">{error}</p>}
       {notice && <p className="muted">{notice}</p>}
-      {check && (
-        <div className={`banner ${check.ok ? 'banner-up' : 'banner-warn'}`} role="status">
-          <span className={`dot ${check.ok ? 'dot-up' : 'dot-warn'}`} />
-          <span>
-            {check.message}
-            {check.resolved && check.resolved.length > 0 ? ` (${check.name} → ${check.resolved.join(', ')})` : ''}
-          </span>
-        </div>
-      )}
-
       <div className="panel-footer">
-        {saved.mode !== 'none' && (
-          <button type="button" className="btn" onClick={runCheck} disabled={busy || dirty}>
-            Vérifier
-          </button>
-        )}
         <span className="spacer" />
         <button type="submit" className="btn btn-primary" disabled={busy || !dirty}>
           {busy ? 'Vérification…' : 'Enregistrer'}
         </button>
       </div>
     </form>
+    </>
   )
 }

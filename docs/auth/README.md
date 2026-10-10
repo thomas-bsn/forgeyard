@@ -34,7 +34,18 @@ Si le superadmin a choisi Discord, la connexion par mot de passe est **coupée**
 2. Un admin l'accepte en choisissant le rôle (`user` ou `admin`), ou la refuse avec un motif facultatif.
 3. Acceptée : le compte est créé, la personne se connecte normalement. Refusée : elle voit « refusée » à chaque tentative.
 
-Pas encore fait : notifications (webhook Discord, email), gestion des comptes après coup (liste, changement de rôle, désactivation). Voir la [roadmap](../roadmap.md).
+Pas encore fait : notifications (webhook Discord, email). Voir la [roadmap](../roadmap.md).
+
+## Gérer les comptes
+
+Onglet **Utilisateurs** (admins) : les demandes en attente en haut, puis tous les comptes avec leur méthode, leur rôle et leur nombre d'apps. « Gérer… » permet de :
+
+- changer le rôle (`user` ↔ `admin`) ;
+- **suspendre ses apps** : elles sont arrêtées et ni lui ni un admin ne peut les relancer avant la réactivation (qui ne les redémarre pas) ;
+- **désactiver** le compte : ses sessions sont supprimées et il ne peut plus se connecter ;
+- **supprimer** le compte, avec ses apps, leurs conteneurs et leurs DNS.
+
+Le superadmin et son propre compte ne sont jamais modifiables depuis cet écran.
 
 ## Rôles
 

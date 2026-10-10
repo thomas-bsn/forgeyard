@@ -71,6 +71,6 @@ export default function App() {
     case 'login':
       return <Login instance={state.instance} authStatus={authStatus} onDone={load} />
     case 'ready':
-      return <Dashboard instance={state.instance} user={state.user} onLogout={load} />
+      return <Dashboard instance={state.instance} user={state.user} onLogout={load} onRefresh={load} />
   }
 }
