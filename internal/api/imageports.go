@@ -8,20 +8,22 @@ import (
 	"github.com/thomas-bsn/forgeyard/internal/registry"
 )
 
-// The app form fills in the port an image exposes: read from its registry, without pulling it, and
-// remembered for an hour.
+// The app form fills in the port an image exposes and offers the paths it keeps (its VOLUMEs): read from
+// its registry, without pulling it, and remembered for an hour.
 
 const imagePortsTTL = time.Hour
 
 type imagePorts struct {
-	ports []int
-	err   string
-	at    time.Time
+	ports   []int
+	volumes []string
+	err     string
+	at      time.Time
 }
 
 type imagePortsResponse struct {
-	Ports []int  `json:"ports"`
-	Error string `json:"error,omitempty"` // why the image could not be read (private, unknown…)
+	Ports   []int    `json:"ports"`
+	Volumes []string `json:"volumes"`
+	Error   string   `json:"error,omitempty"` // why the image could not be read (private, unknown…)
 }
 
 func (s *Server) handleImagePorts(w http.ResponseWriter, r *http.Request) {
@@ -39,9 +41,9 @@ func (s *Server) handleImagePorts(w http.ResponseWriter, r *http.Request) {
 	}
 	if !ok || time.Since(cached.at) > ttl {
 		ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
-		ports, err := registry.ExposedPorts(ctx, s.registryClient, image)
+		cfg, err := registry.ImageConfig(ctx, s.registryClient, image)
 		cancel()
-		cached = imagePorts{ports: ports, at: time.Now()}
+		cached = imagePorts{ports: cfg.Ports, volumes: cfg.Volumes, at: time.Now()}
 		if err != nil {
 			cached.err = err.Error()
 			s.logger.Warn("reading an image's ports failed", "image", image, "err", err)
@@ -57,5 +59,9 @@ func (s *Server) handleImagePorts(w http.ResponseWriter, r *http.Request) {
 	if ports == nil {
 		ports = []int{}
 	}
-	writeJSON(w, http.StatusOK, imagePortsResponse{Ports: ports, Error: cached.err})
+	volumes := cached.volumes
+	if volumes == nil {
+		volumes = []string{}
+	}
+	writeJSON(w, http.StatusOK, imagePortsResponse{Ports: ports, Volumes: volumes, Error: cached.err})
 }

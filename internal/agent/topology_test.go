@@ -43,7 +43,7 @@ func TestTopologyAgainstDocker(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	topo, err := topology(ctx, dc)
+	topo, err := topology(ctx, dc, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

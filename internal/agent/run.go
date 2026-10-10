@@ -131,11 +131,12 @@ func session(ctx context.Context, client agentpb.AgentServiceClient, dc *docker.
 			ExternalContainers: &agentpb.ExternalContainers{Containers: list},
 		}})
 	}
+	sizes := &volumeSizes{}
 	sendTopology := func() {
 		if dc == nil {
 			return
 		}
-		t, err := topology(ctx, dc)
+		t, err := topology(ctx, dc, sizes)
 		if err != nil {
 			logger.Warn("describing the node's networks failed", "err", err)
 			return
@@ -202,6 +203,18 @@ func session(ctx context.Context, client agentpb.AgentServiceClient, dc *docker.
 			execs.resize(ctx, m.ExecResize)
 		case *agentpb.ServerMessage_ExecClose:
 			execs.close(m.ExecClose.GetSessionId())
+		case *agentpb.ServerMessage_DropAppData:
+			if dc != nil {
+				go func(appID int64) {
+					dctx, cancel := context.WithTimeout(ctx, time.Minute)
+					defer cancel()
+					if err := dropAppData(dctx, dc, appID); err != nil {
+						logger.Warn("deleting a deleted app's data failed", "app_id", appID, "err", err)
+						return
+					}
+					logger.Info("deleted app's data removed", "app_id", appID)
+				}(m.DropAppData.GetAppId())
+			}
 		case *agentpb.ServerMessage_UpdateAgent:
 			go func(image string) {
 				logger.Info("updating the agent", "image", image)

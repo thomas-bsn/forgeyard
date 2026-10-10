@@ -24,12 +24,18 @@ func (s *Server) handleMoveApp(w http.ResponseWriter, r *http.Request) {
 	}
 	var body struct {
 		NodeID int64 `json:"nodeId"`
+		// LeaveData confirms the app starts without its data on the new node: its volumes stay on this one.
+		LeaveData bool `json:"leaveData"`
 	}
 	if !decodeJSON(w, r, &body) {
 		return
 	}
 	if a.MovingFrom != 0 {
 		writeError(w, http.StatusConflict, "cette app est déjà en train de changer de node")
+		return
+	}
+	if (len(appVolumes(a)) > 0 || a.Kind == kindSandbox) && !body.LeaveData {
+		writeError(w, http.StatusConflict, "les données de cette app (ses volumes) ne suivent pas encore un changement de node : elle repartirait vide sur le nouveau, ses données restant sur l'ancien. Confirmez pour la déplacer quand même")
 		return
 	}
 	if body.NodeID == a.NodeID {

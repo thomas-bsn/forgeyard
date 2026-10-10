@@ -1,6 +1,6 @@
 -- name: CreateApp :one
-INSERT INTO apps (name, owner_id, node_id, kind, image, dockerfile, port, env_sealed, memory_mb, created_at, updated_at)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+INSERT INTO apps (name, owner_id, node_id, kind, image, dockerfile, port, env_sealed, memory_mb, volumes, created_at, updated_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 RETURNING *;
 
 -- name: GetApp :one
@@ -28,7 +28,7 @@ SELECT * FROM apps WHERE node_id = ? ORDER BY id;
 SELECT node_id, COUNT(*) AS count FROM apps GROUP BY node_id;
 
 -- name: UpdateAppConfig :one
-UPDATE apps SET image = ?, dockerfile = ?, port = ?, env_sealed = ?, memory_mb = ?, generation = generation + 1, updated_at = ?
+UPDATE apps SET image = ?, dockerfile = ?, port = ?, env_sealed = ?, memory_mb = ?, volumes = ?, generation = generation + 1, updated_at = ?
 WHERE id = ?
 RETURNING *;
 

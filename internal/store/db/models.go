@@ -45,6 +45,7 @@ type App struct {
 	Dockerfile     string
 	Kind           string
 	PortSource     string
+	Volumes        string
 }
 
 type AppEvent struct {

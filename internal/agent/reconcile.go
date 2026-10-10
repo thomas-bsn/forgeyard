@@ -166,12 +166,7 @@ func (r *Reconciler) reconcile(ctx context.Context) {
 			if err := r.dc.Remove(ctx, name); err != nil {
 				r.logger.Error("removing app container failed", "container", name, "err", err)
 			} else if inspectErr == nil {
-				r.dropBuiltImage(ctx, ct.Config.Image)
-				if ct.Config.Labels[labelSandbox] != "" && !strings.HasSuffix(name, "-next") {
-					if err := r.dc.RemoveVolume(ctx, sandboxVolume(ct.Config.Labels[labelApp])); err != nil {
-						r.logger.Warn("removing a sandbox's volume failed", "app", ct.Config.Labels[labelApp], "err", err)
-					}
-				}
+				r.dropBuiltImage(ctx, ct.Config.Image) // its volumes stay: see DropAppData
 			}
 		}
 	}
@@ -191,7 +186,7 @@ func appHash(app *agentpb.AppSpec, ingressMode string) string {
 	slices.Sort(env)
 	return specHash(app.GetImage(), strconv.Itoa(int(app.GetPort())), strings.Join(env, "\n"), app.GetHostname(),
 		strconv.FormatInt(app.GetMemoryBytes(), 10), strconv.FormatInt(app.GetGeneration(), 10), ingressMode,
-		strconv.FormatBool(app.GetSandbox()))
+		strconv.FormatBool(app.GetSandbox()), strings.Join(app.GetVolumes(), "\n"))
 }
 
 func (r *Reconciler) ensureApp(ctx context.Context, app *agentpb.AppSpec, ingressMode string) error {
@@ -204,7 +199,9 @@ func (r *Reconciler) ensureApp(ctx context.Context, app *agentpb.AppSpec, ingres
 		return err
 	}
 	if exists && ct.Config.Labels[labelSpec] != hash {
-		if app.GetRunning() && ct.State.Running {
+		// Without data of its own, the next version starts next to the running one. With volumes, two
+		// versions must not write the same files: the running one stops first.
+		if app.GetRunning() && ct.State.Running && len(app.GetVolumes()) == 0 && !app.GetSandbox() {
 			return r.rollOut(ctx, app, hash, ingressMode)
 		}
 		r.logger.Info("app changed, recreating its container", "app", app.GetName())
@@ -300,7 +297,8 @@ func appContainerConfig(app *agentpb.AppSpec, hash, ingressMode string) map[stri
 	if app.GetSandbox() {
 		id := strconv.FormatInt(app.GetId(), 10)
 		labels[labelSandbox] = "true"
-		hostConfig["Mounts"] = []map[string]any{{"Type": "volume", "Source": sandboxVolume(id), "Target": "/root"}}
+		hostConfig["Mounts"] = append([]map[string]any{{"Type": "volume", "Source": sandboxVolume(id), "Target": "/root",
+			"VolumeOptions": map[string]any{"Labels": map[string]string{labelApp: id, labelVolumePath: "/root"}}}}, volumeMounts(app)...)
 		return map[string]any{
 			"Image":            app.GetImage(),
 			"Hostname":         app.GetName(),
@@ -312,6 +310,9 @@ func appContainerConfig(app *agentpb.AppSpec, hash, ingressMode string) map[stri
 			"HostConfig":       hostConfig,
 			"NetworkingConfig": map[string]any{"EndpointsConfig": map[string]any{networkName: map[string]any{"Aliases": []string{app.GetName()}}}},
 		}
+	}
+	if mounts := volumeMounts(app); len(mounts) > 0 {
+		hostConfig["Mounts"] = mounts
 	}
 	if host := app.GetHostname(); host != "" {
 		// Each version gets its own router, of a higher priority than the one before: Traefik sends every

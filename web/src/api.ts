@@ -252,6 +252,8 @@ export type App = {
   listeningPorts?: number[] // what it really listens on, while running
   kind: 'web' | 'sandbox'
   ssh?: string // the command reaching it through the SSH gateway
+  // Paths kept across redeployments, with their size (-1 not measured yet); builtin: a sandbox's /root.
+  volumes: { path: string; sizeBytes: number; builtin?: boolean }[]
   logo: { mode: 'auto' | 'custom' | 'initial'; url?: string; color?: string; autoUrl?: string }
   updatedAt: number
   env?: Record<string, string>
@@ -298,6 +300,7 @@ export type Account = {
 export type AppInput = {
   name?: string
   kind?: 'web' | 'sandbox' // at creation
+  volumes?: string[]
   image: string
   dockerfile?: string
   port: number
@@ -429,7 +432,7 @@ export const api = {
   apps: () => request<App[]>('GET', '/api/apps'),
   app: (id: number) => request<App>('GET', `/api/apps/${id}`),
   createApp: (input: AppInput) => request<App>('POST', '/api/apps', input),
-  imagePorts: (image: string) => request<{ ports: number[]; error?: string }>('GET', `/api/images/ports?image=${encodeURIComponent(image)}`),
+  imagePorts: (image: string) => request<{ ports: number[]; volumes: string[]; error?: string }>('GET', `/api/images/ports?image=${encodeURIComponent(image)}`),
   updateApp: (id: number, input: AppInput) => request<App>('PUT', `/api/apps/${id}`, input),
   appAction: (id: number, action: 'start' | 'stop' | 'redeploy') => request<App>('POST', `/api/apps/${id}/${action}`, {}),
   deleteApp: (id: number) => request<void>('DELETE', `/api/apps/${id}`, {}),
@@ -455,7 +458,7 @@ export const api = {
   setAppLogo: (id: number, body: { mode: 'auto' | 'custom' | 'initial'; color?: string; image?: string }) =>
     request<App>('PUT', `/api/apps/${id}/logo`, body),
   nodeChoices: () => request<NodeChoice[]>('GET', '/api/admin/nodes/choices'),
-  moveApp: (id: number, nodeId: number) => request<App>('POST', `/api/admin/apps/${id}/move`, { nodeId }),
+  moveApp: (id: number, nodeId: number, leaveData = false) => request<App>('POST', `/api/admin/apps/${id}/move`, { nodeId, leaveData }),
   setAppPublic: (id: number, value: boolean) => request<App>('PUT', `/api/apps/${id}/public`, { public: value }),
   changePassword: (current: string, next: string) => request<void>('PUT', '/api/me/password', { current, new: next }),
   sessions: () => request<Session[]>('GET', '/api/me/sessions'),

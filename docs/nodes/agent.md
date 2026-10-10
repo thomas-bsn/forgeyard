@@ -42,6 +42,10 @@ L'agent gère aussi le conteneur **Traefik** du node (voir [routing](../network/
 
 Taille de la machine via Docker (`/info`) et gopsutil ; disque mesuré sur `FORGEYARD_HOST_ROOT` (le `/` de l'hôte monté en lecture seule dans `/host`), sinon sur `/`.
 
+## Volumes des apps
+
+L'agent monte les volumes d'une app (un volume Docker nommé par app et par chemin, étiqueté `forgeyard.app`), arrête l'app avant de lancer sa version suivante quand elle en a, et mesure leur taille environ une fois par minute (`/system/df`), envoyée avec la topologie. Il ne supprime les volumes d'une app que sur l'ordre `DropAppData` du server, envoyé à tous les nodes en ligne quand l'app est supprimée.
+
 ## Mise à jour
 
 Les agents suivent la version du server : chaque binaire embarque le commit dont il est construit (`internal/version`, renseigné par `make build`, par la CI ou, dans `docker compose build`, lu dans `.git`), et l'agent l'annonce en se connectant.

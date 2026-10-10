@@ -4549,3 +4549,46 @@ a.link-btn {
 .topo-line-faded {
   opacity: 0.25;
 }
+
+.volume-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+}
+
+.volume-row input {
+  padding: 8px 10px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text);
+  font: 0.9rem ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+.volume-list {
+  display: grid;
+  gap: 2px;
+}
+
+.volume-list .mono {
+  font-size: 0.85rem;
+  overflow-wrap: anywhere;
+}
+
+.check-line {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  font-size: 0.9rem;
+}
+
+.check-line input {
+  margin-top: 3px;
+}
+
+.warn-box {
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid color-mix(in srgb, var(--warn) 40%, transparent);
+  background: color-mix(in srgb, var(--warn) 10%, transparent);
+}

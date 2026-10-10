@@ -362,6 +362,20 @@ func (h *Hub) UpdateAgent(nodeID int64, image string) error {
 	return nil
 }
 
+// DropAppData asks every connected node to delete a deleted app's volumes: the current node, and the ones
+// it ran on before, which kept its data when it moved.
+func (h *Hub) DropAppData(appID int64) {
+	h.mu.Lock()
+	ids := make([]int64, 0, len(h.sessions))
+	for id := range h.sessions {
+		ids = append(ids, id)
+	}
+	h.mu.Unlock()
+	for _, id := range ids {
+		h.send(id, &agentpb.ServerMessage{Msg: &agentpb.ServerMessage_DropAppData{DropAppData: &agentpb.DropAppData{AppId: appID}}})
+	}
+}
+
 // Disconnect closes the stream of a node, if connected. Used when a node is removed.
 func (h *Hub) Disconnect(nodeID int64) {
 	h.mu.Lock()

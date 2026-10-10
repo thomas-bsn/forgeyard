@@ -384,6 +384,32 @@ func (c *Client) RemoveNetwork(ctx context.Context, name string) error {
 	return err
 }
 
+// Volume is a Docker volume, with its size when measured.
+type Volume struct {
+	Name      string            `json:"Name"`
+	Labels    map[string]string `json:"Labels"`
+	UsageData *struct {
+		Size int64 `json:"Size"` // -1 when unknown
+	} `json:"UsageData"`
+}
+
+// ListVolumes returns the volumes carrying a label (key=value).
+func (c *Client) ListVolumes(ctx context.Context, label string) ([]Volume, error) {
+	filters, _ := json.Marshal(map[string][]string{"label": {label}})
+	var out struct {
+		Volumes []Volume `json:"Volumes"`
+	}
+	return out.Volumes, c.get(ctx, "/volumes?filters="+url.QueryEscape(string(filters)), &out)
+}
+
+// VolumeSizes measures the node's volumes: slow on a big disk, so called sparingly.
+func (c *Client) VolumeSizes(ctx context.Context) ([]Volume, error) {
+	var out struct {
+		Volumes []Volume `json:"Volumes"`
+	}
+	return out.Volumes, c.get(ctx, "/system/df?type=volume", &out)
+}
+
 // ListNetworks returns the Docker networks of the node.
 func (c *Client) ListNetworks(ctx context.Context) ([]Network, error) {
 	var list []Network

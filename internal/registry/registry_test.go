@@ -54,7 +54,7 @@ func TestExposedPorts(t *testing.T) {
 		case "/v2/team/app/manifests/sha256:amd":
 			w.Write([]byte(`{"config":{"digest":"sha256:cfg"}}`))
 		case "/v2/team/app/blobs/sha256:cfg":
-			w.Write([]byte(`{"config":{"ExposedPorts":{"3000/tcp":{},"53/udp":{},"9000":{}}}}`))
+			w.Write([]byte(`{"config":{"ExposedPorts":{"3000/tcp":{},"53/udp":{},"9000":{}},"Volumes":{"/data":{},"/config":{}}}}`))
 		default:
 			http.NotFound(w, r)
 		}
@@ -65,6 +65,10 @@ func TestExposedPorts(t *testing.T) {
 	ports, err := ExposedPorts(context.Background(), ts.Client(), host+"/team/app:1.0")
 	if err != nil || !slices.Equal(ports, []int{3000, 9000}) {
 		t.Fatalf("ports: %v, %v", ports, err)
+	}
+	cfg, err := ImageConfig(context.Background(), ts.Client(), host+"/team/app:1.0")
+	if err != nil || !slices.Equal(cfg.Volumes, []string{"/config", "/data"}) {
+		t.Fatalf("volumes: %v, %v", cfg.Volumes, err)
 	}
 	if _, err := ExposedPorts(context.Background(), ts.Client(), host+"/team/app:missing"); err == nil {
 		t.Fatal("a missing tag gave ports")

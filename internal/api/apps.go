@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"net/netip"
 	"net/url"
+	"path"
 	"regexp"
 	"sort"
 	"strconv"
@@ -49,6 +50,8 @@ type appInput struct {
 	Env        map[string]string `json:"env"`
 	MemoryMB   int               `json:"memoryMb"`
 	NodeID     int64             `json:"nodeId"` // at creation: where it runs, 0 for the recommended node
+	// Volumes are the paths of the container kept across redeployments.
+	Volumes []string `json:"volumes"`
 }
 
 func (in *appInput) validate(creating bool) string {
@@ -91,6 +94,27 @@ func (in *appInput) validate(creating bool) string {
 	}
 	if in.MemoryMB < 64 || in.MemoryMB > 16384 {
 		return "mémoire : entre 64 et 16384 Mo"
+	}
+	if len(in.Volumes) > 10 {
+		return "10 volumes au maximum"
+	}
+	seen := map[string]bool{}
+	for i, v := range in.Volumes {
+		v = strings.TrimSpace(v)
+		clean := path.Clean(v)
+		switch {
+		case !strings.HasPrefix(v, "/") || len(v) > 200 || strings.ContainsAny(v, ":,\n"):
+			return "volume invalide : un chemin absolu du conteneur, par exemple /var/lib/postgresql/data"
+		case clean == "/" || clean == "/proc" || clean == "/sys" || clean == "/dev" || strings.HasPrefix(clean, "/proc/") || strings.HasPrefix(clean, "/sys/") || strings.HasPrefix(clean, "/dev/"):
+			return "volume impossible sur " + clean + " : choisissez le dossier des données de l'app"
+		case seen[clean]:
+			return "volume en double : " + clean
+		}
+		seen[clean] = true
+		in.Volumes[i] = clean
+	}
+	if in.Volumes == nil {
+		in.Volumes = []string{}
 	}
 	if len(in.Env) > 100 {
 		return "100 variables d'environnement au maximum"
@@ -209,7 +233,7 @@ func (s *Server) desiredState(ctx context.Context, nodeID int64) (*agentpb.Desir
 			Id: a.ID, Name: a.Name, Image: a.Image, Port: int32(a.Port), Env: env,
 			Hostname: webHost(c, a), Running: a.Running != 0,
 			MemoryBytes: a.MemoryMb << 20, Generation: a.Generation, Leaving: a.MovingFrom == nodeID,
-			Dockerfile: a.Dockerfile, Sandbox: a.Kind == kindSandbox,
+			Dockerfile: a.Dockerfile, Sandbox: a.Kind == kindSandbox, Volumes: appVolumes(a),
 		})
 	}
 	if node.IsLocal != 0 {
@@ -418,7 +442,8 @@ type appResponse struct {
 	Env            map[string]string `json:"env,omitempty"`
 	Dockerfile     string            `json:"dockerfile,omitempty"` // with the env, for the app's owner
 	Kind           string            `json:"kind"`                 // web or sandbox
-	SSH            string            `json:"ssh,omitempty"`        // the command reaching it through the SSH gateway
+	Volumes        []appVolume       `json:"volumes"`
+	SSH            string            `json:"ssh,omitempty"` // the command reaching it through the SSH gateway
 }
 
 // toAppResponse describes an app. localHost is the host Forgeyard is reached at, used as the address of its
@@ -433,6 +458,14 @@ func (s *Server) toAppResponse(a db.App, ownerName string, ownerSuspended bool, 
 		resp.URL = "https://" + host
 	}
 	resp.Kind, resp.SSH = a.Kind, s.sshCommand(c, a.Name, localHost)
+	sizes := s.appVolumeSizes(a)
+	resp.Volumes = []appVolume{}
+	if a.Kind == kindSandbox {
+		resp.Volumes = append(resp.Volumes, appVolume{Path: "/root", SizeBytes: sizeOr(sizes, "/root"), Builtin: true})
+	}
+	for _, p := range appVolumes(a) {
+		resp.Volumes = append(resp.Volumes, appVolume{Path: p, SizeBytes: sizeOr(sizes, p)})
+	}
 	if _, online := s.nodes.Live(a.NodeID); !online {
 		resp.State = "node-offline"
 	}
@@ -697,6 +730,7 @@ func (s *Server) handleCreateApp(w http.ResponseWriter, r *http.Request) {
 	now := time.Now().Unix()
 	app, err := s.store.CreateApp(ctx, db.CreateAppParams{
 		Name: in.Name, OwnerID: currentUser(r).ID, NodeID: node.ID, Kind: in.Kind, Image: in.Image, Dockerfile: in.Dockerfile, Port: int64(in.Port),
+		Volumes:   string(must(json.Marshal(in.Volumes))),
 		EnvSealed: sealed, MemoryMb: int64(in.MemoryMB), CreatedAt: now, UpdatedAt: now,
 	})
 	if err != nil && strings.Contains(err.Error(), "UNIQUE") {
@@ -762,7 +796,7 @@ func (s *Server) handleUpdateApp(w http.ResponseWriter, r *http.Request) {
 		in.Image = builtImage(a.Name, in.Dockerfile)
 	}
 	a, err = s.store.UpdateAppConfig(r.Context(), db.UpdateAppConfigParams{
-		Image: in.Image, Dockerfile: in.Dockerfile, Port: int64(in.Port), EnvSealed: sealed, MemoryMb: int64(in.MemoryMB),
+		Volumes: string(must(json.Marshal(in.Volumes))), Image: in.Image, Dockerfile: in.Dockerfile, Port: int64(in.Port), EnvSealed: sealed, MemoryMb: int64(in.MemoryMB),
 		UpdatedAt: time.Now().Unix(), ID: a.ID,
 	})
 	if err != nil {
@@ -869,7 +903,51 @@ func (s *Server) removeApp(ctx context.Context, a db.App) error {
 	if a.MovingFrom != 0 {
 		s.push(ctx, a.MovingFrom) // it still ran there too
 	}
+	s.nodes.DropAppData(a.ID)
 	return nil
+}
+
+// appVolume is a path kept across redeployments, with its size (-1 when not measured yet).
+type appVolume struct {
+	Path      string `json:"path"`
+	SizeBytes int64  `json:"sizeBytes"`
+	Builtin   bool   `json:"builtin,omitempty"` // a sandbox's /root, not set in the form
+}
+
+func sizeOr(sizes map[string]int64, p string) int64 {
+	if v, ok := sizes[p]; ok {
+		return v
+	}
+	return -1
+}
+
+func must[T any](v T, err error) T {
+	if err != nil {
+		panic(err)
+	}
+	return v
+}
+
+// appVolumes are the paths an app keeps across redeployments.
+func appVolumes(a db.App) []string {
+	var out []string
+	if json.Unmarshal([]byte(a.Volumes), &out) != nil || out == nil {
+		return []string{}
+	}
+	return out
+}
+
+// appVolumeSizes are the sizes of an app's volumes on its node, by path, as last measured.
+func (s *Server) appVolumeSizes(a db.App) map[string]int64 {
+	out := map[string]int64{}
+	if live, ok := s.nodes.Live(a.NodeID); ok && live.Topology != nil {
+		for _, v := range live.Topology.GetVolumes() {
+			if v.GetAppId() == a.ID {
+				out[v.GetPath()] = v.GetSizeBytes()
+			}
+		}
+	}
+	return out
 }
 
 // handleAppLogs streams an app's output as server-sent events, starting with the last lines.

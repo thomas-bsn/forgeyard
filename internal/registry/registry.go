@@ -82,12 +82,24 @@ func PublicClient() *http.Client {
 const manifestTypes = "application/vnd.oci.image.index.v1+json, application/vnd.docker.distribution.manifest.list.v2+json, " +
 	"application/vnd.oci.image.manifest.v1+json, application/vnd.docker.distribution.manifest.v2+json"
 
-// ExposedPorts returns the TCP ports an image exposes (its EXPOSE lines), for linux/amd64 when it has
-// several platforms. Only public images are read: the server has no registry credentials.
+// Config is what an image declares: the TCP ports it exposes (EXPOSE) and the paths it keeps (VOLUME).
+type Config struct {
+	Ports   []int
+	Volumes []string
+}
+
+// ExposedPorts returns the TCP ports an image exposes (its EXPOSE lines).
 func ExposedPorts(ctx context.Context, client *http.Client, image string) ([]int, error) {
+	c, err := ImageConfig(ctx, client, image)
+	return c.Ports, err
+}
+
+// ImageConfig reads what an image declares, for linux/amd64 when it has several platforms. Only public
+// images are read: the server has no registry credentials.
+func ImageConfig(ctx context.Context, client *http.Client, image string) (Config, error) {
 	ref, err := ParseRef(image)
 	if err != nil {
-		return nil, err
+		return Config{}, err
 	}
 	c := &session{client: client, ref: ref}
 	var m struct {
@@ -103,7 +115,7 @@ func ExposedPorts(ctx context.Context, client *http.Client, image string) ([]int
 		} `json:"config"`
 	}
 	if err := c.get(ctx, "/manifests/"+ref.Reference, manifestTypes, &m); err != nil {
-		return nil, err
+		return Config{}, err
 	}
 	if len(m.Manifests) > 0 {
 		digest := ""
@@ -116,22 +128,23 @@ func ExposedPorts(ctx context.Context, client *http.Client, image string) ([]int
 			}
 		}
 		if digest == "" {
-			return nil, errors.New("aucune version linux de cette image")
+			return Config{}, errors.New("aucune version linux de cette image")
 		}
 		if err := c.get(ctx, "/manifests/"+digest, manifestTypes, &m); err != nil {
-			return nil, err
+			return Config{}, err
 		}
 	}
 	if m.Config.Digest == "" {
-		return nil, errors.New("manifeste sans configuration")
+		return Config{}, errors.New("manifeste sans configuration")
 	}
 	var cfg struct {
 		Config struct {
 			ExposedPorts map[string]struct{} `json:"ExposedPorts"`
+			Volumes      map[string]struct{} `json:"Volumes"`
 		} `json:"config"`
 	}
 	if err := c.get(ctx, "/blobs/"+m.Config.Digest, "", &cfg); err != nil {
-		return nil, err
+		return Config{}, err
 	}
 	ports := []int{}
 	for p := range cfg.Config.ExposedPorts {
@@ -141,7 +154,12 @@ func ExposedPorts(ctx context.Context, client *http.Client, image string) ([]int
 		}
 	}
 	slices.Sort(ports)
-	return slices.Compact(ports), nil
+	volumes := []string{}
+	for v := range cfg.Config.Volumes {
+		volumes = append(volumes, v)
+	}
+	slices.Sort(volumes)
+	return Config{Ports: slices.Compact(ports), Volumes: volumes}, nil
 }
 
 // session talks to one repository, with the anonymous token its registry asks for.

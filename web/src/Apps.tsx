@@ -508,6 +508,12 @@ function itemState(i: Item): string {
   return i.app ? stateText(i.app) : containerText(i.container!)
 }
 
+/** The confirmation of an app's deletion, which takes its data with it. */
+function deleteQuestion(app: App): string {
+  const data = app.volumes.length ? ` et ses données (${app.volumes.map((v) => v.path).join(', ')})` : ''
+  return `Supprimer l’app « ${app.name} » ? Son conteneur, son enregistrement DNS${data} seront supprimés.`
+}
+
 /** An app of the list with a "⋯" menu of its actions; external containers have none. */
 function WithMenu({ item, admin, onChange, place, children }: { item: Item; admin: boolean; onChange: () => void; place: 'card' | 'tile' | 'launcher'; children: ReactNode }) {
   const app = item.app
@@ -584,7 +590,7 @@ function WithMenu({ item, admin, onChange, place, children }: { item: Item; admi
             role="menuitem"
             className="danger"
             onClick={() => {
-              if (window.confirm(`Supprimer l’app « ${app.name} » ? Son conteneur et son enregistrement DNS seront supprimés.`)) act(() => api.deleteApp(app.id))()
+              if (window.confirm(deleteQuestion(app))) act(() => api.deleteApp(app.id))()
               else setOpen(false)
             }}
           >
@@ -798,13 +804,13 @@ function AppFormModal({
   const [port, setPort] = useState(String(initial?.port ?? 80))
   // The port fills in from what the image (or the Dockerfile) declares, until it is typed by hand.
   const [portTouched, setPortTouched] = useState(!!initial)
-  const [declared, setDeclared] = useState<{ image: string; ports: number[]; error?: string } | null>(null)
+  const [declared, setDeclared] = useState<{ image: string; ports: number[]; volumes: string[]; error?: string } | null>(null)
   useEffect(() => {
     if (!settledImage.trim() || sandbox) return
     let live = true
     api.imagePorts(settledImage).then(
-      (r) => live && setDeclared({ image: settledImage, ports: r.ports, error: r.error }),
-      (err) => live && setDeclared({ image: settledImage, ports: [], error: errorMessage(err) }),
+      (r) => live && setDeclared({ image: settledImage, ports: r.ports, volumes: r.volumes ?? [], error: r.error }),
+      (err) => live && setDeclared({ image: settledImage, ports: [], volumes: [], error: errorMessage(err) }),
     )
     return () => {
       live = false
@@ -819,6 +825,22 @@ function AppFormModal({
   }, [suggestedKey, portTouched])
   const [memory, setMemory] = useState(String(initial?.memoryMb ?? 512))
   const [env, setEnv] = useState<{ key: string; value: string }[]>(Object.entries(initial?.env ?? {}).map(([key, value]) => ({ key, value })))
+  // Volumes start with the paths the image keeps (its VOLUMEs), until they are edited by hand.
+  const [volumes, setVolumes] = useState<string[]>((initial?.volumes ?? []).filter((v) => !v.builtin).map((v) => v.path))
+  const [volumesTouched, setVolumesTouched] = useState(!!initial)
+  const [volumesOpen, setVolumesOpen] = useState(volumes.length > 0)
+  const declaredVolumes = declared?.image === settledImage ? declared.volumes : []
+  const declaredKey = declaredVolumes.join('\n')
+  useEffect(() => {
+    if (volumesTouched || !declaredKey) return
+    setVolumes(declaredKey.split('\n'))
+    setVolumesOpen(true)
+  }, [declaredKey, volumesTouched])
+  const editVolumes = (v: string[]) => {
+    setVolumes(v)
+    setVolumesTouched(true)
+  }
+  const keptCount = volumes.filter((v) => v.trim()).length
   const [envOpen, setEnvOpen] = useState(env.length > 0)
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
@@ -839,6 +861,7 @@ function AppFormModal({
           port: Number(port),
           memoryMb: Number(memory),
           env: vars,
+          volumes: volumes.map((v) => v.trim()).filter(Boolean),
           nodeId: nodeId || undefined,
         },
         logo || undefined,
@@ -927,6 +950,8 @@ function AppFormModal({
             )}
           </>
         )}
+        <dt>Données</dt>
+        <dd>{sandbox ? '/root gardé' : keptCount ? `${keptCount} volume${keptCount > 1 ? 's' : ''}` : 'non gardées'}</dd>
         <dt>Source</dt>
         <dd>{sandbox ? 'Linux, accès SSH' : source === 'dockerfile' ? 'construite' : 'téléchargée'}</dd>
       </dl>
@@ -1064,6 +1089,48 @@ function AppFormModal({
             </button>
           </div>
           <small>Chiffrées avant d’être enregistrées.</small>
+        </div>
+      </details>
+      <details className="field" open={volumesOpen} onToggle={(e) => setVolumesOpen(e.currentTarget.open)}>
+        <summary>
+          Volumes <span className="muted">{keptCount ? `· ${keptCount}` : '· aucun'}</span>
+        </summary>
+        <div className="env-list">
+          {volumes.map((v, i) => (
+            <div className="volume-row" key={i}>
+              <input
+                className="mono"
+                aria-label="Dossier gardé"
+                value={v}
+                onChange={(e) => editVolumes(volumes.map((x, j) => (j === i ? e.target.value : x)))}
+                placeholder="/var/lib/postgresql/data"
+              />
+              <button type="button" className="btn btn-ghost" onClick={() => editVolumes(volumes.filter((_, j) => j !== i))} aria-label="Retirer le volume">
+                ✕
+              </button>
+            </div>
+          ))}
+          {declaredVolumes.filter((d) => !volumes.includes(d)).length > 0 && (
+            <span className="chips-row">
+              {declaredVolumes
+                .filter((d) => !volumes.includes(d))
+                .map((d) => (
+                  <button key={d} type="button" className="chip mono" onClick={() => editVolumes([...volumes, d])}>
+                    + {d}
+                  </button>
+                ))}
+            </span>
+          )}
+          <div>
+            <button type="button" className="btn btn-dashed btn-small" onClick={() => editVolumes([...volumes, ''])}>
+              + Ajouter un volume
+            </button>
+          </div>
+          <small>
+            Les dossiers du conteneur gardés quand l’app est redéployée (une base de données, des fichiers envoyés…). Le reste repart de zéro.
+            {declaredVolumes.length > 0 && !volumesTouched && ' Proposés par l’image.'}
+            {sandbox && ' Le /root d’une sandbox est déjà gardé.'}
+          </small>
         </div>
       </details>
       <input
@@ -1283,6 +1350,23 @@ function AppDetail({
           )}
           <dt>Mémoire</dt>
           <dd>{app.memoryMb} Mo max.</dd>
+          <dt>Données</dt>
+          <dd>
+            {app.volumes.length ? (
+              <span className="volume-list">
+                {app.volumes.map((v) => (
+                  <span key={v.path}>
+                    <span className="mono">{v.path}</span>
+                    {v.sizeBytes >= 0 && <span className="muted"> · {formatBytes(v.sizeBytes)}</span>}
+                  </span>
+                ))}
+              </span>
+            ) : (
+              <span className="muted" title="Ajoutez un volume dans Configuration pour garder un dossier">
+                non gardées au redéploiement
+              </span>
+            )}
+          </dd>
           <dt>Propriétaire</dt>
           <dd>
             <a href={`#/u/${app.ownerId}`}>{app.ownerName}</a>
@@ -1328,7 +1412,7 @@ function AppDetail({
           className="link-button danger-link"
           disabled={busy}
           onClick={() => {
-            if (window.confirm(`Supprimer l’app « ${app.name} » ? Son conteneur et son enregistrement DNS seront supprimés.`)) {
+            if (window.confirm(deleteQuestion(app))) {
               run(async () => {
                 await api.deleteApp(app.id)
                 go('apps')
@@ -1930,11 +2014,15 @@ function MoveApp({ app, onClose, onMoved }: { app: App; onClose: () => void; onM
     }, (err) => setError(errorMessage(err)))
   }, [app.nodeId])
 
+  // The data of an app's volumes stays on its node: a move needs saying so.
+  const hasData = app.volumes.length > 0
+  const [leaveData, setLeaveData] = useState(false)
+
   async function move() {
     setBusy(true)
     setError('')
     try {
-      await api.moveApp(app.id, nodeId)
+      await api.moveApp(app.id, nodeId, leaveData)
       onMoved()
     } catch (err) {
       setError(errorMessage(err))
@@ -1952,7 +2040,7 @@ function MoveApp({ app, onClose, onMoved }: { app: App; onClose: () => void; onM
           <button type="button" className="btn" onClick={onClose} disabled={busy}>
             Annuler
           </button>
-          <button type="button" className="btn btn-primary" onClick={move} disabled={busy || !nodeId}>
+          <button type="button" className="btn btn-primary" onClick={move} disabled={busy || !nodeId || (hasData && !leaveData)}>
             Déplacer
           </button>
         </>
@@ -1977,6 +2065,15 @@ function MoveApp({ app, onClose, onMoved }: { app: App; onClose: () => void; onM
         deux nodes n’ont pas la même IP publique, son DNS change et l’ancien la garde encore quelques minutes. Les données écrites dans le
         conteneur ne suivent pas.
       </p>
+      {hasData && (
+        <label className="check-line warn-box">
+          <input type="checkbox" checked={leaveData} onChange={(e) => setLeaveData(e.target.checked)} />
+          <span>
+            L’app repart <strong>sans ses données</strong> sur le nouveau node : ses volumes ({app.volumes.map((v) => v.path).join(', ')}) restent sur{' '}
+            {app.nodeName}, où ils sont gardés jusqu’à la suppression de l’app.
+          </span>
+        </label>
+      )}
       {error && <p className="error">{error}</p>}
     </Modal>
   )

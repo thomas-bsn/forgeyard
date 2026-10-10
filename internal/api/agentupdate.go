@@ -20,7 +20,7 @@ import (
 
 const (
 	settingAgentAutoUpdate = "agent_auto_update" // "0" turns it off; on by default
-	agentUpdateRetry       = 5 * time.Minute // about how long CI takes to publish a commit's images
+	agentUpdateRetry       = 5 * time.Minute     // about how long CI takes to publish a commit's images
 )
 
 // updateErrorText says why an update failed, in words: an image not found yet is CI still at work.

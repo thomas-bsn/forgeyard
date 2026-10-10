@@ -28,6 +28,14 @@ message AgentMessage {
 message Topology {
   repeated DockerNetwork networks = 1;
   repeated TopoContainer containers = 2;
+  repeated VolumeUsage volumes = 3; // the apps' volumes, measured about once a minute
+}
+
+message VolumeUsage {
+  string name = 1;
+  int64 app_id = 2;
+  string path = 3; // where it is mounted in the app's container
+  int64 size_bytes = 4; // -1 when not measured yet
 }
 
 message DockerNetwork {
@@ -82,7 +90,14 @@ message ServerMessage {
     ExecResize exec_resize = 8;
     ExecClose exec_close = 9;
     UpdateAgent update_agent = 10;
+    DropAppData drop_app_data = 11;
   }
+}
+
+// DropAppData deletes the volumes of an app that was deleted. Volumes are never deleted otherwise: an app
+// leaving a node, or a desired state received wrong, keeps its data.
+message DropAppData {
+  int64 app_id = 1;
 }
 
 // UpdateAgent asks the agent to replace its own container with one of this image, same settings.
@@ -158,6 +173,10 @@ message AppSpec {
   // sandbox: a Linux box reached over SSH: kept running by a idle command, without a web route nor a
   // published port, its /root on a volume of the node.
   bool sandbox = 12;
+  // volumes: paths of the container kept across redeployments, each on a Docker volume of the node named
+  // after the app and the path. An app with volumes is stopped before its next version starts: two
+  // versions must not write the same files.
+  repeated string volumes = 13;
 }
 
 message Ingress {

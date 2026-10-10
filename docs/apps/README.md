@@ -64,7 +64,7 @@ Les conteneurs externes ont le logo automatique de leur image.
 | Démarrer / Redéployer | Re-télécharge l'image et déploie une nouvelle version sans coupure |
 | Arrêter | Arrête le conteneur (il est gardé) |
 | Configuration | Même fenêtre que la création : source (image ou Dockerfile), port, variables, mémoire ; enregistrer déploie la nouvelle version sans coupure |
-| Supprimer | Supprime l'enregistrement DNS créé par Forgeyard, puis le conteneur. Si le fournisseur DNS ne répond pas, l'app est quand même supprimée et l'erreur est notée dans les logs du server. |
+| Supprimer | Supprime l'enregistrement DNS créé par Forgeyard, le conteneur, puis ses volumes (sur tous les nodes en ligne, y compris ceux qu'elle a quittés). Si le fournisseur DNS ne répond pas, l'app est quand même supprimée et l'erreur est notée dans les logs du server. |
 
 Sur la page d'une app : une app arrêtée n'a que **Démarrer** (qui la déploie à neuf) ; en marche, **Arrêter** et **Redéployer**. Puis **Configuration**, et « Supprimer l'app… » en lien discret.
 
@@ -95,11 +95,22 @@ Un admin déplace une app depuis sa page (ligne « Tourne sur … · Changer de 
 2. dès qu'elle est en ligne sur le nouveau node, l'ancien arrête son conteneur ;
 3. si les deux nodes n'ont pas la même IP publique, l'enregistrement DNS change tout de suite et l'ancien node la garde encore 6 minutes (le TTL du DNS est de 5 minutes).
 
-Derrière la même box, le relais de la machine de Forgeyard suit : son propre routeur pour l'app reste prioritaire tant qu'elle y tourne, puis le relais vers le nouveau node prend le relais. Les données écrites dans le conteneur ne suivent pas (pas encore de volumes). Une app arrêtée change simplement de node.
+Derrière la même box, le relais de la machine de Forgeyard suit : son propre routeur pour l'app reste prioritaire tant qu'elle y tourne, puis le relais vers le nouveau node prend le relais. Les données ne suivent pas : une app qui a des volumes (ou une sandbox) repart vide sur le nouveau node, ses volumes restant sur l'ancien jusqu'à la suppression de l'app ; il faut le confirmer pour la déplacer. Une app arrêtée change simplement de node.
+
+## Volumes
+
+Les **volumes** gardent des dossiers du conteneur quand l'app est redéployée : une base de données, des fichiers envoyés, une configuration. Tout le reste du conteneur repart de zéro.
+
+- Dans le formulaire (création ou Configuration), section **Volumes** : un chemin absolu par volume (`/var/lib/postgresql/data`), 10 au plus. Les dossiers que l'image déclare (`VOLUME` dans son Dockerfile, lu sur son registre comme le port) sont proposés, et ajoutés d'office à la création tant qu'on n'a pas touché à la liste. Interdits : `/`, `/proc`, `/sys`, `/dev`.
+- Sur le node, chaque chemin est un volume Docker nommé d'après l'app et le chemin (`forgeyard-app-3-var-lib-postgresql-data-dc8f97`), étiqueté avec l'app : le conteneur suivant retrouve le même.
+- Une app avec des volumes est **arrêtée puis relancée** à chaque redéploiement : deux versions ne doivent pas écrire les mêmes fichiers (deux PostgreSQL sur les mêmes données se corrompent). Quelques secondes de coupure, donc.
+- La page de l'app montre chaque volume et sa taille (mesurée par l'agent environ une fois par minute).
+- Les volumes ne sont supprimés qu'avec l'app, sur ordre explicite du server (pas quand un conteneur disparaît pour une autre raison : un changement de node ou un état mal reçu ne détruit pas de données). Une sandbox a déjà son `/root` gardé.
+- Pas encore : copie des données lors d'un changement de node, sauvegardes.
 
 ## Déploiement sans coupure
 
-Quand une app qui tourne change (redéploiement, nouvelle configuration), l'agent ne supprime pas l'ancien conteneur d'abord :
+Quand une app qui tourne change (redéploiement, nouvelle configuration), l'agent ne supprime pas l'ancien conteneur d'abord (sauf pour une app avec des volumes ou une sandbox, arrêtée puis relancée) :
 
 1. il télécharge l'image pendant que l'ancien conteneur sert toujours ;
 2. il lance le nouveau à côté (état « Mise à jour sans coupure… ») et attend qu'il soit prêt : « healthy » si l'image a un `HEALTHCHECK`, sinon en marche depuis 5 secondes sans redémarrer (90 secondes au plus) ;

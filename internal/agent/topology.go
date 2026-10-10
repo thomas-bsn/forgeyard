@@ -14,7 +14,7 @@ import (
 // topology describes how the node's containers are wired, for the topology views: the Docker networks,
 // each container's addresses and names on them, the ports it publishes on the node and the ones it
 // really listens on. Being on the same network only means two containers can talk, not that they do.
-func topology(ctx context.Context, dc *docker.Client) (*agentpb.Topology, error) {
+func topology(ctx context.Context, dc *docker.Client, sizes *volumeSizes) (*agentpb.Topology, error) {
 	nets, err := dc.ListNetworks(ctx)
 	if err != nil {
 		return nil, err
@@ -81,6 +81,9 @@ func topology(ctx context.Context, dc *docker.Client) (*agentpb.Topology, error)
 			}
 		}
 		t.Containers = append(t.Containers, tc)
+	}
+	if sizes != nil {
+		t.Volumes = sizes.get(ctx, dc)
 	}
 	return t, nil
 }
