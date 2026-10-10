@@ -115,6 +115,55 @@ function NotFound({ what, go }: { what: string; go: (path: string) => void }) {
   )
 }
 
+type Kind = 'all' | 'apps' | 'external'
+type StateFilter = 'all' | 'up' | 'stopped' | 'problem'
+
+/** An external container's exit code, read from Docker's status ("Exited (1) 2 hours ago"). */
+function exitCode(c: Container): number {
+  const m = /^Exited \((\d+)\)/.exec(c.status)
+  return m ? Number(m[1]) : 0
+}
+
+function containerTone(c: Container): 'up' | 'warn' | 'down' | '' {
+  if (c.state === 'exited' && exitCode(c) !== 0) return 'down'
+  return containerTones[c.state] ?? ''
+}
+
+function containerText(c: Container): string {
+  const code = exitCode(c)
+  if (c.state === 'exited' && code !== 0) return `Planté (code ${code})`
+  return containerLabels[c.state] ?? c.state
+}
+
+/** One entry of the list: a Forgeyard app or an external container, with what the filters need. */
+type Item = { key: string; name: string; tone: string; group: StateFilter; external: boolean; app?: App; container?: Container }
+
+function toItems(apps: App[], containers: Container[]): Item[] {
+  const group = (tone: string, running: boolean): StateFilter => (tone === 'down' ? 'problem' : running ? 'up' : 'stopped')
+  return [
+    ...apps.map((a) => {
+      const tone = stateLabels[a.state]?.tone ?? ''
+      return { key: `a${a.id}`, name: a.name, tone, group: group(tone, a.state === 'running' || tone === 'warn'), external: false, app: a }
+    }),
+    ...containers.map((c) => {
+      const tone = containerTone(c)
+      return { key: `c${c.nodeId}-${c.id}`, name: c.name, tone, group: group(tone, c.state === 'running'), external: true, container: c }
+    }),
+  ].sort((x, y) => {
+    // Problems first, then what runs, then the rest; Forgeyard's apps before external containers.
+    const rank = { problem: 0, up: 1, stopped: 2, all: 3 }
+    return rank[x.group] - rank[y.group] || Number(x.external) - Number(y.external) || x.name.localeCompare(y.name)
+  })
+}
+
+function readCollapsed(): number[] {
+  try {
+    return JSON.parse(localStorage.getItem('collapsedNodes') ?? '[]')
+  } catch {
+    return []
+  }
+}
+
 function AppList({
   apps,
   nodes,
@@ -134,16 +183,34 @@ function AppList({
 }) {
   const [creating, setCreating] = useState(false)
   const [query, setQuery] = useState('')
+  const [kind, setKind] = useState<Kind>('all')
+  const [stateFilter, setStateFilter] = useState<StateFilter>('all')
+  const [collapsed, setCollapsed] = useState<number[]>(readCollapsed)
 
+  function toggleNode(id: number) {
+    const next = collapsed.includes(id) ? collapsed.filter((x) => x !== id) : [...collapsed, id]
+    setCollapsed(next)
+    try {
+      localStorage.setItem('collapsedNodes', JSON.stringify(next))
+    } catch {
+      // Private browsing: the choice just isn't remembered.
+    }
+  }
+
+  const all = toItems(apps ?? [], containers)
   const q = query.trim().toLowerCase()
-  const match = (...fields: string[]) => !q || fields.some((f) => f.toLowerCase().includes(q))
-  const shownApps = (apps ?? []).filter((a) => match(a.name, a.image, a.ownerName))
-  const shownContainers = containers.filter((c) => match(c.name, c.image, c.ownerName))
+  const matchesQuery = (i: Item) =>
+    !q || [i.name, i.app?.image ?? i.container?.image ?? '', i.app?.ownerName ?? '', i.container?.composeProject ?? ''].some((f) => f.toLowerCase().includes(q))
+  const byKind = all.filter((i) => kind === 'all' || (kind === 'external') === i.external)
+  const shown = byKind.filter((i) => (stateFilter === 'all' || i.group === stateFilter) && matchesQuery(i))
+  const count = (f: StateFilter) => byKind.filter((i) => i.group === f).length
+
   const online = apps?.filter((a) => a.state === 'running').length ?? 0
   const failing = apps?.filter((a) => ['exited', 'restarting', 'error'].includes(a.state)) ?? []
+  // Admins see one section per machine; the node of an app is never a user's concern.
+  const sections = nodes.filter((n) => n.state !== 'pending' || all.some((i) => i.app?.nodeId === n.id))
 
-  // Admins see one column per machine; the node of an app is never a user's concern.
-  const columns = nodes.filter((n) => n.state !== 'pending' || shownApps.some((a) => a.nodeId === n.id))
+  const card = (i: Item) => (i.app ? <AppCard key={i.key} app={i.app} admin={admin} /> : <ContainerCard key={i.key} container={i.container!} />)
 
   return (
     <div className="section">
@@ -159,11 +226,43 @@ function AppList({
             <circle cx="11" cy="11" r="7" />
             <path d="m20 20-3.5-3.5" />
           </svg>
-          <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder={admin ? 'App, image, propriétaire…' : 'Rechercher une app'} aria-label="Rechercher" />
+          <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder={admin ? 'Nom, image, propriétaire, projet…' : 'Rechercher une app'} aria-label="Rechercher" />
         </label>
         <button type="button" className="btn btn-primary" onClick={() => setCreating(true)}>
           + Nouvelle app
         </button>
+      </div>
+
+      <div className="filters">
+        {admin && containers.length > 0 && (
+          <div className="segmented segmented-small" role="group" aria-label="Type">
+            {(
+              [
+                ['all', 'Tout', all.length],
+                ['apps', 'Apps Forgeyard', all.filter((i) => !i.external).length],
+                ['external', 'Externes', containers.length],
+              ] as const
+            ).map(([value, label, n]) => (
+              <button key={value} type="button" aria-pressed={kind === value} className={kind === value ? 'on' : ''} onClick={() => setKind(value)}>
+                {label} <span className="filter-count">{n}</span>
+              </button>
+            ))}
+          </div>
+        )}
+        <div className="segmented segmented-small" role="group" aria-label="État">
+          {(
+            [
+              ['all', 'Tous les états', byKind.length],
+              ['up', 'En ligne', count('up')],
+              ['stopped', 'Arrêtés', count('stopped')],
+              ['problem', 'En erreur', count('problem')],
+            ] as const
+          ).map(([value, label, n]) => (
+            <button key={value} type="button" aria-pressed={stateFilter === value} className={stateFilter === value ? 'on' : ''} onClick={() => setStateFilter(value)}>
+              {label} <span className={`filter-count ${value === 'problem' && n > 0 ? 'text-down' : ''}`}>{n}</span>
+            </button>
+          ))}
+        </div>
       </div>
 
       {failing.length > 0 && (
@@ -185,57 +284,48 @@ function AppList({
 
       {error && <p className="error">{error}</p>}
 
-      {apps && apps.length === 0 && containers.length === 0 && (
+      {apps && all.length === 0 && (
         <div className="empty-state">
           <strong>Aucune app pour le moment</strong>
           <span>Déployez une image Docker, par exemple nginx:alpine sur le port 80.</span>
         </div>
       )}
 
-      {admin && columns.length > 0 && (
-        <div className="node-columns">
-          {columns.map((n) => {
-            const nodeApps = shownApps.filter((a) => a.nodeId === n.id)
-            const nodeContainers = shownContainers.filter((c) => c.nodeId === n.id)
-            return (
-              <section key={n.id} className="node-column" aria-label={`Node ${n.name}`}>
-                <div className="node-column-head">
-                  <Dot tone={n.state === 'online' ? 'up' : 'down'} />
-                  <h2>{n.name}</h2>
-                  <span className="muted">
-                    {n.state === 'online'
-                      ? `${nodeApps.length} app${nodeApps.length > 1 ? 's' : ''}${nodeContainers.length ? ` · ${nodeContainers.length} externe${nodeContainers.length > 1 ? 's' : ''}` : ''}`
-                      : n.state === 'offline'
-                        ? 'hors ligne'
-                        : 'en attente'}
-                  </span>
-                </div>
+      {admin &&
+        sections.map((n) => {
+          const items = shown.filter((i) => (i.app?.nodeId ?? i.container?.nodeId) === n.id)
+          const total = all.filter((i) => (i.app?.nodeId ?? i.container?.nodeId) === n.id)
+          const open = !collapsed.includes(n.id)
+          return (
+            <section key={n.id} className="node-section" aria-label={`Node ${n.name}`}>
+              <button type="button" className="node-section-head" aria-expanded={open} onClick={() => toggleNode(n.id)}>
+                <svg className="chevron" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <path d="m9 6 6 6-6 6" />
+                </svg>
+                <Dot tone={n.state === 'online' ? 'up' : 'down'} />
+                <h2>{n.name}</h2>
+                <span className="muted">
+                  {n.state === 'online' ? `${total.filter((i) => !i.external).length} apps · ${total.filter((i) => i.external).length} externes` : n.state === 'offline' ? 'hors ligne' : 'en attente'}
+                  {items.length !== total.length ? ` · ${items.length} affichés` : ''}
+                </span>
                 {n.metrics && (
-                  <div className="mini-meters">
+                  <span className="node-section-meters">
                     <MiniMeter label="CPU" text={`${n.metrics.cpuPercent.toFixed(0)} %`} pct={n.metrics.cpuPercent} />
                     <MiniMeter label="RAM" text={`${formatBytes(n.metrics.memoryUsedBytes)} / ${formatBytes(n.memoryBytes)}`} pct={(n.metrics.memoryUsedBytes / (n.memoryBytes || 1)) * 100} />
-                  </div>
+                  </span>
                 )}
-                {nodeApps.map((a) => (
-                  <AppCard key={a.id} app={a} admin />
+              </button>
+              {open &&
+                (items.length > 0 ? (
+                  <div className="card-grid">{items.map(card)}</div>
+                ) : (
+                  <div className="column-empty">{total.length ? 'Rien ne correspond aux filtres' : 'Aucune app'}</div>
                 ))}
-                {nodeContainers.map((c) => (
-                  <ContainerCard key={c.id} container={c} />
-                ))}
-                {nodeApps.length === 0 && nodeContainers.length === 0 && <div className="column-empty">{q ? 'Rien ne correspond' : 'Aucune app'}</div>}
-              </section>
-            )
-          })}
-        </div>
-      )}
+            </section>
+          )
+        })}
 
-      {!admin && shownApps.length > 0 && (
-        <div className="card-grid">
-          {shownApps.map((a) => (
-            <AppCard key={a.id} app={a} admin={false} />
-          ))}
-        </div>
-      )}
+      {!admin && shown.length > 0 && <div className="card-grid">{shown.map(card)}</div>}
 
       {creating && (
         <AppFormModal
@@ -290,7 +380,7 @@ function AppCard({ app, admin }: { app: App; admin: boolean }) {
 }
 
 function ContainerCard({ container: c }: { container: Container }) {
-  const tone = containerTones[c.state] ?? ''
+  const tone = containerTone(c)
   return (
     <a href={`#/containers/${c.nodeId}/${c.id}`} className="app-card app-card-external">
       <span className="app-card-head">
@@ -298,12 +388,13 @@ function ContainerCard({ container: c }: { container: Container }) {
         <span className="badge">externe</span>
         <span className="app-card-state">
           <Dot tone={tone} />
-          {containerLabels[c.state] ?? c.state}
+          {containerText(c)}
         </span>
       </span>
       {c.ports.length > 0 && <span className="app-card-url">{c.ports.join(' · ')}</span>}
       <span className="muted app-card-meta">
-        {c.image} · {c.ownerName}
+        {c.composeProject ? `${c.composeProject} · ` : ''}
+        {c.image}
       </span>
     </a>
   )
@@ -655,7 +746,7 @@ function Events({ appId }: { appId: number }) {
 function ContainerDetail({ container: c, superadmin, onChange, go }: { container: Container; superadmin: boolean; onChange: () => void; go: (path: string) => void }) {
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
-  const tone = containerTones[c.state] ?? ''
+  const tone = containerTone(c)
 
   async function act(action: 'start' | 'stop' | 'restart') {
     setBusy(true)

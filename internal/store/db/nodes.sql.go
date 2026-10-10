@@ -28,7 +28,7 @@ func (q *Queries) ActivateNode(ctx context.Context, arg ActivateNodeParams) erro
 const createNode = `-- name: CreateNode :one
 INSERT INTO nodes (name, status, join_token_hash, join_expires_at, is_local, created_at)
 VALUES (?, 'pending', ?, ?, ?, ?)
-RETURNING id, name, status, join_token_hash, join_expires_at, cert_serial, hostname, os, arch, cpus, memory_bytes, disk_bytes, docker_version, agent_version, last_seen_at, created_at, public_ip, ingress_mode, ingress_http_port, is_local
+RETURNING id, name, status, join_token_hash, join_expires_at, cert_serial, hostname, os, arch, cpus, memory_bytes, disk_bytes, docker_version, agent_version, last_seen_at, created_at, public_ip, ingress_mode, ingress_http_port, is_local, local_ip
 `
 
 type CreateNodeParams struct {
@@ -69,6 +69,7 @@ func (q *Queries) CreateNode(ctx context.Context, arg CreateNodeParams) (Node, e
 		&i.IngressMode,
 		&i.IngressHttpPort,
 		&i.IsLocal,
+		&i.LocalIp,
 	)
 	return i, err
 }
@@ -83,7 +84,7 @@ func (q *Queries) DeleteNode(ctx context.Context, id int64) error {
 }
 
 const getNode = `-- name: GetNode :one
-SELECT id, name, status, join_token_hash, join_expires_at, cert_serial, hostname, os, arch, cpus, memory_bytes, disk_bytes, docker_version, agent_version, last_seen_at, created_at, public_ip, ingress_mode, ingress_http_port, is_local FROM nodes WHERE id = ?
+SELECT id, name, status, join_token_hash, join_expires_at, cert_serial, hostname, os, arch, cpus, memory_bytes, disk_bytes, docker_version, agent_version, last_seen_at, created_at, public_ip, ingress_mode, ingress_http_port, is_local, local_ip FROM nodes WHERE id = ?
 `
 
 func (q *Queries) GetNode(ctx context.Context, id int64) (Node, error) {
@@ -110,12 +111,13 @@ func (q *Queries) GetNode(ctx context.Context, id int64) (Node, error) {
 		&i.IngressMode,
 		&i.IngressHttpPort,
 		&i.IsLocal,
+		&i.LocalIp,
 	)
 	return i, err
 }
 
 const getPendingNodeByJoinToken = `-- name: GetPendingNodeByJoinToken :one
-SELECT id, name, status, join_token_hash, join_expires_at, cert_serial, hostname, os, arch, cpus, memory_bytes, disk_bytes, docker_version, agent_version, last_seen_at, created_at, public_ip, ingress_mode, ingress_http_port, is_local FROM nodes WHERE join_token_hash = ? AND status = 'pending' AND join_expires_at > ?
+SELECT id, name, status, join_token_hash, join_expires_at, cert_serial, hostname, os, arch, cpus, memory_bytes, disk_bytes, docker_version, agent_version, last_seen_at, created_at, public_ip, ingress_mode, ingress_http_port, is_local, local_ip FROM nodes WHERE join_token_hash = ? AND status = 'pending' AND join_expires_at > ?
 `
 
 type GetPendingNodeByJoinTokenParams struct {
@@ -147,6 +149,7 @@ func (q *Queries) GetPendingNodeByJoinToken(ctx context.Context, arg GetPendingN
 		&i.IngressMode,
 		&i.IngressHttpPort,
 		&i.IsLocal,
+		&i.LocalIp,
 	)
 	return i, err
 }
@@ -163,7 +166,7 @@ func (q *Queries) HasLocalNode(ctx context.Context) (int64, error) {
 }
 
 const listNodes = `-- name: ListNodes :many
-SELECT id, name, status, join_token_hash, join_expires_at, cert_serial, hostname, os, arch, cpus, memory_bytes, disk_bytes, docker_version, agent_version, last_seen_at, created_at, public_ip, ingress_mode, ingress_http_port, is_local FROM nodes ORDER BY name
+SELECT id, name, status, join_token_hash, join_expires_at, cert_serial, hostname, os, arch, cpus, memory_bytes, disk_bytes, docker_version, agent_version, last_seen_at, created_at, public_ip, ingress_mode, ingress_http_port, is_local, local_ip FROM nodes ORDER BY name
 `
 
 func (q *Queries) ListNodes(ctx context.Context) ([]Node, error) {
@@ -196,6 +199,7 @@ func (q *Queries) ListNodes(ctx context.Context) ([]Node, error) {
 			&i.IngressMode,
 			&i.IngressHttpPort,
 			&i.IsLocal,
+			&i.LocalIp,
 		); err != nil {
 			return nil, err
 		}
@@ -242,7 +246,7 @@ func (q *Queries) TouchNode(ctx context.Context, arg TouchNodeParams) error {
 const updateNodeInfo = `-- name: UpdateNodeInfo :exec
 UPDATE nodes
 SET hostname = ?, os = ?, arch = ?, cpus = ?, memory_bytes = ?, disk_bytes = ?,
-    docker_version = ?, agent_version = ?, last_seen_at = ?
+    docker_version = ?, agent_version = ?, local_ip = ?, last_seen_at = ?
 WHERE id = ?
 `
 
@@ -255,6 +259,7 @@ type UpdateNodeInfoParams struct {
 	DiskBytes     int64
 	DockerVersion string
 	AgentVersion  string
+	LocalIp       string
 	LastSeenAt    sql.NullInt64
 	ID            int64
 }
@@ -269,6 +274,7 @@ func (q *Queries) UpdateNodeInfo(ctx context.Context, arg UpdateNodeInfoParams) 
 		arg.DiskBytes,
 		arg.DockerVersion,
 		arg.AgentVersion,
+		arg.LocalIp,
 		arg.LastSeenAt,
 		arg.ID,
 	)

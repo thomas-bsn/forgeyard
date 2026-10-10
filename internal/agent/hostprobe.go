@@ -16,6 +16,8 @@ import (
 	"strings"
 	"syscall"
 	"time"
+
+	"github.com/thomas-bsn/forgeyard/internal/docker"
 )
 
 // hostProbeFile is written next to the join file, for the setup wizard to suggest how this machine
@@ -26,18 +28,19 @@ const hostProbeFile = "host.json"
 // "unknown" (e.g. a firewall between containers and the host).
 type hostProbe struct {
 	WebPorts string `json:"webPorts"`
+	LocalIP  string `json:"localIp,omitempty"`
 }
 
-// WriteHostProbe checks the host's ports 80 and 443 and writes the result next to joinFile.
-func WriteHostProbe(ctx context.Context, joinFile string, logger *slog.Logger) {
-	probe := hostProbe{WebPorts: probeWebPorts(ctx)}
+// WriteHostProbe checks the host's ports 80 and 443 and its local IP, and writes the result next to joinFile.
+func WriteHostProbe(ctx context.Context, joinFile string, dc *docker.Client, logger *slog.Logger) {
+	probe := hostProbe{WebPorts: probeWebPorts(ctx), LocalIP: LocalIP(ctx, dc, logger)}
 	raw, _ := json.Marshal(probe)
 	path := filepath.Join(filepath.Dir(joinFile), hostProbeFile)
 	if err := os.WriteFile(path, raw, 0o644); err != nil {
 		logger.Warn("writing the host probe failed", "err", err)
 		return
 	}
-	logger.Info("checked the host's web ports", "web_ports", probe.WebPorts)
+	logger.Info("checked the host", "web_ports", probe.WebPorts, "local_ip", probe.LocalIP)
 }
 
 // probeWebPorts connects to ports 80 and 443 of the host, reached through the container's default gateway.

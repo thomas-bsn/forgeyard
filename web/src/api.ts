@@ -13,6 +13,7 @@ export type Instance = {
   passwordLoginEnabled: boolean
   localNodeSupported: boolean
   localWebPorts?: 'busy' | 'free'
+  localIp?: string
   dnsProviders?: DNSProviderKind[]
   discordEnabled: boolean
   discordRedirectUrl: string
@@ -51,6 +52,7 @@ export type Node = {
   lastSeenAt?: number
   isLocal: boolean
   publicIp: string
+  localIp: string
   ingressMode: 'traefik' | 'proxy'
   ingressHttpPort: number
   metrics?: {

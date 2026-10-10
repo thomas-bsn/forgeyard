@@ -277,7 +277,7 @@ func (h *Hub) Connect(stream agentpb.AgentService_ConnectServer) error {
 	if err := h.store.UpdateNodeInfo(stream.Context(), db.UpdateNodeInfoParams{
 		Hostname: info.GetHostname(), Os: info.GetOs(), Arch: info.GetArch(), Cpus: int64(info.GetCpus()),
 		MemoryBytes: int64(info.GetMemoryBytes()), DiskBytes: int64(info.GetDiskBytes()),
-		DockerVersion: info.GetDockerVersion(), AgentVersion: hello.GetAgentVersion(),
+		DockerVersion: info.GetDockerVersion(), AgentVersion: hello.GetAgentVersion(), LocalIp: info.GetLocalIp(),
 		LastSeenAt: sql.NullInt64{Int64: time.Now().Unix(), Valid: true}, ID: node.ID,
 	}); err != nil {
 		return status.Error(codes.Internal, "saving node info failed")

@@ -346,12 +346,19 @@ function NetworkSettings({ node, onClose, onSaved }: { node: Node; onClose: () =
   const [mode, setMode] = useState(node.ingressMode)
   const [port, setPort] = useState(String(node.ingressHttpPort))
   const [domain, setDomain] = useState('')
+  const [defaultIp, setDefaultIp] = useState('')
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
 
   useEffect(() => {
     // Only the superadmin may read the domain settings; others see a placeholder domain in the example.
-    api.domainSettings().then((d) => setDomain(d.domain), () => {})
+    api.domainSettings().then(
+      (d) => {
+        setDomain(d.domain)
+        setDefaultIp(d.publicIp)
+      },
+      () => {},
+    )
   }, [])
 
   async function save(e: FormEvent) {
@@ -404,13 +411,16 @@ function NetworkSettings({ node, onClose, onSaved }: { node: Node; onClose: () =
             <input type="number" min={1} max={65535} value={port} onChange={(e) => setPort(e.target.value)} required />
             <small>Le port de cette machine où Forgeyard reçoit les apps. Laissez 8090 sauf s’il est déjà pris.</small>
           </label>
-          <ProxySnippet domain={domain} port={Number(port) || 8090} />
+          <ProxySnippet domain={domain} port={Number(port) || 8090} detectedIp={node.localIp} />
         </>
       )}
       <label className="field">
-        <span>IP publique (facultatif)</span>
-        <input value={ip} onChange={(e) => setIp(e.target.value)} placeholder="Celle des réglages du domaine" />
-        <small>L’adresse vers laquelle pointent les domaines des apps de ce node.</small>
+        <span>IP publique de ce node</span>
+        <input value={ip} onChange={(e) => setIp(e.target.value)} placeholder={defaultIp ? `${defaultIp} (celle de Réglages › Domaine)` : 'Celle de Réglages › Domaine'} />
+        <small>
+          L’IP vers laquelle Forgeyard fait pointer le DNS des apps de ce node. Laissez vide si ce node est derrière la même box que
+          {defaultIp ? ` ${defaultIp}` : ' celle des réglages'} ; remplissez-la seulement s’il est ailleurs (un VPS, une autre maison…).
+        </small>
       </label>
       {error && <p className="error">{error}</p>}
     </Modal>

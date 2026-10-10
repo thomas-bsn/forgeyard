@@ -1,6 +1,6 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import { api, errorMessage, type DiscordSettings } from './api'
-import { CopyField, DiscordAppSteps } from './ui'
+import { CopyField, DiscordAppSteps, Switch } from './ui'
 import DomainPanel from './Domain'
 
 function DiscordSettingsPanel() {
@@ -211,12 +211,11 @@ function LoginSettingsPanel() {
       .catch((err) => setError(errorMessage(err)))
   }, [])
 
-  async function toggle() {
-    if (enabled === null) return
+  async function toggle(next: boolean) {
     setBusy(true)
     setError('')
     try {
-      setEnabled((await api.saveLoginSettings(!enabled)).passwordLogin)
+      setEnabled((await api.saveLoginSettings(next)).passwordLogin)
     } catch (err) {
       setError(errorMessage(err))
     } finally {
@@ -227,23 +226,18 @@ function LoginSettingsPanel() {
   if (enabled === null) return error ? <p className="error">{error}</p> : null
   return (
     <div className="panel">
-      <div className="header">
+      <div className="setting-row">
         <div className="header-title">
-          <h2>Connexion par identifiant</h2>
-          <p className="muted">Permet de se connecter avec un identifiant et un mot de passe, en plus de Discord.</p>
+          <h2>Identifiant et mot de passe</h2>
+          <p className="muted">
+            {enabled
+              ? 'Activé : on peut se connecter avec un identifiant et un mot de passe, en plus de Discord.'
+              : 'Désactivé : tout le monde se connecte avec Discord.'}
+          </p>
         </div>
-        <span className={`banner ${enabled ? 'banner-up' : ''}`}>
-          <span className={`dot ${enabled ? 'dot-up' : ''}`} />
-          {enabled ? 'Activée' : 'Désactivée'}
-        </span>
+        <Switch checked={enabled} onChange={toggle} disabled={busy} label="Connexion par identifiant et mot de passe" />
       </div>
       {error && <p className="error">{error}</p>}
-      <div className="panel-footer">
-        <span className="spacer" />
-        <button type="button" className="btn" onClick={toggle} disabled={busy}>
-          {enabled ? 'Désactiver' : 'Activer'}
-        </button>
-      </div>
     </div>
   )
 }

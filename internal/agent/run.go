@@ -83,7 +83,7 @@ func session(ctx context.Context, client agentpb.AgentServiceClient, dc *docker.
 	// A failed Send only says io.EOF; the reason (e.g. PermissionDenied for a removed node) comes from
 	// Recv, so the error is always read there.
 	_ = stream.Send(&agentpb.AgentMessage{Msg: &agentpb.AgentMessage_Hello{
-		Hello: &agentpb.Hello{AgentVersion: Version, Info: nodeInfo(ctx, dc)},
+		Hello: &agentpb.Hello{AgentVersion: Version, Info: nodeInfo(ctx, dc, logger)},
 	}})
 	msg, err := stream.Recv()
 	if err != nil {

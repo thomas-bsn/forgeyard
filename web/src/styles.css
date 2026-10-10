@@ -1145,45 +1145,73 @@ button.row:hover {
   gap: 12px;
 }
 
-/* --- App list: one column per node ------------------------------------------ */
+/* --- App list: one section per node --------------------------------------- */
 
-.node-columns {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(290px, 1fr));
-  gap: 16px;
-  align-items: start;
+.filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
 }
 
-.node-column {
+.filter-count {
+  margin-left: 4px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.node-section {
   display: grid;
-  gap: 10px;
+  gap: 12px;
   padding: 14px;
   border-radius: 16px;
   background: color-mix(in srgb, var(--border) 45%, var(--bg));
 }
 
-.node-column-head {
+.node-section-head {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 2px 4px 0;
+  flex-wrap: wrap;
+  gap: 8px 10px;
+  width: 100%;
+  padding: 2px 4px;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
 }
 
-.node-column-head h2 {
-  flex: 1;
+.node-section-head h2 {
   font-size: 1rem;
 }
 
-.node-column-head .muted {
-  font-size: 0.82rem;
+.node-section-head .muted {
+  font-size: 0.85rem;
 }
 
-.mini-meters {
+.chevron {
+  color: var(--muted);
+  transition: transform 0.15s;
+}
+
+.node-section-head[aria-expanded='true'] .chevron {
+  transform: rotate(90deg);
+}
+
+.node-section-meters {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 10px;
-  padding: 0 4px 4px;
+  grid-template-columns: repeat(2, 150px);
+  gap: 12px;
+  margin-left: auto;
   font-size: 0.78rem;
+}
+
+@media (max-width: 640px) {
+  .node-section-meters {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    width: 100%;
+  }
 }
 
 .mini-meter .meter-track {
@@ -1736,4 +1764,53 @@ button.row:hover {
   align-items: center;
   gap: 12px;
   flex-wrap: wrap;
+}
+
+.switch {
+  position: relative;
+  flex-shrink: 0;
+  width: 46px;
+  height: 26px;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--muted) 55%, var(--card));
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.switch.on {
+  background: var(--accent);
+}
+
+.switch:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.switch-knob {
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.25);
+  transition: transform 0.15s;
+}
+
+.switch.on .switch-knob {
+  transform: translateX(20px);
+}
+
+.switch:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.setting-row {
+  display: flex;
+  align-items: center;
+  gap: 16px;
 }

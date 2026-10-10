@@ -141,8 +141,11 @@ function proxyExample(kind: ProxyKind, host: string, ip: string, port: number): 
  * What to add once to the user's own reverse proxy: every subdomain goes to Forgeyard's Traefik on this
  * machine, which then routes each app. The same rule works whether the proxy runs in Docker or not.
  */
-export function ProxySnippet({ domain, port }: { domain: string; port: number }) {
-  const [ip, setIp] = useState(guessLocalIp)
+export function ProxySnippet({ domain, port, detectedIp }: { domain: string; port: number; detectedIp?: string }) {
+  const [ip, setIp] = useState(() => detectedIp || guessLocalIp())
+  useEffect(() => {
+    if (detectedIp) setIp((cur) => cur || detectedIp)
+  }, [detectedIp])
   const [kind, setKind] = useState<ProxyKind>('caddy')
   const shownIp = ip.trim() || 'IP_LOCALE'
   const host = domain || 'mondomaine.com'
@@ -158,7 +161,10 @@ export function ProxySnippet({ domain, port }: { domain: string; port: number })
         <span>IP locale de cette machine</span>
         <input value={ip} onChange={(e) => setIp(e.target.value)} placeholder="192.168.1.10" />
         <small>
-          Celle sur votre réseau (<code>hostname -I</code>), pas 127.0.0.1 : elle marche que votre proxy tourne dans Docker ou non.
+          {detectedIp && ip.trim() === detectedIp
+            ? 'Trouvée automatiquement par l’agent. '
+            : 'Celle sur votre réseau (hostname -I), pas 127.0.0.1. '}
+          Elle marche que votre proxy tourne dans Docker ou non.
         </small>
       </label>
       <div className="proxy-rule">
@@ -258,6 +264,15 @@ export function Modal({
       </div>
       {onSubmit ? <form onSubmit={onSubmit}>{content}</form> : content}
     </dialog>
+  )
+}
+
+/** An on/off switch. */
+export function Switch({ checked, onChange, label, disabled }: { checked: boolean; onChange: (v: boolean) => void; label: string; disabled?: boolean }) {
+  return (
+    <button type="button" role="switch" aria-checked={checked} aria-label={label} className={`switch ${checked ? 'on' : ''}`} disabled={disabled} onClick={() => onChange(!checked)}>
+      <span className="switch-knob" />
+    </button>
   )
 }
 

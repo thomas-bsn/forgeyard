@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"log/slog"
 	"os"
 	"runtime"
 	"time"
@@ -24,8 +25,8 @@ func diskPath() string {
 	return "/"
 }
 
-func nodeInfo(ctx context.Context, dc *docker.Client) *agentpb.NodeInfo {
-	info := &agentpb.NodeInfo{Os: runtime.GOOS, Arch: runtime.GOARCH}
+func nodeInfo(ctx context.Context, dc *docker.Client, logger *slog.Logger) *agentpb.NodeInfo {
+	info := &agentpb.NodeInfo{Os: runtime.GOOS, Arch: runtime.GOARCH, LocalIp: LocalIP(ctx, dc, logger)}
 	if h, err := host.InfoWithContext(ctx); err == nil {
 		info.Hostname = h.Hostname
 		info.Os = h.Platform + " " + h.PlatformVersion

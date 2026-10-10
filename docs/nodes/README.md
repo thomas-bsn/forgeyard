@@ -38,7 +38,11 @@ Refusé tant que le node héberge des apps. Sinon le node est supprimé et son a
 
 ## Réseau d'un node
 
-Chaque node a un mode de trafic web (Traefik sur 80/443, ou derrière votre proxy) et une IP publique facultative (sinon celle des réglages du domaine), réglés dans la fenêtre « Réseau… » de sa carte. Voir [routing](../network/routing.md).
+Réglé dans la fenêtre « Réseau… » de sa carte :
+
+- **qui gère les ports 80/443** : Traefik de Forgeyard, ou votre reverse proxy (voir [routing](../network/routing.md)) ;
+- **IP locale** : trouvée par l'agent, pré-remplie dans l'exemple de règle pour votre proxy ;
+- **IP publique** : celle vers laquelle Forgeyard fait pointer le DNS des apps de ce node. Vide, c'est celle de Réglages › Domaine des apps : il ne faut la remplir que pour un node qui n'est pas derrière la même box (un VPS, un autre site).
 
 ## La carte d'un node
 

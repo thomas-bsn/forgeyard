@@ -38,23 +38,30 @@ func (s *Server) localNodeSupported() bool {
 	return s.joinDir != ""
 }
 
-// localWebPorts reports what the local agent found on this machine's ports 80 and 443: "busy", "free", or
-// "" when it does not know (or has not started yet).
-func (s *Server) localWebPorts() string {
+// localProbe reports what the local agent found on this machine before it joined: whether its ports 80 and
+// 443 are taken ("busy", "free", or "" when unknown) and its local IP.
+func (s *Server) localProbe() (webPorts, localIP string) {
 	if s.joinDir == "" {
-		return ""
+		return "", ""
 	}
 	raw, err := os.ReadFile(filepath.Join(s.joinDir, LocalHostProbeFile))
 	if err != nil {
-		return ""
+		return "", ""
 	}
 	var probe struct {
 		WebPorts string `json:"webPorts"`
+		LocalIP  string `json:"localIp"`
 	}
-	if json.Unmarshal(raw, &probe) != nil || (probe.WebPorts != "busy" && probe.WebPorts != "free") {
-		return ""
+	if json.Unmarshal(raw, &probe) != nil {
+		return "", ""
 	}
-	return probe.WebPorts
+	if probe.WebPorts != "busy" && probe.WebPorts != "free" {
+		probe.WebPorts = ""
+	}
+	if net.ParseIP(probe.LocalIP) == nil {
+		probe.LocalIP = ""
+	}
+	return probe.WebPorts, probe.LocalIP
 }
 
 // setupIngress is how Forgeyard's own machine receives web traffic, chosen in the wizard.

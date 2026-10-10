@@ -31,7 +31,7 @@ Code : `internal/api/apps.go`, `web/src/Apps.tsx`.
 | Configuration | Fenêtre : image, port, variables, mémoire ; enregistrer recrée le conteneur |
 | Supprimer | Supprime l'enregistrement DNS créé par Forgeyard, puis le conteneur. Si le fournisseur DNS ne répond pas, l'app est quand même supprimée et l'erreur est notée dans les logs du server. |
 
-Un utilisateur ne voit que ses apps, en cartes. Les admins voient tout, en **une colonne par node** (avec son CPU et sa RAM), et le propriétaire de chaque app ; la recherche filtre par nom, image ou propriétaire.
+Un utilisateur ne voit que ses apps, en cartes. Les admins voient tout : **une section par node** (repliable, avec son CPU et sa RAM), ses apps et ses conteneurs externes en grille, et le propriétaire de chaque app. Les problèmes passent en premier. Filtres : type (apps Forgeyard / externes), état (en ligne / arrêtés / en erreur), et une recherche par nom, image, propriétaire ou projet compose. Un conteneur externe arrêté avec un code de sortie non nul compte comme « en erreur ».
 
 ## États
 

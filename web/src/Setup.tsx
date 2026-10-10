@@ -28,6 +28,7 @@ export default function Setup({ instance, onDone }: { instance: Instance; onDone
   })
   // When the local agent found ports 80/443 taken, another proxy already runs here: suggest putting apps behind it.
   const [webPorts, setWebPorts] = useState(instance.localWebPorts)
+  const [localIp, setLocalIp] = useState(instance.localIp)
   const [ingress, setIngress] = useState<IngressChoice>({ mode: instance.localWebPorts === 'busy' ? 'proxy' : 'traefik', httpPort: 8090 })
   const cleanUrl = publicUrl.trim().replace(/\/+$/, '')
   const otherOrigin = cleanUrl !== window.location.origin
@@ -47,6 +48,7 @@ export default function Setup({ instance, onDone }: { instance: Instance; onDone
     if (step + 1 === DOMAIN_STEP && localNode && !webPorts) {
       api.instance().then((i) => {
         setWebPorts(i.localWebPorts)
+        setLocalIp(i.localIp)
         if (i.localWebPorts === 'busy') setIngress((cur) => ({ ...cur, mode: 'proxy' }))
       }, () => {})
     }
@@ -138,6 +140,7 @@ export default function Setup({ instance, onDone }: { instance: Instance; onDone
               onDomain={setDomain}
               localNode={localNode}
               webPorts={webPorts}
+              localIp={localIp}
               ingress={ingress}
               onIngress={setIngress}
             />
@@ -259,6 +262,7 @@ function DomainStep({
   onDomain,
   localNode,
   webPorts,
+  localIp,
   ingress,
   onIngress,
 }: {
@@ -267,6 +271,7 @@ function DomainStep({
   onDomain: (d: DomainChoice) => void
   localNode: boolean
   webPorts?: 'busy' | 'free'
+  localIp?: string
   ingress: IngressChoice
   onIngress: (i: IngressChoice) => void
 }) {
@@ -363,7 +368,7 @@ function DomainStep({
                 <input type="number" min={1} max={65535} value={ingress.httpPort} onChange={(e) => onIngress({ ...ingress, httpPort: Number(e.target.value) })} required />
                 <small>Laissez 8090 sauf s’il est déjà pris.</small>
               </label>
-              <ProxySnippet domain={typed} port={ingress.httpPort} />
+              <ProxySnippet domain={typed} port={ingress.httpPort} detectedIp={localIp} />
             </>
           )}
         </>

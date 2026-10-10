@@ -51,6 +51,8 @@ type instanceResponse struct {
 	LocalNodeSupported bool   `json:"localNodeSupported"`
 	// LocalWebPorts tells, during setup, whether this machine's ports 80 and 443 are already taken.
 	LocalWebPorts string `json:"localWebPorts,omitempty"`
+	// LocalIP is this machine's IP on its local network, during setup, for the reverse proxy example.
+	LocalIP string `json:"localIp,omitempty"`
 	// DNSProviders are listed during setup only, for the wizard's domain step.
 	DNSProviders       []dns.Kind `json:"dnsProviders,omitempty"`
 	DiscordEnabled     bool       `json:"discordEnabled"`
@@ -76,10 +78,10 @@ func (s *Server) handleInstance(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var providers []dns.Kind
-	var webPorts string
+	var webPorts, localIP string
 	if s.setupRequired() {
 		providers = dns.Kinds
-		webPorts = s.localWebPorts()
+		webPorts, localIP = s.localProbe()
 	}
 	writeJSON(w, http.StatusOK, instanceResponse{
 		DNSProviders:       providers,
@@ -88,6 +90,7 @@ func (s *Server) handleInstance(w http.ResponseWriter, r *http.Request) {
 		PasswordLogin:      passwordLogin || s.setupRequired(),
 		LocalNodeSupported: s.localNodeSupported(),
 		LocalWebPorts:      webPorts,
+		LocalIP:            localIP,
 		DiscordEnabled:     enabled && !s.setupRequired(),
 		DiscordRedirectURL: redirectURL,
 	})

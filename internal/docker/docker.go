@@ -193,6 +193,7 @@ type Container struct {
 	ID     string `json:"Id"`
 	Name   string `json:"Name"`
 	Config struct {
+		Image  string            `json:"Image"`
 		Labels map[string]string `json:"Labels"`
 	} `json:"Config"`
 	State struct {
@@ -279,6 +280,29 @@ func (s Summary) Name() string {
 func (c *Client) ListAll(ctx context.Context) ([]Summary, error) {
 	var list []Summary
 	return list, c.get(ctx, "/containers/json?all=1", &list)
+}
+
+// Wait blocks until a container stops.
+func (c *Client) Wait(ctx context.Context, name string) error {
+	return c.call(ctx, http.MethodPost, "/containers/"+url.PathEscape(name)+"/wait", nil, nil)
+}
+
+// Output returns everything a stopped container wrote to stdout.
+func (c *Client) Output(ctx context.Context, name string) (string, error) {
+	resp, err := c.do(ctx, http.MethodGet, "/containers/"+url.PathEscape(name)+"/logs?stdout=1", nil)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+	if resp.Header.Get("Content-Type") == "application/vnd.docker.raw-stream" {
+		raw, err := io.ReadAll(resp.Body)
+		return string(raw), err
+	}
+	var out bytes.Buffer
+	if err := demux(resp.Body, &out, io.Discard); err != nil && !errors.Is(err, io.EOF) {
+		return "", err
+	}
+	return out.String(), nil
 }
 
 // Restart restarts a container.

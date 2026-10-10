@@ -18,7 +18,10 @@ Votre proxy (Caddy, Nginx…) garde 80 et 443. Traefik écoute en HTTP sur un po
 
 Avant d'activer la machine, l'agent local teste si quelque chose répond sur les ports 80/443 de l'hôte : si oui, le wizard propose ce mode.
 
-À ajouter **une seule fois** dans le Caddyfile, avec l'IP locale de la machine (pas 127.0.0.1) :
+À ajouter **une seule fois** dans le Caddyfile, avec l'IP locale de la machine (pas 127.0.0.1). Forgeyard la trouve lui-même et la pré-remplit dans le wizard et dans « Réseau… » :
+
+- agent installé directement sur la machine : l'IP source de la route par défaut ;
+- agent dans un conteneur (cas de Docker Compose) : il ne voit que son propre réseau, alors il lance quelques secondes sa propre image sur le réseau de l'hôte (`forgeyard-host-ip`, supprimé aussitôt) pour la lire.
 
 ```
 *.mondomaine.com {

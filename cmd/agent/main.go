@@ -34,6 +34,9 @@ func main() {
 		err = start(ctx, os.Args[2:], true, logger)
 	case "run":
 		err = start(ctx, os.Args[2:], false, logger)
+	case "host-ip":
+		// Run by the agent in a short-lived container on the host's network: prints the host's local IP.
+		fmt.Println(agent.RouteIP())
 	default:
 		usage()
 	}
@@ -83,7 +86,8 @@ func start(ctx context.Context, args []string, mustJoin bool, logger *slog.Logge
 		if *joinFile == "" {
 			return agent.ErrNotJoined
 		}
-		agent.WriteHostProbe(ctx, *joinFile, logger)
+		probeDocker, _ := docker.New(*dockerHost)
+		agent.WriteHostProbe(ctx, *joinFile, probeDocker, logger)
 		cfg, err := agent.WaitAndJoin(ctx, *joinFile, *stateDir, logger)
 		if errors.Is(err, context.Canceled) {
 			return nil

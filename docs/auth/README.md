@@ -20,7 +20,7 @@ Chaque compte a **une seule** méthode : Discord **ou** identifiant / mot de pas
 
 ### Connexion par mot de passe désactivée après un setup Discord
 
-Si le superadmin a choisi Discord, la connexion par mot de passe est **coupée** : le formulaire disparaît de la page de login. Seul le superadmin peut la réactiver (Réglages). Il ne peut la couper que si son propre compte utilise Discord et que Discord est configuré, pour ne jamais s'enfermer dehors.
+Si le superadmin a choisi Discord, la connexion par mot de passe est **coupée** : le formulaire disparaît de la page de login. Seul le superadmin peut la réactiver, avec l'interrupteur de Réglages › Connexion. Il ne peut la couper que si son propre compte utilise Discord et que Discord est configuré, pour ne jamais s'enfermer dehors.
 
 ## Sessions
 
