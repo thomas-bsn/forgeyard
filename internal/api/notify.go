@@ -18,9 +18,10 @@ import (
 // Notifications go to Discord webhooks: one channel for the admins, and each user's own for their apps.
 
 const (
-	settingNotifyWebhook = "notify_webhook" // encrypted
-	settingNotifyEvents  = "notify_events"  // comma-separated: requests, crashes, nodes
-	labelUserWebhook     = "user_notify_webhook"
+	settingNotifyWebhook  = "notify_webhook"  // encrypted
+	settingSupportWebhook = "support_webhook" // encrypted; support and account requests, else notify_webhook
+	settingNotifyEvents   = "notify_events"   // comma-separated kinds, "-kind" for one turned off
+	labelUserWebhook      = "user_notify_webhook"
 
 	// An app crashing crashLimit times within crashWindow is stopped.
 	crashLimit  = 3
@@ -31,7 +32,14 @@ const (
 	nodeOfflineGrace = time.Minute
 )
 
-var notifyEventKinds = []string{"requests", "crashes", "nodes"}
+var notifyEventKinds = []string{"requests", "support", "crashes", "nodes"}
+
+// firstEventKinds are the kinds settings saved before "-kind" existed list when on; a kind added since
+// is on until turned off.
+var firstEventKinds = map[string]bool{"requests": true, "crashes": true, "nodes": true}
+
+// supportKinds go to the support channel when there is one: what users ask the admins.
+var supportKinds = map[string]bool{"requests": true, "support": true}
 
 // notification is one message, shown on Discord as an embed.
 type notification struct {
@@ -101,7 +109,15 @@ func (s *Server) notifyAdmins(kind string, n notification) {
 		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 		defer cancel()
 		webhook, events, err := s.adminNotifySettings(ctx)
-		if err != nil || webhook == "" || !events[kind] {
+		if err != nil || !events[kind] {
+			return
+		}
+		if supportKinds[kind] {
+			if support, err := s.supportWebhook(ctx); err == nil && support != "" {
+				webhook = support
+			}
+		}
+		if webhook == "" {
 			return
 		}
 		if err := s.sendWebhook(ctx, webhook, n); err != nil {
@@ -132,8 +148,15 @@ func (s *Server) notifyUser(userID int64, n notification) {
 func (s *Server) adminNotifySettings(ctx context.Context) (string, map[string]bool, error) {
 	events := map[string]bool{}
 	if v, err := s.store.GetSetting(ctx, settingNotifyEvents); err == nil {
+		for _, k := range notifyEventKinds {
+			events[k] = !firstEventKinds[k]
+		}
 		for _, k := range strings.Split(v, ",") {
-			events[k] = true
+			if off, ok := strings.CutPrefix(k, "-"); ok {
+				events[off] = false
+			} else if k != "" {
+				events[k] = true
+			}
 		}
 	} else {
 		for _, k := range notifyEventKinds {
@@ -148,11 +171,24 @@ func (s *Server) adminNotifySettings(ctx context.Context) (string, map[string]bo
 	return webhook, events, err
 }
 
+// supportWebhook is the support channel's webhook, "" when the admins' channel takes support too.
+func (s *Server) supportWebhook(ctx context.Context) (string, error) {
+	sealed, err := s.store.GetSetting(ctx, settingSupportWebhook)
+	if err != nil || sealed == "" {
+		return "", nil
+	}
+	return s.secrets.Decrypt(sealed, settingSupportWebhook)
+}
+
 type notifySettings struct {
 	WebhookSet bool            `json:"webhookSet"`
 	Webhook    string          `json:"webhook,omitempty"` // write only: empty keeps the current one
 	Clear      bool            `json:"clear,omitempty"`
 	Events     map[string]bool `json:"events"`
+	// The support channel, for support and account requests; without it they go to the main one.
+	SupportWebhookSet bool   `json:"supportWebhookSet"`
+	SupportWebhook    string `json:"supportWebhook,omitempty"` // write only
+	ClearSupport      bool   `json:"clearSupport,omitempty"`
 }
 
 func (s *Server) handleGetNotifySettings(w http.ResponseWriter, r *http.Request) {
@@ -161,7 +197,12 @@ func (s *Server) handleGetNotifySettings(w http.ResponseWriter, r *http.Request)
 		s.internalError(w, r, err)
 		return
 	}
-	out := notifySettings{WebhookSet: webhook != "", Events: map[string]bool{}}
+	support, err := s.supportWebhook(r.Context())
+	if err != nil {
+		s.internalError(w, r, err)
+		return
+	}
+	out := notifySettings{WebhookSet: webhook != "", SupportWebhookSet: support != "", Events: map[string]bool{}}
 	for _, k := range notifyEventKinds {
 		out.Events[k] = events[k]
 	}
@@ -174,8 +215,8 @@ func (s *Server) handlePutNotifySettings(w http.ResponseWriter, r *http.Request)
 	if !decodeJSON(w, r, &body) {
 		return
 	}
-	webhook := strings.TrimSpace(body.Webhook)
-	if webhook != "" && !validWebhook(webhook) {
+	webhook, support := strings.TrimSpace(body.Webhook), strings.TrimSpace(body.SupportWebhook)
+	if (webhook != "" && !validWebhook(webhook)) || (support != "" && !validWebhook(support)) {
 		writeError(w, http.StatusBadRequest, "ce n'est pas l'adresse d'un webhook Discord (https://discord.com/api/webhooks/…)")
 		return
 	}
@@ -183,6 +224,8 @@ func (s *Server) handlePutNotifySettings(w http.ResponseWriter, r *http.Request)
 	for _, k := range notifyEventKinds {
 		if body.Events[k] {
 			kinds = append(kinds, k)
+		} else {
+			kinds = append(kinds, "-"+k)
 		}
 	}
 	values := map[string]string{settingNotifyEvents: strings.Join(kinds, ",")}
@@ -197,6 +240,17 @@ func (s *Server) handlePutNotifySettings(w http.ResponseWriter, r *http.Request)
 		}
 		values[settingNotifyWebhook] = sealed
 	}
+	switch {
+	case body.ClearSupport:
+		values[settingSupportWebhook] = ""
+	case support != "":
+		sealed, err := s.secrets.Encrypt(support, settingSupportWebhook)
+		if err != nil {
+			s.internalError(w, r, err)
+			return
+		}
+		values[settingSupportWebhook] = sealed
+	}
 	if err := s.store.InTx(ctx, func(q *db.Queries) error { return storeSettings(ctx, q, values) }); err != nil {
 		s.internalError(w, r, err)
 		return
@@ -207,6 +261,15 @@ func (s *Server) handlePutNotifySettings(w http.ResponseWriter, r *http.Request)
 
 func (s *Server) handleTestAdminNotify(w http.ResponseWriter, r *http.Request) {
 	webhook, _, err := s.adminNotifySettings(r.Context())
+	if err != nil {
+		s.internalError(w, r, err)
+		return
+	}
+	s.testWebhook(w, r, webhook)
+}
+
+func (s *Server) handleTestSupportNotify(w http.ResponseWriter, r *http.Request) {
+	webhook, err := s.supportWebhook(r.Context())
 	if err != nil {
 		s.internalError(w, r, err)
 		return

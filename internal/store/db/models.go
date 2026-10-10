@@ -140,6 +140,27 @@ type Setting struct {
 	Value string
 }
 
+type SupportMessage struct {
+	ID        int64
+	TicketID  int64
+	AuthorID  sql.NullInt64
+	Body      string
+	CreatedAt int64
+}
+
+type SupportTicket struct {
+	ID        int64
+	AuthorID  int64
+	Kind      string
+	AppID     sql.NullInt64
+	AppName   string
+	Subject   string
+	Status    string
+	Waiting   int64
+	CreatedAt int64
+	UpdatedAt int64
+}
+
 type User struct {
 	ID              int64
 	Username        sql.NullString

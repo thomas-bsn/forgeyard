@@ -214,7 +214,7 @@ function AppList({
 }) {
   const [creating, setCreating] = useState(false)
   const [query, setQuery] = useState('')
-  const [kind, setKind] = useState<Kind>('all')
+  const [kind, setKind] = useState<Kind>('apps') // Forgeyard's apps first; external containers are one click away
   const [stateFilter, setStateFilter] = useState<StateFilter>('all')
   const [picked, setPicked] = useSelectedNode()
 
@@ -1183,38 +1183,47 @@ function AppDetail({ app, admin, nodes, onChange, go }: { app: App; admin: boole
         </div>
 
         {error && <p className="error">{error}</p>}
+        {/* Running: stop or redeploy it. Stopped: starting it deploys it afresh, so it is the only action. */}
         <div className="detail-actions">
-          <button type="button" className="btn" disabled={busy || app.suspended} onClick={() => run(() => api.appAction(app.id, 'redeploy'))}>
-            Redéployer
-          </button>
           {app.running ? (
-            <button type="button" className="btn" disabled={busy} onClick={() => run(() => api.appAction(app.id, 'stop'))}>
-              Arrêter
-            </button>
+            <>
+              <button type="button" className="btn" disabled={busy} onClick={() => run(() => api.appAction(app.id, 'stop'))}>
+                Arrêter
+              </button>
+              <button type="button" className="btn" disabled={busy || app.suspended} onClick={() => run(() => api.appAction(app.id, 'redeploy'))}>
+                Redéployer
+              </button>
+            </>
           ) : (
-            <button type="button" className="btn" disabled={busy || app.suspended} onClick={() => run(() => api.appAction(app.id, 'start'))}>
+            <button
+              type="button"
+              className="btn btn-primary detail-actions-wide"
+              disabled={busy || app.suspended}
+              title={app.suspended ? 'Les apps de ce compte sont suspendues' : undefined}
+              onClick={() => run(() => api.appAction(app.id, 'start'))}
+            >
               Démarrer
             </button>
           )}
-          <button type="button" className="btn" disabled={busy || !full} onClick={() => setEditing(true)}>
+          <button type="button" className="btn detail-actions-wide" disabled={busy || !full} onClick={() => setEditing(true)}>
             Configuration
           </button>
-          <button
-            type="button"
-            className="btn btn-danger"
-            disabled={busy}
-            onClick={() => {
-              if (window.confirm(`Supprimer l’app « ${app.name} » ? Son conteneur et son enregistrement DNS seront supprimés.`)) {
-                run(async () => {
-                  await api.deleteApp(app.id)
-                  go('apps')
-                })
-              }
-            }}
-          >
-            Supprimer
-          </button>
         </div>
+        <button
+          type="button"
+          className="link-button danger-link"
+          disabled={busy}
+          onClick={() => {
+            if (window.confirm(`Supprimer l’app « ${app.name} » ? Son conteneur et son enregistrement DNS seront supprimés.`)) {
+              run(async () => {
+                await api.deleteApp(app.id)
+                go('apps')
+              })
+            }
+          }}
+        >
+          Supprimer l’app…
+        </button>
       </aside>
 
       <main className="detail-main">

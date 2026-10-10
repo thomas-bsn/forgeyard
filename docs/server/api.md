@@ -36,6 +36,10 @@ Toutes les écritures sont en JSON. Les routes sont déclarées dans `internal/a
 | `PUT /api/me/notifications`, `POST /api/me/notifications/test` | Webhook personnel, message de test |
 | `GET /api/me/sessions`, `DELETE /api/me/sessions/{id\|others}` | Appareils connectés, en déconnecter un ou tous les autres |
 | `GET /api/images/ports?image=` | Ports TCP qu'une image publique déclare, lus sur son registre |
+| `GET`, `POST /api/support/tickets` | Demandes d'aide (les siennes, toutes pour un admin) ; en créer une |
+| `GET /api/support/tickets/{id}` | Une demande et son fil |
+| `POST /api/support/tickets/{id}/messages` | Répondre (rouvre une demande fermée) |
+| `PUT /api/support/tickets/{id}/status` | Ouvrir ou fermer |
 | `GET`, `POST /api/apps` | Lister, créer (`image` ou `dockerfile` ; `nodeId` facultatif, admins seulement) |
 | `GET`, `PUT`, `DELETE /api/apps/{id}` | Voir, modifier, supprimer |
 | `POST /api/apps/{id}/{start\|stop\|redeploy}` | Actions |
@@ -59,7 +63,7 @@ Les routes d'app vérifient que l'utilisateur est le propriétaire ou un admin.
 | `DELETE /api/admin/nodes/{id}` | Retirer (refusé s'il a des apps) |
 | `GET /api/admin/nodes/choices` | Nodes en ligne pour une nouvelle app, la recommandée en premier |
 | `POST /api/admin/apps/{id}/move` | Déplacer une app vers un autre node (`{nodeId}`) |
-| `GET`, `PUT /api/admin/settings/notifications`, `POST …/test` | Webhook du salon des admins, types d'alertes, message de test |
+| `GET`, `PUT /api/admin/settings/notifications`, `POST …/test`, `POST …/test-support` | Webhooks du salon des admins et du salon support, types d'alertes, messages de test |
 | `GET /api/admin/containers` | Conteneurs externes de tous les nodes en ligne |
 | `GET /api/admin/nodes/{node}/containers/{id}/usage` | CPU et mémoire d'un conteneur externe, dernière heure |
 | `GET /api/admin/nodes/{node}/containers/{id}/events` | Derniers événements d'un conteneur externe |

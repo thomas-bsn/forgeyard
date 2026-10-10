@@ -21,7 +21,8 @@
 - [ ] Création directe de comptes, transfert du superadmin
 - [ ] Clés SSH et jetons d'API (onglets « bientôt » du profil)
 - [ ] Bot Discord : messages privés, photos et bannières à jour sans reconnexion
-- [x] Notifications Discord (webhook) : salon des admins et webhook personnel
+- [x] Notifications Discord (webhook) : salon des admins, salon support facultatif et webhook personnel
+- [x] Onglet Support : demandes d'aide aux admins (général, app, infra) avec fil de réponses
 - [x] Métriques et graphiques par app, journal d'événements
 - [x] Placement sur la machine qui a le plus de mémoire libre, choix du node par les admins, déplacement d'une app entre nodes sans coupure
 - [ ] Capacité : réservations de CPU et de RAM par app

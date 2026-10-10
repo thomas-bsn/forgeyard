@@ -43,7 +43,29 @@ export type MemberProfile = Member & {
 
 export type NotifySettings = {
   webhookSet: boolean
-  events: { requests: boolean; crashes: boolean; nodes: boolean }
+  supportWebhookSet: boolean
+  events: { requests: boolean; support: boolean; crashes: boolean; nodes: boolean }
+}
+
+export type TicketKind = 'general' | 'app' | 'infra'
+
+export type Ticket = {
+  id: number
+  kind: TicketKind
+  appId?: number
+  appName?: string
+  subject: string
+  status: 'open' | 'closed'
+  waiting: boolean
+  authorId: number
+  authorName: string
+  messages: number
+  createdAt: number
+  updatedAt: number
+}
+
+export type TicketDetail = Ticket & {
+  thread: { id: number; authorId?: number; authorName: string; avatarUrl?: string; staff: boolean; body: string; createdAt: number }[]
 }
 
 export type Session = {
@@ -364,9 +386,15 @@ export const api = {
   uploadIcon: (image: string) => request<{ iconUrl: string }>('PUT', '/api/admin/settings/icon', { image }),
   deleteIcon: () => request<void>('DELETE', '/api/admin/settings/icon', {}),
   notifySettings: () => request<NotifySettings>('GET', '/api/admin/settings/notifications'),
-  saveNotifySettings: (body: { webhook?: string; clear?: boolean; events: NotifySettings['events'] }) =>
+  saveNotifySettings: (body: { webhook?: string; clear?: boolean; supportWebhook?: string; clearSupport?: boolean; events: NotifySettings['events'] }) =>
     request<NotifySettings>('PUT', '/api/admin/settings/notifications', body),
   testNotify: () => request<void>('POST', '/api/admin/settings/notifications/test', {}),
+  testSupportNotify: () => request<void>('POST', '/api/admin/settings/notifications/test-support', {}),
+  tickets: () => request<Ticket[]>('GET', '/api/support/tickets'),
+  ticket: (id: number) => request<TicketDetail>('GET', `/api/support/tickets/${id}`),
+  createTicket: (body: { kind: TicketKind; appId?: number; subject: string; body: string }) => request<TicketDetail>('POST', '/api/support/tickets', body),
+  replyTicket: (id: number, body: string) => request<TicketDetail>('POST', `/api/support/tickets/${id}/messages`, { body }),
+  setTicketStatus: (id: number, status: Ticket['status']) => request<TicketDetail>('PUT', `/api/support/tickets/${id}/status`, { status }),
   saveMyWebhook: (webhook: string) => request<User>('PUT', '/api/me/notifications', { webhook }),
   testMyWebhook: () => request<void>('POST', '/api/me/notifications/test', {}),
   saveGeneralSettings: (name: string, publicUrl: string, appsLayout: Instance['appsLayout']) =>

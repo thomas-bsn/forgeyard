@@ -128,6 +128,7 @@ export default function Settings({ superadmin, section, onRenamed }: { superadmi
 
 const notifyKinds: { key: keyof NotifySettings['events']; title: string; text: string }[] = [
   { key: 'requests', title: 'Demandes de compte', text: 'Quelqu’un se connecte avec Discord et attend votre validation.' },
+  { key: 'support', title: 'Support', text: 'Une demande d’aide, ou un nouveau message d’un membre sur la sienne.' },
   { key: 'crashes', title: 'Apps suspendues', text: 'Une app plante 3 fois en 5 minutes : Forgeyard l’arrête.' },
   { key: 'nodes', title: 'Nodes hors ligne', text: 'Un node ne répond plus depuis une minute, puis quand il revient.' },
 ]
@@ -162,6 +163,18 @@ function NotifyPanel() {
           onSave={async (webhook) => setSettings(await api.saveNotifySettings({ webhook, events: settings.events }))}
           onTest={() => api.testNotify()}
           onClear={async () => setSettings(await api.saveNotifySettings({ clear: true, events: settings.events }))}
+        />
+      </section>
+      <section className="panel">
+        <h2>Salon support <span className="muted">(facultatif)</span></h2>
+        <p className="muted">
+          Les demandes d’aide et de compte arrivent ici, à part des alertes. Sans ce salon, elles vont dans celui des admins.
+        </p>
+        <WebhookForm
+          isSet={settings.supportWebhookSet}
+          onSave={async (webhook) => setSettings(await api.saveNotifySettings({ supportWebhook: webhook, events: settings.events }))}
+          onTest={() => api.testSupportNotify()}
+          onClear={async () => setSettings(await api.saveNotifySettings({ clearSupport: true, events: settings.events }))}
         />
       </section>
       <section className="panel">

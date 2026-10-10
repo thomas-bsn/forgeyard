@@ -44,8 +44,9 @@ Les admins sont prévenus des nouvelles demandes sur Discord (voir Notifications
 
 Par webhook Discord, chiffré en base comme les autres secrets :
 
-- **Salon des admins** (Réglages › Notifications) : nouvelles demandes de compte, apps suspendues après des crashs, node hors ligne depuis une minute puis de retour ; chaque type s'active à part. Un bouton envoie un message de test.
-- **Webhook personnel** (Mon profil › Notifications) : les crashs et suspensions de ses propres apps.
+- **Salon des admins** (Réglages › Notifications) : nouvelles demandes de compte, demandes d'aide ([support](../support/README.md)), apps suspendues après des crashs, node hors ligne depuis une minute puis de retour ; chaque type s'active à part. Un bouton envoie un message de test.
+- **Salon support** (facultatif, même page) : reçoit à la place les demandes de compte et d'aide, pour les séparer des alertes.
+- **Webhook personnel** (Mon profil › Notifications) : les crashs et suspensions de ses propres apps, et les réponses du support.
 
 Seules les adresses `https://discord.com/api/webhooks/…` (et discordapp.com, ptb., canary.) sont acceptées. Les messages portent le nom de l'instance et un lien vers la page concernée.
 

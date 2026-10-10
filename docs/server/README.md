@@ -36,6 +36,7 @@ Pas de microservices : un binaire est plus simple à installer et à mettre à j
 |---|---|
 | `settings` | Réglages clé / valeur (nom, adresse, domaine, Discord…), secrets chiffrés |
 | `users` | Comptes : Discord ou local, rôle, désactivé, apps suspendues, profil (nom et avatar Discord, description), webhook personnel chiffré |
+| `support_tickets`, `support_messages` | Demandes d'aide et leur fil |
 | `sessions` | Hash des tokens de session, IP et navigateur d'origine |
 | `avatars`, `banners` | Photos et bannières envoyées par les utilisateurs |
 | `account_requests` | Demandes de compte Discord (en attente, refusées) |

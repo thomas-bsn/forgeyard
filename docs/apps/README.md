@@ -49,6 +49,8 @@ Les conteneurs externes ont le logo automatique de leur image.
 | Configuration | Même fenêtre que la création : source (image ou Dockerfile), port, variables, mémoire ; enregistrer déploie la nouvelle version sans coupure |
 | Supprimer | Supprime l'enregistrement DNS créé par Forgeyard, puis le conteneur. Si le fournisseur DNS ne répond pas, l'app est quand même supprimée et l'erreur est notée dans les logs du server. |
 
+Sur la page d'une app : une app arrêtée n'a que **Démarrer** (qui la déploie à neuf) ; en marche, **Arrêter** et **Redéployer**. Puis **Configuration**, et « Supprimer l'app… » en lien discret.
+
 Dans la liste, le menu « ⋯ » d'une app (au survol, toujours visible sur mobile) reprend ces actions : ouvrir le site, démarrer ou arrêter, redéployer, changer de node (admins), supprimer.
 
 L'onglet Apps a trois présentations, au choix du superadmin (Réglages › Général) :
@@ -57,7 +59,7 @@ L'onglet Apps a trois présentations, au choix du superadmin (Réglages › Gén
 - **Cartes de nodes** : une carte par node en haut (mini-logos de ses apps, problèmes), ses apps en tuiles en dessous ;
 - **Icônes** : des onglets de nodes et les apps en grandes icônes avec une pastille d'état.
 
-Partout « Tous » montre tous les nodes, le node choisi est retenu par le navigateur, les problèmes passent en premier, et on filtre par type (Forgeyard / externes), par état et par recherche (nom, image, propriétaire, projet compose). Un utilisateur ne choisit pas de node : il voit ses apps. Un conteneur externe arrêté avec un code de sortie non nul compte comme « en erreur ».
+Par défaut, la liste montre les apps Forgeyard ; les conteneurs externes sont à un clic (filtre de type). Partout « Tous » montre tous les nodes, le node choisi est retenu par le navigateur, les problèmes passent en premier, et on filtre par type (Forgeyard / externes), par état et par recherche (nom, image, propriétaire, projet compose). Un utilisateur ne choisit pas de node : il voit ses apps. Un conteneur externe arrêté avec un code de sortie non nul compte comme « en erreur ».
 
 ## États
 

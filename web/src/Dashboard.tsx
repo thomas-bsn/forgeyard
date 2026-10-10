@@ -6,6 +6,7 @@ import Nodes from './Nodes'
 import Apps from './Apps'
 import Users from './Users'
 import Profile from './Profile'
+import Support from './Support'
 import { MemberGrid, MemberPage } from './Members'
 
 const roleLabels: Record<User['role'], string> = {
@@ -35,6 +36,19 @@ export default function Dashboard({
     if (admin) api.requests().then((r) => setPending(r.length)).catch(() => {})
   }, [admin])
 
+  // Support: admins see the requests awaiting an answer, members the answers they got.
+  const [support, setSupport] = useState(0)
+  useEffect(() => {
+    const load = () =>
+      api.tickets().then(
+        (ts) => setSupport(ts.filter((t) => t.status === 'open' && (admin ? t.waiting && t.authorId !== user.id : !t.waiting)).length),
+        () => {},
+      )
+    load()
+    const t = setInterval(load, 60000)
+    return () => clearInterval(t)
+  }, [admin, user.id, route[0], route[1]])
+
   async function logout() {
     await api.logout()
     onLogout()
@@ -61,6 +75,7 @@ export default function Dashboard({
           {tab('apps', 'Apps')}
           {admin && tab('nodes', 'Nodes')}
           {tab('members', 'Membres', admin ? pending : 0)}
+          {tab('support', 'Support', support)}
         </nav>
         <span className="spacer" />
         <UserMenu user={user} admin={admin} pending={pending} onLogout={logout} />
@@ -74,6 +89,7 @@ export default function Dashboard({
         page === 'members' && (admin ? <Users me={user} onRequestsChange={setPending} /> : <MemberGrid />)
       )}
       {page === 'settings' && admin && <Settings superadmin={user.role === 'superadmin'} section={route[1]} onRenamed={onRefresh} />}
+      {page === 'support' && <Support me={user} admin={admin} route={route} go={go} />}
       {page === 'profile' && <Profile user={user} section={route[1]} onChange={onRefresh} />}
     </div>
   )
