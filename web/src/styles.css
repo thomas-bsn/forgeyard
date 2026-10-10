@@ -2273,3 +2273,9 @@ a.link-btn {
   background: var(--bg);
   font-size: 0.88rem;
 }
+
+.tile-detail {
+  margin-top: 2px;
+  color: var(--muted);
+  font-size: 0.78rem;
+}

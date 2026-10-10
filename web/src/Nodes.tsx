@@ -237,6 +237,19 @@ function Meter({ label, used, total, pct: rawPct, text }: { label: string; used?
   )
 }
 
+/**
+ * What the running containers of a node are: its apps, containers started outside Forgeyard, and the rest,
+ * Forgeyard's own (the agent, and Traefik once the node has apps), which are never listed.
+ */
+function containerBreakdown(total: number, apps: number, external: number): string {
+  const own = Math.max(0, total - apps - external)
+  const parts: string[] = []
+  if (apps) parts.push(`${apps} app${apps > 1 ? 's' : ''}`)
+  if (external) parts.push(`${external} hors Forgeyard`)
+  if (own) parts.push(own === 1 ? 'l’agent Forgeyard' : `${own} de Forgeyard (agent, Traefik)`)
+  return parts.join(' · ')
+}
+
 function NodeCard({
   node,
   apps,
@@ -315,9 +328,8 @@ function NodeCard({
             </div>
             <div className="tile">
               <div className="k">Conteneurs en cours</div>
-              <div className="v">
-                {m ? m.containersRunning : '–'} <small>{externalsRunning ? `dont ${externalsRunning} hors Forgeyard` : ''}</small>
-              </div>
+              <div className="v">{m ? m.containersRunning : '–'}</div>
+              {m && <div className="tile-detail">{containerBreakdown(m.containersRunning, appsOnline, externalsRunning)}</div>}
             </div>
           </div>
           <div className="network-line">
