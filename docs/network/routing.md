@@ -6,7 +6,7 @@ Traefik n'existe que si le node a au moins une app.
 
 ## Qui gère les ports 80 et 443 ?
 
-Une seule question, posée dans le wizard pour la machine de Forgeyard, et réglable par node dans Nodes › Réseau.
+Une seule question, posée dans le wizard pour la machine de Forgeyard, et réglable par node dans Nodes › « Réseau… ».
 
 ### Forgeyard (mode `traefik`)
 
@@ -49,7 +49,7 @@ https:// {
 
 `/api/caddy/ask?domain=…` répond 200 seulement pour l'adresse de Forgeyard et les apps qui existent : personne ne peut faire générer des certificats pour n'importe quel nom.
 
-Avec un autre proxy : envoyez `*.mondomaine.com` vers `IP_LOCALE:8090`.
+Quel que soit le proxy, la règle est la même : envoyer `*.mondomaine.com` vers `http://IP_LOCALE:8090`. La fenêtre « Réseau… » l'affiche avec l'IP et le domaine remplis, et donne l'exemple prêt à copier pour Caddy, Nginx, Traefik (configuration dynamique) et Nginx Proxy Manager.
 
 ## Pourquoi Forgeyard ne modifie pas votre proxy
 
@@ -57,4 +57,4 @@ La configuration de votre proxy ne change jamais : le wildcard envoie tout à Tr
 
 ## L'adresse de Forgeyard
 
-Réglée dans le wizard puis dans Réglages › Domaine (`public_url`). Elle sert pour le retour Discord, les commandes d'ajout de node, le lien de secours et `/api/caddy/ask`. Le port 8081 doit rester joignable directement : avec Cloudflare, l'enregistrement de Forgeyard doit être « DNS only ».
+Réglée dans le wizard puis dans Réglages › Général (`public_url`), avec le nom de l'instance. Elle sert pour le retour Discord, les commandes d'ajout de node, le lien de secours et `/api/caddy/ask`. Le port 8081 doit rester joignable directement : avec Cloudflare, l'enregistrement de Forgeyard doit être « DNS only ».

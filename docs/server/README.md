@@ -54,3 +54,18 @@ Pas de microservices : un binaire est plus simple à installer et à mettre à j
 | `make generate` | Régénère le code gRPC (buf) et les requêtes (sqlc) |
 
 - [Routes de l'API](api.md)
+
+## CI
+
+`.github/workflows/ci.yml`, à chaque push et pull request :
+
+```
+go (vet + tests -race) ─┐
+web (types + build)     ├─► images amd64/arm64 (publiées sur main et les tags vX.Y.Z)
+code généré à jour      ┘
+```
+
+- **go** : `go vet ./...` et `go test -race ./...`.
+- **web** : `npm ci` puis `npm run build`, qui vérifie les types (`tsc -b`) avant de construire.
+- **generated** : relance `make generate` et échoue si `internal/agentpb` ou `internal/store/db` changent : après avoir modifié `proto/` ou les requêtes SQL, il faut commiter le code régénéré.
+- Les images ne sont construites que si les trois passent ; une pull request les construit sans les publier.

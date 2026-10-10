@@ -73,4 +73,4 @@ Contenu du dossier de données : `forgeyard.db` (SQLite), `secret.key`, `ca.key`
 
 ## Images publiées
 
-Chaque push sur `main` lance les tests puis publie `ghcr.io/thomas-bsn/forgeyard` et `ghcr.io/thomas-bsn/forgeyard-agent` (amd64 et arm64). Le `Dockerfile` a deux cibles : `server` (par défaut) et `agent`.
+La CI publie `ghcr.io/thomas-bsn/forgeyard` et `ghcr.io/thomas-bsn/forgeyard-agent` (amd64 et arm64) à chaque push sur `main` (`:latest`) et à chaque tag `vX.Y.Z` (`:X.Y.Z` et `:X.Y`), une fois les vérifications passées (voir [server](../server/README.md#ci)). Le `Dockerfile` a deux cibles : `server` (par défaut) et `agent` ; les deux images portent le label `forgeyard.internal`, pour que l'agent ne les prenne jamais pour des conteneurs externes.

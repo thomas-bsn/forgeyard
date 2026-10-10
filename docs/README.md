@@ -32,6 +32,17 @@ L'agent ouvre toujours la connexion vers le server : un node n'a aucun port à o
 3. L'agent télécharge l'image, crée le conteneur avec des labels Traefik, et lance Traefik s'il ne tourne pas encore.
 4. Un visiteur ouvre `https://monapp.mondomaine.com` : le DNS mène au node, Traefik (ou votre propre reverse proxy, puis Traefik) envoie la requête au conteneur.
 
+## L'interface
+
+| Onglet | Qui | Contenu |
+|---|---|---|
+| Apps | tout le monde | Ses apps (admins : toutes, une colonne par node, avec les conteneurs externes). Page d'une app : observabilité, logs, événements, configuration. |
+| Nodes | admins | Machines, leur charge, leurs apps et conteneurs ; ajout et réseau dans des fenêtres. |
+| Utilisateurs | admins | Demandes de compte, comptes, rôles, suspension, suppression. |
+| Réglages | admins | Général, Domaine des apps, Connexion (superadmin) ; Discord. |
+
+Chaque page a sa propre adresse (`#/apps/3`, `#/settings/domain`…).
+
 ## Sommaire
 
 | Dossier | Contenu |

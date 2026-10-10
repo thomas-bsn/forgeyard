@@ -17,8 +17,8 @@ Code : `internal/api/nodes.go`, `internal/api/localnode.go`, `internal/nodes` (c
 
 ## Ajouter une autre machine
 
-1. Nodes › Ajouter › « Une autre machine » : nom (`a-z`, `0-9`, `-`, 32 caractères max.).
-2. L'UI affiche une commande à lancer sur la machine, valable 1 h :
+1. Nodes › « + Ajouter un node » › « Une autre machine » : nom (`a-z`, `0-9`, `-`, 32 caractères max.).
+2. Une fenêtre affiche une commande à lancer sur la machine, valable 1 h :
 
    ```bash
    docker run -d --name forgeyard-agent --restart unless-stopped \
@@ -38,4 +38,8 @@ Refusé tant que le node héberge des apps. Sinon le node est supprimé et son a
 
 ## Réseau d'un node
 
-Chaque node a un mode de trafic web (Traefik sur 80/443, ou derrière votre proxy) et une IP publique facultative (sinon celle des réglages du domaine). Voir [routing](../network/routing.md).
+Chaque node a un mode de trafic web (Traefik sur 80/443, ou derrière votre proxy) et une IP publique facultative (sinon celle des réglages du domaine), réglés dans la fenêtre « Réseau… » de sa carte. Voir [routing](../network/routing.md).
+
+## La carte d'un node
+
+CPU, RAM et disque en direct ; nombre d'apps (dont en ligne) et de conteneurs en cours (dont hors Forgeyard) ; résumé du réseau. Les apps et les conteneurs externes de chaque node sont listés dans l'onglet Apps, une colonne par node (voir [apps](../apps/README.md#conteneurs-externes)).

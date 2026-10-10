@@ -4,7 +4,7 @@ Code : `internal/dns`, `internal/api/domain.go`, `syncApps` dans `internal/api/a
 
 ## Modes
 
-Réglés dans le wizard ou dans Réglages › Domaine (superadmin) :
+Réglés dans le wizard ou dans Réglages › Domaine des apps (superadmin), qui résume la configuration en haut et la modifie en dessous :
 
 | Mode | Effet |
 |---|---|
@@ -46,4 +46,4 @@ Forgeyard ne retient (`dns_name` de l'app) que les enregistrements qu'**il** a c
 
 ## Vérification
 
-Réglages › Domaine › Vérifier : en mode `provider`, refait la recherche de zone ; en mode `wildcard`, résout un nom au hasard sous le domaine et compare avec l'IP publique.
+Réglages › Domaine des apps › Vérifier : en mode `provider`, refait la recherche de zone ; en mode `wildcard`, résout un nom au hasard sous le domaine et compare avec l'IP publique.
