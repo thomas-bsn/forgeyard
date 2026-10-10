@@ -382,7 +382,8 @@ type appResponse struct {
 	Public         bool              `json:"public"`
 	Logo           appLogo           `json:"logo"`
 	CrashSuspended bool              `json:"crashSuspended,omitempty"`
-	MovingFrom     int64             `json:"movingFrom,omitempty"` // the node it leaves, while it moves
+	MovingFrom     int64             `json:"movingFrom,omitempty"`     // the node it leaves, while it moves
+	ListeningPorts []int32           `json:"listeningPorts,omitempty"` // what it really listens on, while running
 	UpdatedAt      int64             `json:"updatedAt"`
 	Env            map[string]string `json:"env,omitempty"`
 	Dockerfile     string            `json:"dockerfile,omitempty"` // with the env, for the app's owner
@@ -411,6 +412,7 @@ func (s *Server) toAppResponse(a db.App, ownerName string, ownerSuspended bool, 
 		resp.HostPort = st.Status.GetHostPort()
 		if resp.State == "running" {
 			resp.CPUPercent, resp.MemoryUsed = st.Status.GetCpuPercent(), st.Status.GetMemoryUsedBytes()
+			resp.ListeningPorts = st.Status.GetListeningPorts()
 		}
 		if resp.URL == "" && resp.HostPort > 0 && node != nil {
 			host := nodeIP(*node, c)

@@ -28,7 +28,7 @@ Les conteneurs externes ont le logo automatique de leur image.
 |---|---|
 | Nom | `a-z`, `0-9`, `-`, 32 caractères max., unique. Devient le sous-domaine. Non modifiable. Réservés : `www`, `mail`, `forgeyard` et le sous-domaine de Forgeyard lui-même. |
 | Image | ex. `nginx:alpine` (`:latest` ajouté si pas de tag) ; ou un Dockerfile |
-| Port | Le port **dans** le conteneur (ex. 3000). Rempli tout seul avec celui que l'image déclare (`EXPOSE`), lu sur son registre sans la télécharger (`internal/registry`, réponses gardées 1 h), ou avec l'`EXPOSE` du Dockerfile. Tapé à la main, il n'est plus remplacé : le formulaire propose alors le port déclaré. Images privées ou registres du réseau local : pas de suggestion. |
+| Port | Le port **dans** le conteneur (ex. 3000). Rempli tout seul avec celui que l'image déclare (`EXPOSE`), lu sur son registre sans la télécharger (`internal/registry`, réponses gardées 1 h), ou avec l'`EXPOSE` du Dockerfile. Tapé à la main, il n'est plus remplacé : le formulaire propose alors le port déclaré. Images privées ou registres du réseau local : pas de suggestion. Une fois l'app lancée, l'agent lit les ports TCP sur lesquels elle écoute vraiment (dans `/proc` de l'hôte, sans rien exécuter dans le conteneur, en ignorant ceux liés à `127.0.0.1`) : s'ils ne contiennent pas le port configuré, la page de l'app le signale (« Bad Gateway ») avec un bouton « Utiliser 3000 ». |
 | Variables | 100 max., stockées chiffrées |
 | Mémoire | 64 à 16384 Mo, 512 par défaut |
 

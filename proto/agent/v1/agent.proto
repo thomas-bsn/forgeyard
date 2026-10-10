@@ -138,6 +138,8 @@ message AppStatus {
   // Resource use of the running container: CPU in percent of one core, memory without the page cache.
   double cpu_percent = 9;
   uint64 memory_used_bytes = 10;
+  // The TCP ports the running container listens on (not on loopback), to spot a wrong port setting.
+  repeated int32 listening_ports = 11;
 }
 
 message StartLogs {

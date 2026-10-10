@@ -1153,6 +1153,40 @@ function AppDetail({ app, admin, nodes, onChange, go }: { app: App; admin: boole
             </span>
           </div>
         ) : null}
+        {/* The app listens elsewhere than its setting says: visitors get Bad Gateway until the port is fixed. */}
+        {app.state === 'running' && app.listeningPorts?.length && !app.listeningPorts.includes(app.port) ? (
+          <div className="banner banner-warn">
+            <span className="dot dot-warn" />
+            <span>
+              L’app écoute sur le port {app.listeningPorts.join(', ')}, pas sur le {app.port} de sa configuration : ses visiteurs tombent
+              sur « Bad Gateway ».{' '}
+              {full &&
+                app.listeningPorts.slice(0, 3).map((p) => (
+                  <button
+                    key={p}
+                    type="button"
+                    className="link-button"
+                    disabled={busy}
+                    onClick={() =>
+                      run(async () =>
+                        setFull(
+                          await api.updateApp(app.id, {
+                            image: full.dockerfile ? '' : full.image,
+                            dockerfile: full.dockerfile ?? '',
+                            port: p,
+                            memoryMb: full.memoryMb,
+                            env: full.env ?? {},
+                          }),
+                        ),
+                      )
+                    }
+                  >
+                    Utiliser {p}
+                  </button>
+                ))}
+            </span>
+          </div>
+        ) : null}
         {app.crashSuspended && !app.running && (
           <div className="banner banner-down">
             <span className="dot dot-down" />

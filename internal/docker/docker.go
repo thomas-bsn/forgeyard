@@ -257,6 +257,7 @@ type Container struct {
 	State struct {
 		Status    string `json:"Status"` // created, running, paused, restarting, removing, exited, dead
 		Running   bool   `json:"Running"`
+		Pid       int    `json:"Pid"` // the main process on the host, while running
 		OOMKilled bool   `json:"OOMKilled"`
 		ExitCode  int    `json:"ExitCode"`
 		Error     string `json:"Error"`

@@ -180,6 +180,7 @@ export type App = {
   public: boolean
   crashSuspended?: boolean
   movingFrom?: number
+  listeningPorts?: number[] // what it really listens on, while running
   logo: { mode: 'auto' | 'custom' | 'initial'; url?: string; color?: string; autoUrl?: string }
   updatedAt: number
   env?: Record<string, string>

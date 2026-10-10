@@ -535,6 +535,7 @@ func (r *Reconciler) Statuses(ctx context.Context) []*agentpb.AppStatus {
 			case "running":
 				st.State = "running"
 				r.sampleUsage(ctx, app.GetId(), st)
+				st.ListeningPorts = listeningPorts(ct.State.Pid)
 			case "restarting":
 				st.State = "restarting"
 			case "created":

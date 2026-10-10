@@ -348,4 +348,21 @@ func TestDockerfileApp(t *testing.T) {
 	if plain.Image != "nginx:1.27" || plain.Dockerfile != "" {
 		t.Fatalf("back to an image: %+v", plain)
 	}
+
+	// What the running container really listens on reaches the UI.
+	fa.stream.Send(&agentpb.AgentMessage{Msg: &agentpb.AgentMessage_AppStatuses{AppStatuses: &agentpb.AppStatuses{
+		Apps: []*agentpb.AppStatus{{AppId: app.ID, State: "running", ListeningPorts: []int32{3000}}},
+	}}})
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		var got appResponse
+		get(t, admin, ts.URL+"/api/apps/"+itoa(app.ID), &got)
+		if len(got.ListeningPorts) == 1 && got.ListeningPorts[0] == 3000 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("listening ports not shown: %+v", got)
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
 }
