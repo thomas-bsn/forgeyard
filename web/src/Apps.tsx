@@ -842,8 +842,10 @@ function AppFormModal({
   const setCount = env.filter((v) => v.key.trim()).length
 
   const chosen = typeof node === 'object' ? node : undefined
-  // No free memory figure (no measure yet): the row is left out rather than shown as full.
-  const freeAfter = chosen?.freeMemoryBytes ? chosen.freeMemoryBytes - Number(memory) * 1024 * 1024 : undefined
+  // The memory limit is a ceiling, not a reservation: an app uses what it needs, so a limit above the free
+  // memory only warns. Without a measure yet, the row is left out rather than shown as full.
+  const free = chosen?.freeMemoryBytes || undefined
+  const overFree = free !== undefined && Number(memory) * 1024 * 1024 > free
   const aside = (
     <>
       <span className="aside-label">Aperçu</span>
@@ -902,10 +904,10 @@ function AppFormModal({
             <dd>
               {chosen.cpus} CPU · {chosen.apps} app{chosen.apps > 1 ? 's' : ''}
             </dd>
-            {freeAfter !== undefined && (
+            {free !== undefined && (
               <>
-                <dt>Mémoire libre après</dt>
-                <dd className={freeAfter < 0 ? 'state-down' : ''}>{freeAfter > 0 ? formatBytes(freeAfter) : 'insuffisante'}</dd>
+                <dt>Mémoire libre</dt>
+                <dd className={overFree ? 'state-warn' : ''}>{formatBytes(free)}</dd>
               </>
             )}
           </>
@@ -913,6 +915,12 @@ function AppFormModal({
         <dt>Source</dt>
         <dd>{source === 'dockerfile' ? 'construite' : 'téléchargée'}</dd>
       </dl>
+      {overFree && (
+        <p className="aside-note aside-warn">
+          La limite ({memory} Mo) dépasse la mémoire libre du node : l’app démarre quand même, elle n’en prend que ce qu’elle utilise. Si elle
+          monte jusque-là, elle risque d’être arrêtée faute de mémoire.
+        </p>
+      )}
       {initial && <p className="muted aside-note">Enregistrer redéploie l’app sans coupure.</p>}
       <span className="aside-spacer" />
       {error && <p className="error">{error}</p>}

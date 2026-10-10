@@ -3629,3 +3629,11 @@ a.link-btn {
 .link-button.danger-link:hover {
   text-decoration: underline;
 }
+
+.aside-warn {
+  padding: 10px 12px;
+  border-radius: 10px;
+  color: var(--text);
+  background: color-mix(in srgb, var(--warn) 14%, transparent);
+  border: 1px solid color-mix(in srgb, var(--warn) 40%, transparent);
+}
