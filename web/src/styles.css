@@ -4601,3 +4601,125 @@ a.link-btn {
   opacity: 0.5;
   cursor: not-allowed;
 }
+
+/* --- Adding a node: a step-by-step wizard --------------------------------------------------------------- */
+
+.wizard-steps {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 18px;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+.wizard-step {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.wizard-step i {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  font-style: normal;
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
+.wizard-step.done i {
+  border-color: var(--up);
+  background: var(--up);
+  color: #fff;
+}
+
+.wizard-step.on {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.wizard-step.on i {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--accent-text);
+}
+
+.wizard-recap {
+  margin: 0;
+  font-size: 0.85rem;
+}
+
+.field-narrow {
+  max-width: 360px;
+}
+
+.badge-up {
+  border-color: transparent;
+  color: var(--up);
+  background: color-mix(in srgb, var(--up) 14%, transparent);
+  font-size: 0.7rem;
+}
+
+.check-list {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 12px 14px;
+  list-style: none;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+}
+
+.check-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 0.9rem;
+}
+
+.check-mark {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  font-size: 0.75rem;
+  font-weight: 800;
+}
+
+.check-ok .check-mark {
+  color: #fff;
+  background: var(--up);
+}
+
+.check-error .check-mark {
+  color: #fff;
+  background: var(--down);
+}
+
+.check-error {
+  color: var(--down);
+}
+
+.check-info .check-mark {
+  color: var(--muted);
+  border: 1px solid var(--border);
+}
+
+.check-wait .check-mark {
+  border: 2px solid var(--accent);
+  border-right-color: transparent;
+  animation: spin 0.9s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}

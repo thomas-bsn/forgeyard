@@ -48,6 +48,7 @@ type nodeResponse struct {
 	DockerError   string       `json:"dockerError,omitempty"`
 	IngressMode   string       `json:"ingressMode"`
 	IngressPort   int64        `json:"ingressHttpPort"`
+	LAN           bool         `json:"lan"` // on Forgeyard's network
 	Metrics       *nodeMetrics `json:"metrics,omitempty"`
 	CPUHistory    []float64    `json:"cpuHistory,omitempty"`
 	// The agent's version against the server's, and its updates.
@@ -72,7 +73,7 @@ func (s *Server) toNodeResponse(n db.Node) nodeResponse {
 		ID: n.ID, Name: n.Name, State: "pending", Hostname: n.Hostname, OS: n.Os, Arch: n.Arch, CPUs: n.Cpus,
 		MemoryBytes: n.MemoryBytes, DiskBytes: n.DiskBytes, DockerVersion: n.DockerVersion,
 		AgentVersion: n.AgentVersion, LastSeenAt: n.LastSeenAt.Int64,
-		PublicIP: n.PublicIp, LocalIP: n.LocalIp, DockerError: n.DockerError, IngressMode: ingressMode(n), IngressPort: n.IngressHttpPort, IsLocal: n.IsLocal != 0,
+		PublicIP: n.PublicIp, LocalIP: n.LocalIp, DockerError: n.DockerError, IngressMode: ingressMode(n), IngressPort: n.IngressHttpPort, IsLocal: n.IsLocal != 0, LAN: n.Lan != 0,
 	}
 	if n.Status != "active" {
 		return resp
@@ -125,6 +126,12 @@ type createNodeRequest struct {
 	Name string `json:"name"`
 	// Local enables Forgeyard's own machine: its agent joins by itself, no command to run.
 	Local bool `json:"local"`
+	// LAN: the machine is on the same network as Forgeyard's: its agent joins it by its local address.
+	LAN bool `json:"lan"`
+	// Ingress, PublicIP and HTTPPort set how it receives its visits, as in its Réseau window.
+	Ingress  string `json:"ingressMode"`
+	PublicIP string `json:"publicIp"`
+	HTTPPort int    `json:"ingressHttpPort"`
 }
 
 type joinCommandResponse struct {
@@ -169,7 +176,27 @@ func (s *Server) handleCreateNode(w http.ResponseWriter, r *http.Request) {
 		s.internalError(w, r, err)
 		return
 	}
-	s.logger.Info("node created", "node", node.Name, "local", body.Local, "by", currentUser(r).DisplayName)
+	if body.LAN || body.Local {
+		if err := s.store.SetNodeLAN(r.Context(), db.SetNodeLANParams{Lan: 1, ID: node.ID}); err != nil {
+			s.internalError(w, r, err)
+			return
+		}
+		node.Lan = 1
+	}
+	if body.Ingress != "" {
+		updated, status, msg, err := s.setIngress(r.Context(), node, nodeIngressRequest{PublicIP: body.PublicIP, Mode: body.Ingress, HTTPPort: body.HTTPPort}, currentUser(r).DisplayName)
+		if err != nil || msg != "" {
+			s.store.DeleteNode(r.Context(), node.ID) // nothing joined it yet
+			if err != nil {
+				s.internalError(w, r, err)
+			} else {
+				writeError(w, status, msg)
+			}
+			return
+		}
+		node = updated
+	}
+	s.logger.Info("node created", "node", node.Name, "local", body.Local, "lan", body.LAN, "ingress", ingressMode(node), "by", currentUser(r).DisplayName)
 	if body.Local {
 		if err := s.writeLocalJoin(token); err != nil {
 			s.internalError(w, r, err)
@@ -214,6 +241,15 @@ func (s *Server) writeJoinCommand(w http.ResponseWriter, r *http.Request, status
 	}
 	base = strings.TrimRight(base, "/")
 	joinArgs := "--token " + token + " --ca " + s.ca.Fingerprint()
+	agentServer := s.agentAddress(base)
+	// On Forgeyard's network, the agent reaches it directly: the public address may go through a proxy
+	// (Cloudflare…) that does not carry the agents' port.
+	if node.Lan != 0 && node.IsLocal == 0 {
+		if ip := s.lanServerIP(r.Context()); ip != "" {
+			agentServer = net.JoinHostPort(ip, s.agentPort)
+			joinArgs += " --agent-server " + agentServer
+		}
+	}
 	docker := "docker run -d --name forgeyard-agent --restart unless-stopped \\\n" +
 		"  -v /var/run/docker.sock:/var/run/docker.sock \\\n" +
 		"  -v /:/host:ro -e FORGEYARD_HOST_ROOT=/host \\\n" +
@@ -225,8 +261,18 @@ func (s *Server) writeJoinCommand(w http.ResponseWriter, r *http.Request, status
 		Command:       "forgeyard-agent join --server " + base + " " + joinArgs,
 		DockerCommand: docker,
 		ExpiresAt:     expires.Unix(),
-		AgentServer:   s.agentAddress(base),
+		AgentServer:   agentServer,
 	})
+}
+
+// lanServerIP is Forgeyard's machine's address on its local network: its node's, else what its machine
+// reported at setup.
+func (s *Server) lanServerIP(ctx context.Context) string {
+	if local, err := s.store.GetLocalNode(ctx); err == nil && local.LocalIp != "" {
+		return local.LocalIp
+	}
+	_, ip := s.localProbe()
+	return ip
 }
 
 // agentAddress is the host:port agents dial: the public host with the agent port.
@@ -395,7 +441,6 @@ type nodeIngressRequest struct {
 // handleNodeIngress sets a node's public IP and how it receives web traffic. When the IP changes, the DNS
 // records of its apps follow.
 func (s *Server) handleNodeIngress(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
 	node, ok := s.nodeFromPath(w, r)
 	if !ok {
 		return
@@ -404,10 +449,24 @@ func (s *Server) handleNodeIngress(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSON(w, r, &body) {
 		return
 	}
+	updated, status, msg, err := s.setIngress(r.Context(), node, body, currentUser(r).DisplayName)
+	if err != nil {
+		s.internalError(w, r, err)
+		return
+	}
+	if msg != "" {
+		writeError(w, status, msg)
+		return
+	}
+	writeJSON(w, http.StatusOK, s.toNodeResponse(updated))
+}
+
+// setIngress sets a node's public IP and how it receives its visits. A refused setting comes back as a
+// status and a message for the user.
+func (s *Server) setIngress(ctx context.Context, node db.Node, body nodeIngressRequest, by string) (db.Node, int, string, error) {
 	body.PublicIP = strings.TrimSpace(body.PublicIP)
 	if body.PublicIP != "" && net.ParseIP(body.PublicIP) == nil {
-		writeError(w, http.StatusBadRequest, "IP publique invalide")
-		return
+		return node, http.StatusBadRequest, "IP publique invalide", nil
 	}
 	// relay: a node behind a proxy, Forgeyard's own machine.
 	relayed := int64(0)
@@ -415,37 +474,30 @@ func (s *Server) handleNodeIngress(w http.ResponseWriter, r *http.Request) {
 	case "traefik", "proxy":
 	case "relay":
 		if node.IsLocal != 0 {
-			writeError(w, http.StatusBadRequest, "la machine de Forgeyard ne se relaie pas elle-même : Traefik ou votre reverse proxy")
-			return
+			return node, http.StatusBadRequest, "la machine de Forgeyard ne se relaie pas elle-même : Traefik ou votre reverse proxy", nil
 		}
 		if _, err := s.store.GetLocalNode(ctx); err != nil {
-			writeError(w, http.StatusConflict, "pas de machine de Forgeyard pour relayer : activez-la comme node, ou choisissez un autre mode")
-			return
+			return node, http.StatusConflict, "pas de machine de Forgeyard pour relayer : activez-la comme node, ou choisissez un autre mode", nil
 		}
 		body.Mode, relayed, body.PublicIP = "proxy", 1, ""
 	default:
-		writeError(w, http.StatusBadRequest, "mode inconnu")
-		return
-	}
-	if body.Mode == "proxy" && (body.HTTPPort < 1 || body.HTTPPort > 65535 || body.HTTPPort == 8080 || body.HTTPPort == 8081) {
-		writeError(w, http.StatusBadRequest, "port HTTP invalide (et 8080/8081 sont pris par Forgeyard)")
-		return
+		return node, http.StatusBadRequest, "mode inconnu", nil
 	}
 	if body.HTTPPort == 0 {
 		body.HTTPPort = int(node.IngressHttpPort)
+	}
+	if body.Mode == "proxy" && (body.HTTPPort < 1 || body.HTTPPort > 65535 || body.HTTPPort == 8080 || body.HTTPPort == 8081) {
+		return node, http.StatusBadRequest, "port HTTP invalide (et 8080/8081 sont pris par Forgeyard)", nil
 	}
 	updated, err := s.store.UpdateNodeIngress(ctx, db.UpdateNodeIngressParams{
 		PublicIp: body.PublicIP, IngressMode: body.Mode, IngressHttpPort: int64(body.HTTPPort), Relayed: relayed, ID: node.ID,
 	})
 	if err != nil {
-		s.internalError(w, r, err)
-		return
+		return node, 0, "", err
 	}
-
 	c, err := s.loadDNSConfig(ctx)
 	if err != nil {
-		s.internalError(w, r, err)
-		return
+		return node, 0, "", err
 	}
 	// The apps' records follow the node's address; when Forgeyard's machine's changes, the relayed
 	// nodes' too.
@@ -466,9 +518,9 @@ func (s *Server) handleNodeIngress(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
-	s.logger.Info("node ingress changed", "node", node.Name, "mode", body.Mode, "ip", body.PublicIP, "by", currentUser(r).DisplayName)
+	s.logger.Info("node ingress changed", "node", node.Name, "mode", ingressMode(updated), "ip", body.PublicIP, "by", by)
 	s.push(ctx, node.ID)
-	writeJSON(w, http.StatusOK, s.toNodeResponse(updated))
+	return updated, 0, "", nil
 }
 
 // repointAppRecords points the DNS records of a node's apps to its current IP.
@@ -503,4 +555,78 @@ func (s *Server) repointAppRecords(ctx context.Context, node db.Node, c dnsConfi
 		}
 	}
 	return nil
+}
+
+// nodeCheck is what the last step of adding a node verifies.
+type nodeCheck struct {
+	Connected bool `json:"connected"`
+	// Traefik: ok, down, or unknown when the agent does not describe its containers yet.
+	Traefik string `json:"traefik"`
+	// Reach: ok when the node's Traefik answers where visits will come from, error, or skip when
+	// Forgeyard cannot try it (behind the user's proxy elsewhere).
+	Reach       string `json:"reach"`
+	ReachTarget string `json:"reachTarget,omitempty"`
+	ReachDetail string `json:"reachDetail,omitempty"`
+}
+
+// handleCheckNode checks that a node is ready for apps: connected, Traefik up, and its Traefik reachable
+// the way visits will reach it (from Forgeyard's machine over the local network for a relayed node).
+func (s *Server) handleCheckNode(w http.ResponseWriter, r *http.Request) {
+	node, ok := s.nodeFromPath(w, r)
+	if !ok {
+		return
+	}
+	out := nodeCheck{Traefik: "unknown", Reach: "skip"}
+	live, online := s.nodes.Live(node.ID)
+	out.Connected = online
+	if !online {
+		writeJSON(w, http.StatusOK, out)
+		return
+	}
+	if live.Topology != nil {
+		out.Traefik = "down"
+		for _, c := range live.Topology.GetContainers() {
+			if c.GetRole() == "traefik" && c.GetState() == "running" {
+				out.Traefik = "ok"
+			}
+		}
+	}
+	c, err := s.loadDNSConfig(r.Context())
+	if err != nil {
+		s.internalError(w, r, err)
+		return
+	}
+	port := strconv.FormatInt(node.IngressHttpPort, 10)
+	switch {
+	case node.IsLocal != 0:
+		out.ReachDetail = "la machine de Forgeyard reçoit ses visites elle-même"
+	case node.IngressMode == "proxy" && (node.Relayed != 0 || node.Lan != 0) && node.LocalIp != "":
+		out.ReachTarget = net.JoinHostPort(node.LocalIp, port)
+	case node.IngressMode == "proxy":
+		out.ReachDetail = "derrière ton reverse proxy : ta règle se vérifie en ouvrant une app (onglet Réseau)"
+	case node.Lan != 0 && node.LocalIp != "":
+		out.ReachTarget = net.JoinHostPort(node.LocalIp, "80")
+	case nodeIP(node, c) != "":
+		out.ReachTarget = net.JoinHostPort(nodeIP(node, c), "80")
+	default:
+		out.ReachDetail = "pas d'adresse connue pour ce node"
+	}
+	if out.ReachTarget != "" {
+		ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+		defer cancel()
+		req, _ := http.NewRequestWithContext(ctx, http.MethodGet, "http://"+out.ReachTarget+"/", nil)
+		req.Host = "forgeyard-check.invalid" // no app answers to it: any answer of Traefik will do
+		resp, err := s.probeClient.Do(req)
+		if err != nil {
+			out.Reach = "error"
+			out.ReachDetail = "injoignable : vérifie que la machine est bien sur le réseau de Forgeyard et qu'aucun pare-feu ne bloque le port " + strings.TrimPrefix(out.ReachTarget, node.LocalIp+":")
+			if node.Lan == 0 {
+				out.ReachDetail = "injoignable depuis Internet : vérifie que les ports 80 et 443 de la machine sont ouverts"
+			}
+		} else {
+			resp.Body.Close()
+			out.Reach = "ok"
+		}
+	}
+	writeJSON(w, http.StatusOK, out)
 }

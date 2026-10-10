@@ -203,6 +203,7 @@ export type Node = {
   dockerError?: string
   ingressMode: 'traefik' | 'proxy' | 'relay' // relay: through Forgeyard's machine
   ingressHttpPort: number
+  lan: boolean // on Forgeyard's network
   metrics?: {
     cpuPercent: number
     memoryUsedBytes: number
@@ -492,7 +493,10 @@ export const api = {
   nodes: () => request<Node[]>('GET', '/api/admin/nodes'),
   setNodeIngress: (id: number, body: { publicIp: string; ingressMode: 'traefik' | 'proxy' | 'relay'; ingressHttpPort: number }) =>
     request<Node>('PUT', `/api/admin/nodes/${id}/ingress`, body),
-  createNode: (name: string, local: boolean) => request<JoinCommand>('POST', '/api/admin/nodes', { name, local }),
+  createNode: (body: { name: string; local: boolean; lan?: boolean; ingressMode?: Node['ingressMode']; publicIp?: string; ingressHttpPort?: number }) =>
+    request<JoinCommand>('POST', '/api/admin/nodes', body),
+  checkNode: (id: number) =>
+    request<{ connected: boolean; traefik: 'ok' | 'down' | 'unknown'; reach: 'ok' | 'error' | 'skip'; reachTarget?: string; reachDetail?: string }>('POST', `/api/admin/nodes/${id}/check`, {}),
   newJoinCommand: (id: number) => request<JoinCommand>('POST', `/api/admin/nodes/${id}/join-command`, {}),
   deleteNode: (id: number) => request<{ cleaned: boolean; detail?: string }>('DELETE', `/api/admin/nodes/${id}`, {}),
   domainSettings: () => request<DomainSettings>('GET', '/api/admin/settings/domain'),

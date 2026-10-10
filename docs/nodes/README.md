@@ -19,22 +19,32 @@ Si l'agent est connecté mais ne joint pas Docker, la carte l'affiche en rouge a
 
 ## Ajouter une autre machine
 
-1. Nodes › « + Ajouter un node » › « Une autre machine » : nom (`a-z`, `0-9`, `-`, 32 caractères max.).
-2. Une fenêtre affiche une commande à lancer sur la machine, valable 1 h :
+Nodes › « + Ajouter un node » ouvre un assistant en quatre étapes (`web/src/Nodes.tsx`, `AddNode`) :
+
+1. **Nom** (`a-z`, `0-9`, `-`, 32 caractères max.), ou « Cette machine » pour activer celle de Forgeyard (rien à installer).
+2. **Où est la machine** : **dans mon réseau** (derrière la même box que la machine de Forgeyard) ou **ailleurs** (un VPS, une autre maison : sa propre IP publique).
+3. **Qui reçoit les visites de ses apps** (voir [routing](../network/routing.md#les-modes-dentrée-dun-node)) :
+   - dans ton réseau : **Traefik de la machine de Forgeyard** (relais, recommandé : rien à configurer) ou **ton reverse proxy** ;
+   - ailleurs : **Traefik de l'agent** (il prend 80/443 et gère le HTTPS, recommandé) ou **ton reverse proxy**, avec l'IP publique de la machine.
+
+   Avec un reverse proxy, la règle à ajouter est donnée pour Caddy, Nginx, Traefik, Nginx Proxy Manager, HAProxy et Apache, avec le port du Traefik du node (8090 par défaut).
+4. **Installer l'agent** : la commande à lancer sur la machine, valable 1 h ; pour une machine de ton réseau, elle contient déjà `--agent-server <IP locale de Forgeyard>:8081`. La fenêtre suit ensuite l'installation et coche :
+   - l'agent connecté (système, architecture, CPU) ;
+   - Traefik lancé ;
+   - Traefik joignable par le chemin des visites : depuis la machine de Forgeyard sur le réseau local (relais, ou ton proxy dans ton réseau), ou sur l'IP publique, port 80 (Traefik de l'agent ailleurs). Derrière ton propre proxy ailleurs, Forgeyard ne peut pas l'essayer : l'onglet Réseau d'une app le fera.
 
    ```bash
    docker run -d --name forgeyard-agent --restart unless-stopped \
      -v /var/run/docker.sock:/var/run/docker.sock -v /:/host:ro -e FORGEYARD_HOST_ROOT=/host \
      -v forgeyard-agent:/state \
-     ghcr.io/thomas-bsn/forgeyard-agent:latest run --server <adresse> --token <token> --ca sha256:<empreinte>
+     ghcr.io/thomas-bsn/forgeyard-agent:latest run --server <adresse> --token <token> --ca sha256:<empreinte> [--agent-server <IP locale>:8081]
    ```
 
    ou, avec le binaire : `forgeyard-agent join --server … --token … --ca …`.
-3. Le node passe « En ligne » avec son CPU, sa RAM, son disque et sa version de Docker.
 
 Le port **8081** du server doit être joignable depuis la machine (connexion directe, jamais à travers un reverse proxy HTTP ni le proxy Cloudflare) :
 
-- **machine sur le même réseau local** que Forgeyard : cochez « même réseau local » dans la fenêtre, la commande ajoute `--agent-server <IP locale>:8081` et l'agent ne passe pas par internet ;
+- **machine dans ton réseau** : la commande contient `--agent-server <IP locale>:8081`, l'agent ne passe pas par internet ;
 - **machine ailleurs** : l'adresse de Forgeyard doit résoudre vers votre IP publique (avec Cloudflare : « DNS only », pas le nuage orange) et le port 8081 doit être redirigé sur la box.
 
 Symptôme d'un port 8081 injoignable : le join réussit (il passe par HTTPS) mais le node reste hors ligne, et les logs de l'agent montrent `dial tcp …:8081: i/o timeout`. Pour corriger un node déjà rejoint, relancez son conteneur avec `--agent-server` : son identité est gardée dans le volume `forgeyard-agent`, pas besoin de nouveau token.

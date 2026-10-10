@@ -36,3 +36,6 @@ DELETE FROM nodes WHERE id = ?;
 
 -- name: GetLocalNode :one
 SELECT * FROM nodes WHERE is_local = 1 LIMIT 1;
+
+-- name: SetNodeLAN :exec
+UPDATE nodes SET lan = ? WHERE id = ?;

@@ -139,7 +139,7 @@ function guessLocalIp() {
   return /^\d{1,3}(\.\d{1,3}){3}$/.test(host) && host !== '127.0.0.1' ? host : ''
 }
 
-type ProxyKind = 'caddy' | 'nginx' | 'traefik' | 'npm'
+type ProxyKind = 'caddy' | 'nginx' | 'traefik' | 'npm' | 'haproxy' | 'apache'
 
 function proxyExample(kind: ProxyKind, host: string, ip: string, port: number): string {
   const target = `${ip}:${port}`
@@ -152,6 +152,10 @@ function proxyExample(kind: ProxyKind, host: string, ip: string, port: number): 
       return `# Configuration dynamique (file provider)\nhttp:\n  routers:\n    forgeyard-apps:\n      rule: "HostRegexp(\`^.+\\\\.${host.replace(/\./g, '\\\\.')}$\`)"\n      service: forgeyard-apps\n      tls:\n        certResolver: votre-resolver\n        domains:\n          - main: "${host}"\n            sans: ["*.${host}"]\n  services:\n    forgeyard-apps:\n      loadBalancer:\n        servers:\n          - url: "http://${target}"`
     case 'npm':
       return `Proxy Hosts › Add Proxy Host\n  Domain Names     *.${host}\n  Scheme           http\n  Forward Hostname ${ip}\n  Forward Port     ${port}\n  Websockets       activé\nSSL › certificat wildcard *.${host} (DNS Challenge)`
+    case 'haproxy':
+      return `frontend https\n    bind :443 ssl crt /etc/haproxy/certs/${host}.pem   # certificat wildcard *.${host}\n    http-request set-header X-Forwarded-Proto https\n    acl forgeyard_apps hdr_end(host) -i .${host}\n    use_backend forgeyard if forgeyard_apps\n\nbackend forgeyard\n    option forwardfor\n    server traefik ${target}`
+    case 'apache':
+      return `# a2enmod proxy proxy_http proxy_wstunnel rewrite ssl headers\n<VirtualHost *:443>\n    ServerName apps.${host}\n    ServerAlias *.${host}\n    SSLEngine on\n    # SSLCertificateFile / SSLCertificateKeyFile : votre certificat wildcard *.${host}\n\n    ProxyPreserveHost On\n    RequestHeader set X-Forwarded-Proto "https"\n    ProxyPass / http://${target}/ upgrade=websocket\n    ProxyPassReverse / http://${target}/\n</VirtualHost>`
   }
 }
 
@@ -159,8 +163,9 @@ function proxyExample(kind: ProxyKind, host: string, ip: string, port: number): 
  * What to add once to the user's own reverse proxy: every subdomain goes to Forgeyard's Traefik on this
  * machine, which then routes each app. The same rule works whether the proxy runs in Docker or not.
  */
-export function ProxySnippet({ domain, port, detectedIp }: { domain: string; port: number; detectedIp?: string }) {
-  const [ip, setIp] = useState(() => detectedIp || guessLocalIp())
+export function ProxySnippet({ domain, port, detectedIp, initialIp }: { domain: string; port: number; detectedIp?: string; initialIp?: string }) {
+  // detectedIp: found by the agent; initialIp: a sensible start, e.g. 127.0.0.1 for a proxy on the machine itself.
+  const [ip, setIp] = useState(() => detectedIp || initialIp || guessLocalIp())
   const [editIp, setEditIp] = useState(false)
   useEffect(() => {
     if (detectedIp) setIp((cur) => cur || detectedIp)
@@ -173,6 +178,8 @@ export function ProxySnippet({ domain, port, detectedIp }: { domain: string; por
     ['nginx', 'Nginx'],
     ['traefik', 'Traefik'],
     ['npm', 'Nginx Proxy Manager'],
+    ['haproxy', 'HAProxy'],
+    ['apache', 'Apache'],
   ]
   return (
     <>

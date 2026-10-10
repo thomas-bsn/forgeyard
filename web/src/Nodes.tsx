@@ -126,10 +126,13 @@ export default function Nodes({ localSupported }: { localSupported: boolean }) {
       {adding && nodes && (
         <AddNode
           localAvailable={localSupported && !nodes.some((n) => n.isLocal)}
-          onClose={() => setAdding(false)}
-          onCreated={(j) => {
+          front={nodes.find((n) => n.isLocal)}
+          onClose={() => {
             setAdding(false)
-            setJoin(j)
+            load()
+          }}
+          onDone={() => {
+            setAdding(false)
             load()
           }}
         />
@@ -154,70 +157,291 @@ export default function Nodes({ localSupported }: { localSupported: boolean }) {
  * Whether a node sits behind the same public IP as Forgeyard's machine (a home box): it is then reached
  * through Forgeyard's machine, which relays its apps to it over the local network.
  */
-function AddNode({ localAvailable, onCreated, onClose }: { localAvailable: boolean; onCreated: (j: JoinCommand) => void; onClose: () => void }) {
-  const [where, setWhere] = useState<'local' | 'remote'>(localAvailable ? 'local' : 'remote')
-  const local = localAvailable && where === 'local'
+type Place = 'this' | 'lan' | 'remote'
+type NodeCheck = { connected: boolean; traefik: 'ok' | 'down' | 'unknown'; reach: 'ok' | 'error' | 'skip'; reachTarget?: string; reachDetail?: string }
+
+const steps = ['Nom', 'Où est la machine', 'Devant les apps', 'Installer l’agent']
+
+/**
+ * Adding a node, step by step: its name, where the machine is (Forgeyard's own, on its network, or
+ * elsewhere), who receives its apps' visits, then the agent's install command and the checks that it
+ * is ready.
+ */
+function AddNode({ localAvailable, front, onDone, onClose }: { localAvailable: boolean; front?: Node; onDone: () => void; onClose: () => void }) {
+  const [step, setStep] = useState(1)
   const [name, setName] = useState('')
+  const [place, setPlace] = useState<Place>(localAvailable ? 'this' : 'lan')
+  const [ingress, setIngress] = useState<Ingress>(front ? 'relay' : 'traefik')
+  const [publicIp, setPublicIp] = useState('')
+  const [port, setPort] = useState('8090')
+  const [domain, setDomain] = useState('')
+  const [join, setJoin] = useState<JoinCommand | null>(null)
+  const [node, setNode] = useState<Node | null>(null)
+  const [check, setCheck] = useState<NodeCheck | null>(null)
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
+  const frontName = front?.name ?? 'la machine de Forgeyard'
 
-  async function submit(e: FormEvent) {
-    e.preventDefault()
+  useEffect(() => {
+    api.instance().then((i) => setDomain(i.appsDomain ?? ''), () => {})
+  }, [])
+
+  // The second question depends on the first: on Forgeyard's network, its machine can relay.
+  function pickPlace(p: Place) {
+    setPlace(p)
+    setIngress(p === 'lan' && front ? 'relay' : 'traefik')
+  }
+
+  // Once the command is shown, wait for the agent, then check the node is ready.
+  useEffect(() => {
+    if (step !== 4 || !join) return
+    let live = true
+    const tick = async () => {
+      try {
+        const n = (await api.nodes()).find((x) => x.id === join.node.id) ?? null
+        if (!live) return
+        setNode(n)
+        if (n?.state === 'online') setCheck(await api.checkNode(n.id))
+      } catch {
+        // tried again at the next tick
+      }
+    }
+    tick()
+    const t = setInterval(tick, 3000)
+    return () => {
+      live = false
+      clearInterval(t)
+    }
+  }, [step, join])
+
+  async function create() {
     setBusy(true)
     setError('')
     try {
-      onCreated(await api.createNode(local ? 'local' : name, local))
+      const local = place === 'this'
+      const j = await api.createNode({
+        name: local ? 'local' : name,
+        local,
+        lan: place === 'lan',
+        ingressMode: ingress,
+        publicIp: place === 'remote' ? publicIp : '',
+        ingressHttpPort: Number(port) || 8090,
+      })
+      setJoin(j)
+      setStep(4)
     } catch (err) {
       setError(errorMessage(err))
+    } finally {
       setBusy(false)
     }
   }
 
+  const options: { key: Ingress; title: string; text: string; flow: string; recommended?: boolean }[] =
+    place === 'this'
+      ? [
+          { key: 'traefik', title: 'Traefik de Forgeyard', text: 'Il prend les ports 80 et 443 de cette machine et gère le HTTPS. Rien à configurer.', flow: 'Internet → Traefik :443 → apps', recommended: true },
+          { key: 'proxy', title: 'Mon reverse proxy', text: 'Ton Caddy, Nginx… garde 80/443 et envoie les apps au Traefik de Forgeyard. Une règle à ajouter.', flow: `Internet → ton proxy :443 → Traefik :${port} → apps` },
+        ]
+      : place === 'lan'
+        ? [
+            front
+              ? { key: 'relay', title: `Traefik de ${frontName}`, text: `Les visites arrivent sur ${frontName}, qui les relaie à ce node par le réseau local. Rien à configurer.`, flow: `box → ${frontName} :443 → ce node :${port} → apps`, recommended: true }
+              : { key: 'traefik', title: 'Traefik de l’agent', text: 'Il prend les ports 80 et 443 de cette machine : la box doit les lui envoyer.', flow: 'box → Traefik :443 → apps' },
+            { key: 'proxy', title: 'Mon reverse proxy', text: 'Ton Caddy (sur une autre machine ou celle-ci) envoie lui-même les apps au Traefik de ce node. Une règle à ajouter.', flow: `box → ton proxy :443 → ce node :${port} → apps` },
+          ]
+        : [
+            { key: 'traefik', title: 'Traefik de l’agent', text: 'Il prend les ports 80 et 443 de la machine et gère le HTTPS. Rien à configurer.', flow: 'Internet → Traefik :443 → apps', recommended: true },
+            { key: 'proxy', title: 'Mon reverse proxy', text: 'Ton Caddy, Nginx… garde 80/443 et envoie les apps au Traefik de l’agent. Une règle à ajouter.', flow: `Internet → ton proxy :443 → Traefik :${port} → apps` },
+          ]
+  const placeText = { this: 'cette machine', lan: 'dans ton réseau', remote: 'ailleurs' }[place]
+  const recap = [place === 'this' ? 'Cette machine' : `« ${name} »`, step > 2 && placeText, step > 3 && options.find((o) => o.key === ingress)?.title]
+    .filter(Boolean)
+    .join(' · ')
+  const canNext = step === 1 ? /^[a-z0-9][a-z0-9-]{0,31}$/.test(name) || place === 'this' : true
+  const ready = !!check && check.connected && check.traefik !== 'down' && check.reach !== 'error'
+
   return (
     <Modal
       title="Ajouter un node"
-      subtitle="Une machine avec Docker qui fera tourner des apps."
       onClose={onClose}
-      onSubmit={submit}
+      onSubmit={(e: FormEvent) => {
+        e.preventDefault()
+        if (step < 3 && canNext) setStep(step + 1)
+        else if (step === 3) create()
+      }}
+      wide
       footer={
         <>
-          <button type="button" className="btn" onClick={onClose} disabled={busy}>
-            Annuler
-          </button>
-          <button type="submit" className="btn btn-primary" disabled={busy}>
-            {busy ? 'Création…' : local ? 'Activer cette machine' : 'Créer'}
-          </button>
+          {step > 1 && step < 4 ? (
+            <button type="button" className="btn" onClick={() => setStep(step - 1)} disabled={busy}>
+              ← Retour
+            </button>
+          ) : (
+            <button type="button" className="btn" onClick={step === 4 ? onDone : onClose}>
+              {step === 4 ? 'Fermer' : 'Annuler'}
+            </button>
+          )}
+          <span className="spacer" />
+          {step < 3 && (
+            <button type="submit" className="btn btn-primary" disabled={!canNext}>
+              Continuer →
+            </button>
+          )}
+          {step === 3 && (
+            <button type="submit" className="btn btn-primary" disabled={busy}>
+              {busy ? 'Création…' : place === 'this' ? 'Activer cette machine' : 'Créer et obtenir la commande'}
+            </button>
+          )}
+          {step === 4 && ready && (
+            <button type="button" className="btn btn-primary" onClick={onDone}>
+              Terminer
+            </button>
+          )}
         </>
       }
     >
-      {localAvailable && (
-        <div className="auth-options">
-          <button type="button" className={`auth-option ${where === 'local' ? 'selected' : ''}`} onClick={() => setWhere('local')} aria-pressed={where === 'local'}>
-            <strong>Cette machine</strong>
-            <small>Celle où tourne Forgeyard. Rien à installer.</small>
-          </button>
-          <button type="button" className={`auth-option ${where === 'remote' ? 'selected' : ''}`} onClick={() => setWhere('remote')} aria-pressed={where === 'remote'}>
-            <strong>Une autre machine</strong>
-            <small>Un autre serveur avec Docker.</small>
-          </button>
-        </div>
+      <div className="wizard-steps">
+        {steps.map((s, i) => (
+          <span key={s} className={`wizard-step ${i + 1 < step ? 'done' : ''} ${i + 1 === step ? 'on' : ''}`}>
+            <i>{i + 1 < step ? '✓' : i + 1}</i>
+            {s}
+          </span>
+        ))}
+      </div>
+      {step > 1 && <p className="muted wizard-recap">{recap}</p>}
+
+      {step === 1 && (
+        <>
+          {localAvailable && (
+            <div className="auth-options">
+              <button type="button" className={`auth-option ${place === 'this' ? 'selected' : ''}`} onClick={() => pickPlace('this')} aria-pressed={place === 'this'}>
+                <strong>Cette machine</strong>
+                <small>Celle où tourne Forgeyard : son agent est déjà là, rien à installer.</small>
+              </button>
+              <button type="button" className={`auth-option ${place !== 'this' ? 'selected' : ''}`} onClick={() => pickPlace('lan')} aria-pressed={place !== 'this'}>
+                <strong>Une autre machine</strong>
+                <small>Un autre serveur avec Docker.</small>
+              </button>
+            </div>
+          )}
+          {place !== 'this' && (
+            <label className="field">
+              <span>Comment s’appelle cette machine ?</span>
+              <input value={name} onChange={(e) => setName(e.target.value.toLowerCase())} placeholder="raspberry-pi" pattern="[a-z0-9][a-z0-9\-]{0,31}" required autoFocus />
+              <small>Juste pour toi : il apparaît sur la page Nodes et dans la topologie. Lettres, chiffres et tirets.</small>
+            </label>
+          )}
+        </>
       )}
-      {!local && (
-        <label className="field">
-          <span>Nom du node</span>
-          <input
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            placeholder="serveur-b"
-            pattern="[a-z0-9][a-z0-9\-]{0,31}"
-            title="1 à 32 caractères : a-z, 0-9 et -"
-            required
-            autoFocus
-          />
-        </label>
+
+      {step === 2 &&
+        (place === 'this' ? (
+          <p className="hint">C’est la machine de Forgeyard : elle reçoit elle-même les visites. Passe à l’étape suivante.</p>
+        ) : (
+          <div className="field">
+            <span>Où est la machine ?</span>
+            <div className="auth-options">
+              <button type="button" className={`auth-option ${place === 'lan' ? 'selected' : ''}`} onClick={() => pickPlace('lan')} aria-pressed={place === 'lan'}>
+                <strong>🏠 Dans mon réseau</strong>
+                <small>
+                  Derrière la même box que {frontName}
+                  {front?.localIp ? ` (${front.localIp})` : ''}. Rien à ouvrir sur la box.
+                </small>
+              </button>
+              <button type="button" className={`auth-option ${place === 'remote' ? 'selected' : ''}`} onClick={() => pickPlace('remote')} aria-pressed={place === 'remote'}>
+                <strong>🌍 Ailleurs</strong>
+                <small>Un VPS, une autre maison, un bureau : elle a sa propre IP publique.</small>
+              </button>
+            </div>
+          </div>
+        ))}
+
+      {step === 3 && (
+        <>
+          <div className="field">
+            <span>Qui reçoit les visites de ses apps ?</span>
+            <div className="auth-options">
+              {options.map((o) => (
+                <button key={o.key} type="button" className={`auth-option ${ingress === o.key ? 'selected' : ''}`} onClick={() => setIngress(o.key)} aria-pressed={ingress === o.key}>
+                  <strong>
+                    {o.title} {o.recommended && <span className="badge badge-up">recommandé</span>}
+                  </strong>
+                  <small>{o.text}</small>
+                  <small className="mono">{o.flow}</small>
+                </button>
+              ))}
+            </div>
+          </div>
+          {place === 'remote' && (
+            <label className="field">
+              <span>IP publique de la machine</span>
+              <input value={publicIp} onChange={(e) => setPublicIp(e.target.value.trim())} placeholder="51.210.33.7" required />
+              <small>Le DNS de ses apps pointera ici.</small>
+            </label>
+          )}
+          {ingress !== 'traefik' && (
+            <label className="field field-narrow">
+              <span>{ingress === 'relay' ? 'Port du Traefik de ce node pour le relais' : 'Port du Traefik, vers lequel ton proxy envoie les apps'}</span>
+              <input type="number" min={1} max={65535} value={port} onChange={(e) => setPort(e.target.value)} required />
+              <small>Garde 8090 sauf s’il est déjà pris sur la machine.</small>
+            </label>
+          )}
+          {ingress === 'proxy' && <ProxySnippet domain={domain} port={Number(port) || 8090} initialIp={place === 'lan' ? undefined : '127.0.0.1'} />}
+          {error && <p className="error">{error}</p>}
+        </>
       )}
-      {error && <p className="error">{error}</p>}
+
+      {step === 4 && join && (
+        <>
+          {join.node.isLocal ? (
+            <p>L’agent de cette machine se connecte tout seul dans quelques secondes : rien à lancer.</p>
+          ) : (
+            <>
+              <span className="muted">Lance cette commande sur « {join.node.name} », dans un terminal (elle ne sert qu’une fois, pendant une heure) :</span>
+              <CopyField value={`sudo ${join.dockerCommand}`} />
+              {join.node.lan && join.dockerCommand.includes('--agent-server') && (
+                <small className="muted">
+                  Ajouté pour toi : <code>--agent-server {join.agentServer}</code>, la machine joint {frontName} directement par le réseau local.
+                </small>
+              )}
+              {!join.node.lan && (
+                <small className="muted">
+                  L’agent se connecte à <code>{join.agentServer}</code> : ce port doit être joignable depuis la machine (avec Cloudflare, le nom de
+                  Forgeyard doit être en « DNS only »).
+                </small>
+              )}
+            </>
+          )}
+          <ul className="check-list">
+            <CheckItem state={node?.state === 'online' ? 'ok' : 'wait'} text={node?.state === 'online' ? `Agent connecté${node.os ? ` (${node.os} · ${node.arch} · ${node.cpus} CPU)` : ''}` : 'En attente de la connexion de l’agent…'} />
+            {node?.state === 'online' && (
+              <CheckItem
+                state={!check || check.traefik === 'unknown' ? 'wait' : check.traefik === 'ok' ? 'ok' : 'error'}
+                text={check?.traefik === 'down' ? 'Traefik ne tourne pas : regarde les logs de l’agent' : check?.traefik === 'ok' ? `Traefik lancé${ingress === 'traefik' ? ' sur 80 et 443' : ` sur le port ${port}`}` : 'Lancement de Traefik…'}
+              />
+            )}
+            {node?.state === 'online' && check && check.reach !== 'skip' && (
+              <CheckItem
+                state={check.reach === 'ok' ? 'ok' : 'error'}
+                text={check.reach === 'ok' ? `${ingress === 'relay' ? `${frontName} joint ce node` : 'Traefik joignable'} sur ${check.reachTarget}` : (check.reachDetail ?? 'injoignable')}
+              />
+            )}
+            {node?.state === 'online' && check?.reach === 'skip' && check.reachDetail && <CheckItem state="info" text={check.reachDetail} />}
+          </ul>
+        </>
+      )}
     </Modal>
+  )
+}
+
+function CheckItem({ state, text }: { state: 'ok' | 'wait' | 'error' | 'info'; text: string }) {
+  return (
+    <li className={`check-item check-${state}`}>
+      <span className="check-mark" aria-hidden="true">
+        {state === 'ok' ? '✓' : state === 'error' ? '✕' : state === 'info' ? 'i' : ''}
+      </span>
+      {text}
+    </li>
   )
 }
 
@@ -247,7 +471,7 @@ function JoinInstructions({ join, lanIp, onClose }: { join: JoinCommand; lanIp?:
       ) : (
         <>
           <p className="muted">Rien à installer à part Docker : l’agent Forgeyard est une image Docker, téléchargée et lancée automatiquement.</p>
-          {lanServer && (
+          {lanServer && !join.node.lan && (
             <label className="check">
               <input type="checkbox" checked={sameNetwork} onChange={(e) => setSameNetwork(e.target.checked)} />
               <span>
@@ -429,8 +653,8 @@ function NodeCard({
               Réseau…
             </button>
             {node.state === 'online' && (
-              <button type="button" className="btn" onClick={() => setShowLogs(true)}>
-                Logs de l’agent
+              <button type="button" className="btn" onClick={() => setShowLogs(true)} title="Logs de l’agent">
+                Logs
               </button>
             )}
           </>
