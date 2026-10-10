@@ -37,7 +37,7 @@ func canSelfUpdate(ctx context.Context, dc *docker.Client) bool {
 }
 
 // startUpdate pulls image and starts the container that replaces this agent's.
-func startUpdate(ctx context.Context, dc *docker.Client, image string) error {
+func startUpdate(ctx context.Context, dc *docker.Client, image string, progress func(step string)) error {
 	self, err := selfContainer(ctx, dc)
 	if err != nil {
 		return fmt.Errorf("l'agent ne tourne pas dans un conteneur qu'il peut remplacer : %w", err)
@@ -45,9 +45,11 @@ func startUpdate(ctx context.Context, dc *docker.Client, image string) error {
 	if self.Config.Labels["com.docker.compose.project"] != "" {
 		return errors.New("cet agent est géré par Docker Compose : mettez-le à jour avec docker compose")
 	}
+	progress("download")
 	if err := dc.Pull(ctx, image); err != nil {
 		return fmt.Errorf("téléchargement de %s : %w", image, err)
 	}
+	progress("restart")
 	// The updater reaches Docker through the same socket as the agent.
 	var binds []string
 	for _, b := range self.HostConfig.Binds {

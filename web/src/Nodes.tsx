@@ -2,6 +2,7 @@ import { useEffect, useState, type FormEvent, type ReactNode } from 'react'
 import { api, errorMessage, type App, type Container, type JoinCommand, type Node } from './api'
 import { CopyField, formatBytes, Modal, ProxySnippet, since, Switch } from './ui'
 import { TopologyMap, TopologyTable } from './Network'
+import { Logs } from './Apps'
 
 const POLL_MS = 5000
 
@@ -328,8 +329,11 @@ function NodeCard({
     }
   }
 
-  const stateLabel = { pending: 'En attente', online: 'En ligne', offline: 'Hors ligne' }[node.state]
-  const tone = { pending: '', online: 'up', offline: 'down' }[node.state]
+  // Away right after an update: its agent is restarting, not lost.
+  const restarting = node.state === 'offline' && node.updating
+  const stateLabel = restarting ? 'Mise à jour…' : { pending: 'En attente', online: 'En ligne', offline: 'Hors ligne' }[node.state]
+  const tone = restarting ? 'warn' : { pending: '', online: 'up', offline: 'down' }[node.state]
+  const [showLogs, setShowLogs] = useState(false)
   const appsOnline = apps.filter((a) => a.state === 'running').length
   const externalsRunning = externals.filter((c) => c.state === 'running').length
 
@@ -420,9 +424,16 @@ function NodeCard({
             {node.isLocal ? 'Relancer la connexion' : 'Nouvelle commande'}
           </button>
         ) : (
-          <button type="button" className="btn" onClick={onNetwork}>
-            Réseau…
-          </button>
+          <>
+            <button type="button" className="btn" onClick={onNetwork}>
+              Réseau…
+            </button>
+            {node.state === 'online' && (
+              <button type="button" className="btn" onClick={() => setShowLogs(true)}>
+                Logs de l’agent
+              </button>
+            )}
+          </>
         )}
         <span className="spacer" />
         <button
@@ -430,9 +441,16 @@ function NodeCard({
           className="btn btn-danger"
           disabled={busy}
           onClick={() => {
-            if (window.confirm(`Retirer le node « ${node.name} » ? Son agent sera déconnecté et ne pourra plus revenir.`)) {
+            if (
+              window.confirm(
+                `Retirer le node « ${node.name} » ? Son agent supprime de la machine ce que Forgeyard y a mis (conteneurs et données des apps, Traefik, réseau), puis se désinstalle. Les autres conteneurs de la machine restent.`,
+              )
+            ) {
               run(async () => {
-                await api.deleteNode(node.id)
+                const res = await api.deleteNode(node.id)
+                if (!res.cleaned) {
+                  window.alert(`Node retiré, mais ${res.detail}. Les commandes pour nettoyer la machine à la main sont dans la doc : docs/nodes/README.md, « Retirer un node ».`)
+                }
                 onChange()
               })
             }
@@ -441,6 +459,11 @@ function NodeCard({
           Retirer
         </button>
       </div>
+      {showLogs && (
+        <Modal title={`Logs de l’agent · ${node.name}`} subtitle="Depuis son dernier démarrage, en direct." onClose={() => setShowLogs(false)} wide>
+          <Logs url={`/api/admin/nodes/${node.id}/logs`} />
+        </Modal>
+      )}
     </article>
   )
 }
@@ -603,9 +626,12 @@ function shortVersion(v: string): string {
 
 /** The agent's version against the server's, with its update. */
 function AgentLine({ node, busy, onUpdate }: { node: Node; busy: boolean; onUpdate: () => void }) {
+  if (node.state === 'offline' && node.updating) {
+    return <p className="agent-line text-warn">L’agent redémarre avec sa nouvelle version : il revient dans un instant.</p>
+  }
   if (node.state !== 'online') return null
   let status: ReactNode
-  if (node.updating) status = <span className="text-warn">mise à jour…</span>
+  if (node.updating) status = <span className="text-warn">{node.updateStep === 'restart' ? 'redémarrage avec la nouvelle version…' : 'téléchargement de la nouvelle version…'}</span>
   else if (!node.agentOutdated) status = <span className="text-up">à jour</span>
   else if (node.selfUpdate)
     status = (

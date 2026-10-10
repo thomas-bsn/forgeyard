@@ -1777,7 +1777,7 @@ const RECONNECT_MS = 2000
  * Live output of a container, through server-sent events. While "live" is on, the stream comes back by
  * itself when it ends (redeploy, crash, restart, network); off, the view freezes.
  */
-function Logs({ url }: { url: string }) {
+export function Logs({ url }: { url: string }) {
   const [lines, setLines] = useState<LogLine[]>([])
   const [live, setLive] = useState(true)
   const [connected, setConnected] = useState(false)

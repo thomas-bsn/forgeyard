@@ -20,7 +20,20 @@ message AgentMessage {
     ExecOutput exec_output = 6;
     UpdateFailed update_failed = 7;
     Topology topology = 8;
+    UpdateProgress update_progress = 9;
+    Uninstalled uninstalled = 10;
   }
+}
+
+// Uninstalled answers Uninstall: error is empty when everything was deleted.
+message Uninstalled {
+  string error = 1;
+}
+
+// UpdateProgress tells where the agent's update is: "download" (pulling its new image), then "restart"
+// (its container is being replaced; it reconnects with its new version).
+message UpdateProgress {
+  string step = 1;
 }
 
 // Topology is how the node's containers are wired: its Docker networks, who sits on them with which
@@ -91,8 +104,14 @@ message ServerMessage {
     ExecClose exec_close = 9;
     UpdateAgent update_agent = 10;
     DropAppData drop_app_data = 11;
+    Uninstall uninstall = 12;
   }
 }
+
+// Uninstall: the node is being removed. The agent deletes what Forgeyard put on it (the apps' containers
+// and volumes, Traefik, the forgeyard network), answers Uninstalled, then deletes its own container and
+// identity (unless Docker Compose manages it).
+message Uninstall {}
 
 // DropAppData deletes the volumes of an app that was deleted. Volumes are never deleted otherwise: an app
 // leaving a node, or a desired state received wrong, keeps its data.
@@ -212,6 +231,7 @@ message StartLogs {
   int64 app_id = 2;
   int32 tail = 3;
   string container_id = 4; // an external container, when app_id is 0
+  bool agent = 5; // the agent's own log, since it started
 }
 
 // ExternalContainers lists the node's containers that Forgeyard did not create (started by hand, by

@@ -111,6 +111,7 @@ type Live struct {
 	// UpdatingSince is when it was asked to update (zero when not), UpdateError why its last update failed.
 	UpdatingSince time.Time
 	UpdateError   string
+	UpdateStep    string // download, restart: where the update is
 	// Topology is the node's last description of its networks and containers, nil until it sends one.
 	Topology *agentpb.Topology
 }
@@ -124,7 +125,9 @@ type session struct {
 	selfUpdate    bool
 	updatingSince time.Time
 	updateError   string
+	updateStep    string
 	topology      *agentpb.Topology
+	uninstalled   chan string // set while the node is being removed: the agent's answer
 }
 
 // AppStatus is the last state an agent reported for an app.
@@ -277,14 +280,22 @@ var ErrOffline = errors.New("node offline")
 // stream ends.
 // containerID names an external container instead, when appID is 0.
 func (h *Hub) Logs(ctx context.Context, nodeID, appID int64, containerID string, tail int) (<-chan *agentpb.LogLine, error) {
+	return h.startLogs(ctx, nodeID, &agentpb.StartLogs{AppId: appID, ContainerId: containerID, Tail: int32(tail)})
+}
+
+// AgentLogs streams a node's agent's own log, its last lines first.
+func (h *Hub) AgentLogs(ctx context.Context, nodeID int64, tail int) (<-chan *agentpb.LogLine, error) {
+	return h.startLogs(ctx, nodeID, &agentpb.StartLogs{Agent: true, Tail: int32(tail)})
+}
+
+func (h *Hub) startLogs(ctx context.Context, nodeID int64, req *agentpb.StartLogs) (<-chan *agentpb.LogLine, error) {
 	id := randomID()
+	req.StreamId = id
 	ch := make(chan *agentpb.LogLine, 256)
 	h.mu.Lock()
 	h.logStreams[id] = ch
 	h.mu.Unlock()
-	if !h.send(nodeID, &agentpb.ServerMessage{Msg: &agentpb.ServerMessage_StartLogs{
-		StartLogs: &agentpb.StartLogs{StreamId: id, AppId: appID, ContainerId: containerID, Tail: int32(tail)},
-	}}) {
+	if !h.send(nodeID, &agentpb.ServerMessage{Msg: &agentpb.ServerMessage_StartLogs{StartLogs: req}}) {
 		h.closeLogStream(id)
 		return nil, ErrOffline
 	}
@@ -334,7 +345,7 @@ func (h *Hub) Live(nodeID int64) (live Live, ok bool) {
 	}
 	return Live{
 		ConnectedAt: s.connectedAt, Metrics: append([]*agentpb.Metrics(nil), s.metrics...),
-		AgentVersion: s.agentVersion, SelfUpdate: s.selfUpdate, UpdatingSince: s.updatingSince, UpdateError: s.updateError,
+		AgentVersion: s.agentVersion, SelfUpdate: s.selfUpdate, UpdatingSince: s.updatingSince, UpdateError: s.updateError, UpdateStep: s.updateStep,
 		Topology: s.topology,
 	}, true
 }
@@ -348,7 +359,7 @@ func (h *Hub) UpdateAgent(nodeID int64, image string) error {
 	h.mu.Lock()
 	s, ok := h.sessions[nodeID]
 	if ok && s.selfUpdate {
-		s.updatingSince, s.updateError = time.Now(), ""
+		s.updatingSince, s.updateError, s.updateStep = time.Now(), "", ""
 	}
 	h.mu.Unlock()
 	switch {
@@ -361,6 +372,26 @@ func (h *Hub) UpdateAgent(nodeID int64, image string) error {
 		return ErrOffline
 	}
 	return nil
+}
+
+// Uninstall asks a node's agent to delete what Forgeyard put on its machine, and waits for its answer:
+// "" when all is gone. It fails with ErrOffline for a node that is not connected.
+func (h *Hub) Uninstall(ctx context.Context, nodeID int64) (string, error) {
+	h.mu.Lock()
+	s, ok := h.sessions[nodeID]
+	if ok {
+		s.uninstalled = make(chan string, 1)
+	}
+	h.mu.Unlock()
+	if !ok || !h.send(nodeID, &agentpb.ServerMessage{Msg: &agentpb.ServerMessage_Uninstall{Uninstall: &agentpb.Uninstall{}}}) {
+		return "", ErrOffline
+	}
+	select {
+	case res := <-s.uninstalled:
+		return res, nil
+	case <-ctx.Done():
+		return "", ctx.Err()
+	}
 }
 
 // DropAppData asks every connected node to delete a deleted app's volumes: the current node, and the ones
@@ -497,6 +528,19 @@ func (h *Hub) Connect(stream agentpb.AgentService_ConnectServer) error {
 				}
 			case *agentpb.AgentMessage_ExecOutput:
 				h.deliverExec(m.ExecOutput)
+			case *agentpb.AgentMessage_UpdateProgress:
+				h.mu.Lock()
+				sess.updateStep = m.UpdateProgress.GetStep()
+				h.mu.Unlock()
+			case *agentpb.AgentMessage_Uninstalled:
+				h.mu.Lock()
+				if sess.uninstalled != nil {
+					select {
+					case sess.uninstalled <- m.Uninstalled.GetError():
+					default:
+					}
+				}
+				h.mu.Unlock()
 			case *agentpb.AgentMessage_Topology:
 				h.mu.Lock()
 				sess.topology = m.Topology
@@ -504,7 +548,7 @@ func (h *Hub) Connect(stream agentpb.AgentService_ConnectServer) error {
 			case *agentpb.AgentMessage_UpdateFailed:
 				h.logger.Warn("agent update failed", "node", node.Name, "err", m.UpdateFailed.GetError())
 				h.mu.Lock()
-				sess.updatingSince, sess.updateError = time.Time{}, m.UpdateFailed.GetError()
+				sess.updatingSince, sess.updateError, sess.updateStep = time.Time{}, m.UpdateFailed.GetError(), ""
 				h.mu.Unlock()
 			case *agentpb.AgentMessage_ExternalContainers:
 				h.setExternals(node.ID, m.ExternalContainers.GetContainers())

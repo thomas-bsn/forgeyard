@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/thomas-bsn/forgeyard/internal/auth"
+	"github.com/thomas-bsn/forgeyard/internal/nodes"
 	"github.com/thomas-bsn/forgeyard/internal/store/db"
 )
 
@@ -53,6 +54,7 @@ type nodeResponse struct {
 	AgentOutdated bool   `json:"agentOutdated,omitempty"`
 	SelfUpdate    bool   `json:"selfUpdate,omitempty"`
 	Updating      bool   `json:"updating,omitempty"`
+	UpdateStep    string `json:"updateStep,omitempty"` // download, restart
 	UpdateError   string `json:"updateError,omitempty"`
 }
 
@@ -78,12 +80,20 @@ func (s *Server) toNodeResponse(n db.Node) nodeResponse {
 	resp.State = "offline"
 	live, ok := s.nodes.Live(n.ID)
 	if !ok {
+		// Right after it was asked to update, an agent away is most likely restarting with its new version.
+		s.mu.Lock()
+		tried := s.agentUpdateTried[n.ID]
+		s.mu.Unlock()
+		if !tried.IsZero() && time.Since(tried) < 10*time.Minute {
+			resp.Updating, resp.UpdateStep = true, "restart"
+		}
 		return resp
 	}
 	resp.State = "online"
 	resp.AgentOutdated, resp.SelfUpdate = agentOutdated(live), live.SelfUpdate
 	resp.Updating = !live.UpdatingSince.IsZero() && time.Since(live.UpdatingSince) < 10*time.Minute
 	resp.UpdateError = updateErrorText(live.UpdateError)
+	resp.UpdateStep = live.UpdateStep
 	if len(live.Metrics) > 0 {
 		m := live.Metrics[len(live.Metrics)-1]
 		resp.Metrics = &nodeMetrics{
@@ -240,14 +250,45 @@ func (s *Server) handleDeleteNode(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusConflict, fmt.Sprintf("ce node héberge encore %d app(s) : supprimez-les d'abord", len(apps)))
 		return
 	}
+	// Its agent first deletes what Forgeyard put on the machine, then its own container.
+	out := nodeRemoval{}
+	uctx, cancel := context.WithTimeout(r.Context(), 90*time.Second)
+	res, err := s.nodes.Uninstall(uctx, node.ID)
+	cancel()
+	switch {
+	case errors.Is(err, nodes.ErrOffline):
+		out.Detail = "le node est hors ligne : rien n'a été supprimé sur la machine"
+	case err != nil:
+		out.Detail = "l'agent n'a pas répondu à temps : la machine est peut-être à nettoyer à la main"
+	case res != "":
+		out.Detail = "nettoyage incomplet : " + res
+	default:
+		out.Cleaned = true
+	}
 	if err := s.store.DeleteNode(r.Context(), node.ID); err != nil {
 		s.internalError(w, r, err)
 		return
 	}
 	// Its certificate is now rejected: the hub checks every connection against the nodes table.
 	s.nodes.Disconnect(node.ID)
-	s.logger.Info("node removed", "node", node.Name, "by", currentUser(r).DisplayName)
-	w.WriteHeader(http.StatusNoContent)
+	s.logger.Info("node removed", "node", node.Name, "cleaned", out.Cleaned, "detail", out.Detail, "by", currentUser(r).DisplayName)
+	writeJSON(w, http.StatusOK, out)
+}
+
+// nodeRemoval says whether the removed node's machine was cleaned.
+type nodeRemoval struct {
+	Cleaned bool   `json:"cleaned"`
+	Detail  string `json:"detail,omitempty"`
+}
+
+// handleAgentLogs streams a node's agent's own log.
+func (s *Server) handleAgentLogs(w http.ResponseWriter, r *http.Request) {
+	node, ok := s.nodeFromPath(w, r)
+	if !ok {
+		return
+	}
+	lines, err := s.nodes.AgentLogs(r.Context(), node.ID, logTail(r))
+	s.streamLogs(w, r, lines, err)
 }
 
 func (s *Server) nodeFromPath(w http.ResponseWriter, r *http.Request) (db.Node, bool) {

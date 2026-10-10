@@ -127,16 +127,19 @@ func TestNodeJoinConnectAndRemove(t *testing.T) {
 		t.Fatalf("node info not reported: %+v", listed[0])
 	}
 
-	// Removing the node cuts the stream, and the agent stops instead of retrying forever.
+	// Removing the node has its agent clean the machine, then cuts the stream: the agent stops instead of
+	// retrying forever.
 	req, _ := http.NewRequest(http.MethodDelete, ts.URL+"/api/admin/nodes/"+itoa(listed[0].ID), strings.NewReader("{}"))
 	req.Header.Set("Content-Type", "application/json")
 	resp, err = admin.Do(req)
 	if err != nil {
 		t.Fatal(err)
 	}
+	var removal nodeRemoval
+	json.NewDecoder(resp.Body).Decode(&removal)
 	resp.Body.Close()
-	if resp.StatusCode != http.StatusNoContent {
-		t.Fatalf("delete node: %d", resp.StatusCode)
+	if resp.StatusCode != http.StatusOK || !removal.Cleaned {
+		t.Fatalf("delete node: %d %+v", resp.StatusCode, removal)
 	}
 	select {
 	case err := <-done:

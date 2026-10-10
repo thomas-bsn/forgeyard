@@ -59,14 +59,14 @@ func TestVolumesAgainstDocker(t *testing.T) {
 	if got := run("cat /data/file"); got != "kept" {
 		t.Fatalf("a new container of the app sees %q", got)
 	}
-	vols, err := dc.ListVolumes(ctx, labelApp+"=990001")
+	vols, err := dc.ListVolumes(ctx, "label", labelApp+"=990001")
 	if err != nil || len(vols) != 1 || vols[0].Labels[labelVolumePath] != "/data" {
 		t.Fatalf("volumes: %+v %v", vols, err)
 	}
 	if err := dropAppData(ctx, dc, appID); err != nil {
 		t.Fatal(err)
 	}
-	if vols, _ := dc.ListVolumes(ctx, labelApp+"=990001"); len(vols) != 0 {
+	if vols, _ := dc.ListVolumes(ctx, "label", labelApp+"=990001"); len(vols) != 0 {
 		t.Fatalf("left after the app: %+v", vols)
 	}
 }

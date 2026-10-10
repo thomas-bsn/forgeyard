@@ -194,6 +194,7 @@ export type Node = {
   agentOutdated?: boolean
   selfUpdate?: boolean
   updating?: boolean
+  updateStep?: 'download' | 'restart'
   updateError?: string
   lastSeenAt?: number
   isLocal: boolean
@@ -493,7 +494,7 @@ export const api = {
     request<Node>('PUT', `/api/admin/nodes/${id}/ingress`, body),
   createNode: (name: string, local: boolean) => request<JoinCommand>('POST', '/api/admin/nodes', { name, local }),
   newJoinCommand: (id: number) => request<JoinCommand>('POST', `/api/admin/nodes/${id}/join-command`, {}),
-  deleteNode: (id: number) => request<void>('DELETE', `/api/admin/nodes/${id}`, {}),
+  deleteNode: (id: number) => request<{ cleaned: boolean; detail?: string }>('DELETE', `/api/admin/nodes/${id}`, {}),
   domainSettings: () => request<DomainSettings>('GET', '/api/admin/settings/domain'),
   saveDomainSettings: (body: {
     publicUrl: string

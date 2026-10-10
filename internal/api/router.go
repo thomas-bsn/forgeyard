@@ -177,6 +177,7 @@ func (s *Server) Handler(webFS fs.FS) http.Handler {
 	mux.HandleFunc("GET /api/apps", s.requireUser(s.handleListApps))
 	mux.HandleFunc("GET /api/admin/nodes/choices", s.requireAdmin(s.handleNodeChoices))
 	mux.HandleFunc("POST /api/admin/nodes/{id}/update-agent", s.requireAdmin(s.handleUpdateAgent))
+	mux.HandleFunc("GET /api/admin/nodes/{id}/logs", s.requireAdmin(s.handleAgentLogs))
 	mux.HandleFunc("GET /api/admin/topology", s.requireAdmin(s.handleTopology))
 	mux.HandleFunc("GET /api/admin/settings/agents", s.requireAdmin(s.handleGetAgentSettings))
 	mux.HandleFunc("PUT /api/admin/settings/agents", s.requireAdmin(s.handlePutAgentSettings))

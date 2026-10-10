@@ -59,7 +59,7 @@ func dropAppData(ctx context.Context, dc *docker.Client, appID int64) error {
 			return err
 		}
 	}
-	vols, err := dc.ListVolumes(ctx, labelApp+"="+id)
+	vols, err := dc.ListVolumes(ctx, "label", labelApp+"="+id)
 	if err != nil {
 		return err
 	}

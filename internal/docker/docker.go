@@ -254,6 +254,11 @@ type Container struct {
 		Image  string            `json:"Image"`
 		Labels map[string]string `json:"Labels"`
 	} `json:"Config"`
+	Mounts []struct {
+		Type        string `json:"Type"`
+		Name        string `json:"Name"`
+		Destination string `json:"Destination"`
+	} `json:"Mounts"`
 	State struct {
 		Status    string `json:"Status"` // created, running, paused, restarting, removing, exited, dead
 		Running   bool   `json:"Running"`
@@ -393,9 +398,9 @@ type Volume struct {
 	} `json:"UsageData"`
 }
 
-// ListVolumes returns the volumes carrying a label (key=value).
-func (c *Client) ListVolumes(ctx context.Context, label string) ([]Volume, error) {
-	filters, _ := json.Marshal(map[string][]string{"label": {label}})
+// ListVolumes returns the volumes matching a filter: "label" with key=value, or "name" with a part of it.
+func (c *Client) ListVolumes(ctx context.Context, filter, value string) ([]Volume, error) {
+	filters, _ := json.Marshal(map[string][]string{filter: {value}})
 	var out struct {
 		Volumes []Volume `json:"Volumes"`
 	}

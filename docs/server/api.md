@@ -63,9 +63,10 @@ Les routes d'app vérifient que l'utilisateur est le propriétaire ou un admin.
 | `GET`, `POST /api/admin/nodes` | Lister, créer un node (`local: true` pour la machine de Forgeyard) |
 | `POST /api/admin/nodes/{id}/join-command` | Nouvelle commande (node en attente) |
 | `PUT /api/admin/nodes/{id}/ingress` | IP publique et mode d’entrée : `traefik` (directement), `proxy` (son reverse proxy), `relay` (par la machine de Forgeyard) |
-| `DELETE /api/admin/nodes/{id}` | Retirer (refusé s'il a des apps) |
+| `DELETE /api/admin/nodes/{id}` | Retirer (refusé s'il a des apps) : son agent nettoie d'abord la machine ; répond `{cleaned, detail}` |
 | `GET /api/admin/nodes/choices` | Nodes en ligne pour une nouvelle app, la recommandée en premier |
 | `GET /api/admin/topology` | Nodes, réseaux Docker, conteneurs (IP, noms, ports, route) et problèmes, pour les vues Topologie et Tableau |
+| `GET /api/admin/nodes/{id}/logs?tail=` | Logs de l'agent d'un node, en direct (SSE) |
 | `POST /api/admin/nodes/{id}/update-agent` | Mettre à jour l'agent d'un node vers la version du server |
 | `GET`, `PUT /api/admin/settings/agents` | Mise à jour automatique des agents, version du server |
 | `POST /api/admin/apps/{id}/move` | Déplacer une app vers un autre node (`{nodeId}` ; `leaveData: true` pour une app avec des volumes, qui repart vide) |

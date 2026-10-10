@@ -41,7 +41,24 @@ Symptôme d'un port 8081 injoignable : le join réussit (il passe par HTTPS) mai
 
 ## Retirer un node
 
-Refusé tant que le node héberge des apps. Sinon le node est supprimé et son agent déconnecté : à la reconnexion suivante, le server refuse son certificat et l'agent s'arrête. Pour rejoindre à nouveau, il faut effacer son dossier d'état (volume `forgeyard-agent`).
+Refusé tant que le node héberge des apps : déplacez-les ou supprimez-les d'abord.
+
+Si le node est en ligne, son agent **nettoie la machine** avant que le node soit supprimé : il retire les conteneurs des apps et leurs volumes (les données), son Traefik et le réseau `forgeyard`, puis un conteneur éphémère de son image supprime le conteneur de l'agent et son identité (volume `forgeyard-agent`). Les conteneurs que Forgeyard n'a pas créés (Pi-hole, un projet compose…) restent. L'agent de la machine de Forgeyard, géré par Docker Compose, nettoie mais ne se supprime pas.
+
+Ensuite le node est supprimé et son agent déconnecté : s'il revenait, le server refuserait son certificat. Si le node était hors ligne (ou que le nettoyage n'a pas abouti), la page le dit ; on nettoie alors à la main, sur la machine :
+
+```bash
+sudo docker rm -f forgeyard-agent forgeyard-traefik forgeyard-agent-previous forgeyard-agent-updater forgeyard-host-ip 2>/dev/null
+sudo docker ps -aq --filter label=forgeyard.app | xargs -r sudo docker rm -f
+sudo docker volume rm forgeyard-agent
+sudo docker volume ls -q --filter label=forgeyard.app | xargs -r sudo docker volume rm
+sudo docker volume ls -q --filter name=forgeyard-sandbox | xargs -r sudo docker volume rm
+sudo docker network rm forgeyard
+```
+
+## Logs et mise à jour de l'agent
+
+Le bouton **Logs de l'agent** de la carte d'un node en ligne montre, en direct, ce que l'agent a écrit depuis son dernier démarrage (il en garde les 1000 dernières lignes), sans se connecter à la machine. Pendant une mise à jour, la carte en suit les étapes : téléchargement de la nouvelle version, puis redémarrage ; un node qui s'absente dans les 10 minutes après l'ordre de mise à jour est affiché « Mise à jour… » et non « Hors ligne ».
 
 ## Topologie et tableau
 

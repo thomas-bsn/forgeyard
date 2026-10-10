@@ -11,10 +11,12 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/thomas-bsn/forgeyard/internal/agent"
 	"github.com/thomas-bsn/forgeyard/internal/docker"
@@ -22,7 +24,8 @@ import (
 )
 
 func main() {
-	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
+	// The agent's log goes to its output and to agent.Logs, which the Nodes page shows.
+	logger := slog.New(slog.NewTextHandler(io.MultiWriter(os.Stdout, agent.Logs), nil))
 	if len(os.Args) < 2 {
 		usage()
 	}
@@ -35,6 +38,17 @@ func main() {
 		err = start(ctx, os.Args[2:], true, logger)
 	case "run":
 		err = start(ctx, os.Args[2:], false, logger)
+	case "remove-self":
+		// Run by the agent in a short-lived container when its node is removed: deletes the agent's container
+		// and identity volume.
+		if len(os.Args) != 4 {
+			usage()
+		}
+		var dc *docker.Client
+		if dc, err = docker.New(docker.DefaultHost()); err == nil {
+			time.Sleep(2 * time.Second) // the agent's last message goes out
+			err = agent.RemoveSelf(ctx, dc, os.Args[2], os.Args[3])
+		}
 	case "version":
 		fmt.Println(version.Short())
 	case "replace":

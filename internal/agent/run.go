@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"os"
 	"sync"
 	"time"
 
@@ -203,6 +204,30 @@ func session(ctx context.Context, client agentpb.AgentServiceClient, dc *docker.
 			execs.resize(ctx, m.ExecResize)
 		case *agentpb.ServerMessage_ExecClose:
 			execs.close(m.ExecClose.GetSessionId())
+		case *agentpb.ServerMessage_Uninstall:
+			if dc == nil {
+				// Nothing of Forgeyard's on a machine without Docker.
+				send(&agentpb.AgentMessage{Msg: &agentpb.AgentMessage_Uninstalled{Uninstalled: &agentpb.Uninstalled{}}})
+			} else {
+				go func() {
+					uctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
+					defer cancel()
+					logger.Info("node removed: deleting what Forgeyard put on it")
+					res := ""
+					if err := uninstall(uctx, dc); err != nil {
+						logger.Warn("uninstalling left some things", "err", err)
+						res = err.Error()
+					}
+					send(&agentpb.AgentMessage{Msg: &agentpb.AgentMessage_Uninstalled{Uninstalled: &agentpb.Uninstalled{Error: res}}})
+					stateDir := os.Getenv("FORGEYARD_AGENT_STATE")
+					if stateDir == "" {
+						stateDir = "/state"
+					}
+					if err := removeSelf(uctx, dc, stateDir); err != nil {
+						logger.Warn("removing the agent's own container failed", "err", err)
+					}
+				}()
+			}
 		case *agentpb.ServerMessage_DropAppData:
 			if dc != nil {
 				go func(appID int64) {
@@ -223,7 +248,10 @@ func session(ctx context.Context, client agentpb.AgentServiceClient, dc *docker.
 				if dc == nil {
 					return
 				}
-				if err := startUpdate(uctx, dc, image); err != nil {
+				progress := func(step string) {
+					send(&agentpb.AgentMessage{Msg: &agentpb.AgentMessage_UpdateProgress{UpdateProgress: &agentpb.UpdateProgress{Step: step}}})
+				}
+				if err := startUpdate(uctx, dc, image, progress); err != nil {
 					logger.Warn("agent update failed", "image", image, "err", err)
 					send(&agentpb.AgentMessage{Msg: &agentpb.AgentMessage_UpdateFailed{UpdateFailed: &agentpb.UpdateFailed{Error: err.Error()}}})
 				}
@@ -263,6 +291,21 @@ func (l *logStreams) start(ctx context.Context, dc *docker.Client, ext *external
 			send(&agentpb.AgentMessage{Msg: &agentpb.AgentMessage_LogLine{LogLine: &agentpb.LogLine{
 				StreamId: id, Text: text, Stderr: stderr, End: end,
 			}}})
+		}
+		if req.GetAgent() {
+			past, next, stop := Logs.follow(int(req.GetTail()))
+			defer stop()
+			for _, l := range past {
+				line(l, false, false)
+			}
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				case l := <-next:
+					line(l, false, false)
+				}
+			}
 		}
 		name := containerName(req.GetAppId())
 		if req.GetAppId() == 0 {
