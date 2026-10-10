@@ -107,7 +107,7 @@ export default function Apps({
     const app = apps?.find((a) => a.id === Number(route[1]))
     if (!apps) return null
     if (!app) return <NotFound what="Cette app n’existe plus." go={go} />
-    return <AppDetail app={app} admin={admin} nodes={nodes} onChange={load} go={go} />
+    return <AppDetail key={app.id + (route[2] ?? '')} app={app} admin={admin} nodes={nodes} onChange={load} go={go} openTab={route[2] === 'network' ? 'network' : undefined} />
   }
   if (route[0] === 'containers' && route[2]) {
     const c = containers.find((x) => x.nodeId === Number(route[1]) && x.id === route[2])
@@ -1097,10 +1097,24 @@ function AppFormModal({
 
 type DetailTab = 'observability' | 'logs' | 'terminal' | 'network' | 'events'
 
-function AppDetail({ app, admin, nodes, onChange, go }: { app: App; admin: boolean; nodes: Node[]; onChange: () => void; go: (path: string) => void }) {
+function AppDetail({
+  app,
+  admin,
+  nodes,
+  onChange,
+  go,
+  openTab,
+}: {
+  app: App
+  admin: boolean
+  nodes: Node[]
+  onChange: () => void
+  go: (path: string) => void
+  openTab?: DetailTab // #/apps/3/network opens the Réseau tab
+}) {
   const [full, setFull] = useState<App | null>(null)
   const [editing, setEditing] = useState(false)
-  const [tab, setTab] = useState<DetailTab>('observability')
+  const [tab, setTab] = useState<DetailTab>(openTab ?? 'observability')
   const [choosingLogo, setChoosingLogo] = useState(false)
   const [moving, setMoving] = useState(false)
   const [error, setError] = useState('')

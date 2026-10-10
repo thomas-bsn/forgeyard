@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import { api, errorMessage, type App, type AppNetwork, type Diagnosis, type PathStep, type ProbeResult, type Topology, type TopoContainer, type TopoNode } from './api'
-import { since } from './ui'
+import { AppLogo, since } from './ui'
 
 // How requests reach apps, and how the infrastructure is wired: an app's Réseau tab (its request path,
 // checked step by step), and for admins the Topologie and Tableau views of the Nodes page.
@@ -235,16 +235,40 @@ const roleLabels: Record<TopoContainer['role'], string> = {
   external: 'externe',
 }
 
-/** What a container offers, in a line: its route, its published ports, or what it listens on. */
-function containerLine(c: TopoContainer): string {
+/** Where a container sits in the topology: its node and its id. */
+function topoKey(n: TopoNode, c: TopoContainer) {
+  return `${n.id}/${c.id}`
+}
+
+/** The short name of an image: grafana/grafana:11 → grafana. */
+function shortImage(image: string): string {
+  const last = image.split('/').pop() ?? image
+  return last.split(/[:@]/)[0]
+}
+
+/** What a container offers, in a line: its image and route, its published ports, or its image. */
+function chipLine(c: TopoContainer): string {
   if (c.role === 'sandbox') return 'sandbox · SSH'
+  if (c.role === 'traefik') return ''
   if (c.url) {
-    const ok = !c.listening.length || c.listening.includes(c.routePort ?? 0)
-    return `:${c.routePort}${ok ? '' : ' ✕'} ← ${c.url.replace('https://', '')}`
+    if (c.listening.length && !c.listening.includes(c.routePort ?? 0)) return `route :${c.routePort} · écoute :${c.listening.join(', :')}`
+    return `${shortImage(c.image)} :${c.routePort}`
   }
-  if (c.published.length) return c.published.map((p) => (p.hostPort === p.containerPort ? `:${p.hostPort}` : `${p.hostPort}→${p.containerPort}`)).join(' ')
-  if (c.listening.length) return `écoute ${c.listening.join(', ')}`
-  return c.image
+  if (c.published.length) return c.published.map((p) => (p.hostPort === p.containerPort ? `${p.hostPort}` : `${p.hostPort}→${p.containerPort}`)).join(', ')
+  if (c.listening.length) return `${shortImage(c.image)} :${c.listening.join(', :')}`
+  return shortImage(c.image)
+}
+
+function traefikLine(n: TopoNode, c: TopoContainer): string {
+  const published = c.published.map((p) => `:${p.hostPort}`)
+  if (n.ingressMode === 'traefik') return `${published.length ? published.join(' ') : ':80 :443'} publiés`
+  return `:${n.httpPort} (LAN)`
+}
+
+function nodeEntry(n: TopoNode, nodes: TopoNode[]): string {
+  if (n.relayedBy) return `via ${nodes.find((x) => x.id === n.relayedBy)?.name ?? 'la machine de Forgeyard'}`
+  if (n.ingressMode === 'traefik') return 'Traefik :80/:443'
+  return `derrière ton proxy · :${n.httpPort}`
 }
 
 function containerTone(c: TopoContainer): string {
@@ -253,26 +277,18 @@ function containerTone(c: TopoContainer): string {
   return 'up'
 }
 
-function nodeEntry(n: TopoNode, nodes: TopoNode[]): string {
-  if (n.relayedBy) return `via ${nodes.find((x) => x.id === n.relayedBy)?.name ?? 'la machine de Forgeyard'} · :${n.httpPort}`
-  if (n.ingressMode === 'traefik') return 'Traefik :80 :443'
-  return `derrière ton proxy · :${n.httpPort}`
-}
+type Link = { from: string; to: string; kind: 'entry' | 'relay' | 'route' | 'path' | 'possible'; tone: string; label?: string }
 
-/** Where a container sits in the topology: its node and its networks. */
-function topoKey(n: TopoNode, c: TopoContainer) {
-  return `${n.id}/${c.id}`
-}
-
-/** Nodes › Topologie: Internet and the box on the left, each node with its Traefik and its networks as zones. */
+/** Nodes › Topologie: Internet, the box, then each node with its Traefik and its Docker networks as zones. */
 export function TopologyMap() {
   const { topo, error, reload } = useTopology()
   const [selected, setSelected] = useState('')
-  const [flows, setFlows] = useState(false)
+  const [routes, setRoutes] = useState(false)
+  const [zones, setZones] = useState(true)
+  const [possible, setPossible] = useState(false)
   const [externals, setExternals] = useState(false)
-  const [internals, setInternals] = useState(false)
   const box = useRef<HTMLDivElement>(null)
-  const [lines, setLines] = useState<{ d: string; tone: string }[]>([])
+  const [lines, setLines] = useState<{ d: string; kind: Link['kind']; tone: string; lit: boolean; label?: string; lx: number; ly: number; vertical?: boolean }[]>([])
 
   const nodes = topo?.nodes ?? []
   const find = (key: string) => {
@@ -280,23 +296,40 @@ export function TopologyMap() {
     return null
   }
   const sel = find(selected)
-  const visible = (c: TopoContainer) =>
-    (externals || c.role !== 'external') && (internals || (c.role !== 'server' && c.role !== 'agent'))
+  const visible = (c: TopoContainer) => (externals || c.role !== 'external') && c.role !== 'server' && c.role !== 'agent'
+  const traefikOf = (n: TopoNode) => {
+    const t = n.containers.find((x) => x.role === 'traefik')
+    return t ? `c:${topoKey(n, t)}` : `n:${n.id}`
+  }
+  // Nodes the box sends visits to: Forgeyard's machine, and the nodes with their own Traefik and IP.
+  const fronts = nodes.filter((n) => n.isLocal || (n.ingressMode === 'traefik' && !n.relayedBy))
+  // What the selected container can reach: the running ones sharing one of its networks.
+  const reachable = new Set<string>()
+  if (sel)
+    for (const c of sel.n.containers)
+      if (c.id !== sel.c.id && c.state === 'running' && c.endpoints.some((e) => sel.c.endpoints.some((s) => s.network === e.network))) reachable.add(topoKey(sel.n, c))
+  // What lights up with the selection: its path.
+  const onPath = new Set<string>()
+  if (sel?.c.url) {
+    onPath.add('internet').add('entry').add(traefikOf(sel.n)).add(`c:${selected}`)
+    const front = nodes.find((x) => x.id === sel.n.relayedBy)
+    if (front) onPath.add(traefikOf(front))
+  }
 
-  // The links a request follows to an app: Internet → box → (relay) → its node's Traefik → the app.
-  function pathOf(n: TopoNode, c: TopoContainer): [string, string][] {
-    if (!c.url) return []
-    const traefik = (node: TopoNode) => {
-      const t = node.containers.find((x) => x.role === 'traefik')
-      return t ? `c:${topoKey(node, t)}` : `n:${node.id}`
-    }
-    const hops: string[] = ['internet', 'entry']
-    if (n.relayedBy) {
+  function links(): Link[] {
+    const out: Link[] = [{ from: 'internet', to: 'entry', kind: 'entry', tone: 'up' }]
+    for (const n of fronts) out.push({ from: 'entry', to: traefikOf(n), kind: 'entry', tone: 'up' })
+    for (const n of nodes) {
       const front = nodes.find((x) => x.id === n.relayedBy)
-      if (front) hops.push(traefik(front))
+      if (front) out.push({ from: traefikOf(front), to: traefikOf(n), kind: 'relay', tone: 'relay', label: 'relais LAN' })
+      for (const c of n.containers) {
+        const key = topoKey(n, c)
+        if (!c.url || !visible(c)) continue
+        if (routes || key === selected) out.push({ from: traefikOf(n), to: `c:${key}`, kind: key === selected ? 'path' : 'route', tone: containerTone(c) })
+      }
     }
-    hops.push(traefik(n), `c:${topoKey(n, c)}`)
-    return hops.slice(1).map((h, i) => [hops[i], h])
+    if (possible && sel) for (const k of reachable) out.push({ from: `c:${selected}`, to: `c:${k}`, kind: 'possible', tone: 'muted' })
+    return out
   }
 
   // Lines are drawn over the layout, from the measured positions of what they link.
@@ -304,41 +337,43 @@ export function TopologyMap() {
     const root = box.current
     if (!root) return
     const draw = () => {
-      const links: { from: string; to: string; tone: string }[] = []
-      for (const n of nodes)
-        for (const c of n.containers) {
-          const key = topoKey(n, c)
-          if (!visible(c) || (!flows && key !== selected)) continue
-          const tone = containerTone(c)
-          for (const [from, to] of pathOf(n, c)) links.push({ from, to, tone: to === `c:${key}` ? tone : 'up' })
-        }
       const base = root.getBoundingClientRect()
-      const at = (k: string) => root.querySelector<HTMLElement>(`[data-topo="${CSS.escape(k)}"]`)?.getBoundingClientRect()
-      const seen = new Set<string>()
-      const out: { d: string; tone: string }[] = []
-      for (const l of links) {
-        const id = `${l.from}>${l.to}`
-        if (seen.has(id)) continue
-        seen.add(id)
+      const el = (k: string) => root.querySelector<HTMLElement>(`[data-topo="${CSS.escape(k)}"]`)
+      const at = (k: string) => el(k)?.getBoundingClientRect()
+      const out: typeof lines = []
+      for (const l of links()) {
         const a = at(l.from)
         const b = at(l.to)
         if (!a || !b) continue
-        // Side by side: from the right edge to the left one. Below: from the bottom to the top.
-        if (b.left >= a.right - 4) {
-          const x1 = a.right - base.left
-          const y1 = a.top + a.height / 2 - base.top
-          const x2 = b.left - base.left
-          const y2 = b.top + b.height / 2 - base.top
-          const mx = (x1 + x2) / 2
-          out.push({ d: `M${x1},${y1} C${mx},${y1} ${mx},${y2} ${x2},${y2}`, tone: l.tone })
+        const lit = onPath.has(l.from) && onPath.has(l.to)
+        const rel = (r: DOMRect) => ({ l: r.left - base.left, r: r.right - base.left, t: r.top - base.top, b: r.bottom - base.top, cx: r.left + r.width / 2 - base.left, cy: r.top + r.height / 2 - base.top })
+        const A = rel(a)
+        const B = rel(b)
+        let d: string
+        let lx: number
+        let ly: number
+        if (B.l >= A.r - 4) {
+          // Side by side: from the right edge to the left one.
+          const mx = (A.r + B.l) / 2
+          d = `M${A.r},${A.cy} C${mx},${A.cy} ${mx},${B.cy} ${B.l},${B.cy}`
+          lx = mx
+          ly = (A.cy + B.cy) / 2
+        } else if (l.kind === 'relay') {
+          // From one node's Traefik to another's, below it: around the node cards, on their right.
+          const cards = [el(l.from), el(l.to)].map((e) => e?.closest('.topo-node')?.getBoundingClientRect().right ?? 0)
+          const x = Math.max(...cards) - base.left + 22
+          const r = 10
+          d = `M${A.r},${A.cy} H${x - r} Q${x},${A.cy} ${x},${A.cy + r} V${B.cy - r} Q${x},${B.cy} ${x - r},${B.cy} H${B.r}`
+          out.push({ d, kind: l.kind, tone: l.tone, lit, label: l.label, lx: x + 13, ly: (A.cy + B.cy) / 2, vertical: true })
+          continue
         } else {
-          const x1 = a.left + a.width / 2 - base.left
-          const y1 = a.bottom - base.top
-          const x2 = b.left + b.width / 2 - base.left
-          const y2 = b.top - base.top
-          const my = (y1 + y2) / 2
-          out.push({ d: `M${x1},${y1} C${x1},${my} ${x2},${my} ${x2},${y2}`, tone: l.tone })
+          // Below: from the bottom to the top.
+          const my = (A.b + B.t) / 2
+          d = `M${A.cx},${A.b} C${A.cx},${my} ${B.cx},${my} ${B.cx},${B.t}`
+          lx = (A.cx + B.cx) / 2
+          ly = my
         }
+        out.push({ d, kind: l.kind, tone: l.tone, lit, label: l.label, lx, ly })
       }
       setLines(out)
     }
@@ -346,116 +381,154 @@ export function TopologyMap() {
     const ro = new ResizeObserver(draw)
     ro.observe(root)
     return () => ro.disconnect()
-  }, [topo, selected, flows, externals, internals])
+  }, [topo, selected, routes, zones, possible, externals])
 
   if (!topo) return error ? <p className="error">{error}</p> : <div className="empty-state">Lecture de l’infrastructure…</div>
   const local = nodes.find((n) => n.isLocal)
   const issues = nodes.flatMap((n) => n.containers.filter((c) => c.issue && visible(c)))
+  const dim = (key: string) => !!sel && key !== `c:${selected}` && !onPath.has(key) && !(possible && reachable.has(key.slice(2)))
 
   return (
     <div className="topo">
       <div className="topo-toolbar">
-        <label className="chip-toggle">
-          <input type="checkbox" checked={flows} onChange={(e) => setFlows(e.target.checked)} /> Flux
-        </label>
-        <label className="chip-toggle">
-          <input type="checkbox" checked={externals} onChange={(e) => setExternals(e.target.checked)} /> Conteneurs externes
-        </label>
-        <label className="chip-toggle">
-          <input type="checkbox" checked={internals} onChange={(e) => setInternals(e.target.checked)} /> Forgeyard lui-même
-        </label>
-        <span className="muted topo-hint">Cliquez un conteneur : son chemin s’allume.</span>
+        <span className="muted topo-hint">Cliquez un conteneur : il s’inspecte à droite et son chemin s’allume.</span>
         {issues.length > 0 && (
           <span className="topo-issues">
             {issues.length} problème{issues.length > 1 ? 's' : ''}
           </span>
         )}
+        <span className="topo-filters">
+          <FilterChip on={routes} set={setRoutes} label="Routes" />
+          <FilterChip on={zones} set={setZones} label="Réseaux" />
+          <FilterChip on={possible} set={setPossible} label="Liens possibles" />
+          <FilterChip on={externals} set={setExternals} label="Conteneurs externes" />
+        </span>
       </div>
       <div className="topo-body">
         <div className="panel topo-canvas" ref={box} onClick={() => setSelected('')}>
           <svg className="topo-lines" aria-hidden="true">
             <defs>
-              {['up', 'warn', 'down'].map((t) => (
+              {['up', 'warn', 'down', 'relay', 'muted'].map((t) => (
                 <marker key={t} id={`topo-arrow-${t}`} viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
                   <path d="M0 0L10 5L0 10z" className={`topo-arrow-${t}`} />
                 </marker>
               ))}
             </defs>
             {lines.map((l, i) => (
-              <path key={i} d={l.d} className={`topo-line topo-line-${l.tone}`} markerEnd={`url(#topo-arrow-${l.tone})`} />
+              <g key={i}>
+                <path
+                  d={l.d}
+                  className={`topo-line topo-line-${l.kind} topo-line-${l.tone} ${l.lit ? 'topo-line-lit' : ''} ${sel && !l.lit && l.kind !== 'possible' ? 'topo-line-faded' : ''}`}
+                  markerEnd={l.kind === 'possible' ? undefined : `url(#topo-arrow-${l.lit && l.kind === 'entry' ? 'up' : l.tone})`}
+                />
+                {l.label && (
+                  <text
+                    x={l.lx}
+                    y={l.ly}
+                    className="topo-line-label"
+                    textAnchor="middle"
+                    transform={l.vertical ? `rotate(90 ${l.lx} ${l.ly})` : undefined}
+                  >
+                    {l.label}
+                  </text>
+                )}
+              </g>
             ))}
           </svg>
-          <div className="topo-entry">
-            <span className="topo-col-label">Internet</span>
-            <div className="topo-card topo-internet" data-topo="internet">
+          <span className="topo-col-label topo-head-internet">Internet</span>
+          <span className="topo-col-label topo-head-entry">Entrée</span>
+          <span className="topo-col-label topo-head-nodes">Nodes · réseaux · conteneurs</span>
+          <div className="topo-col-internet">
+            <div className={`topo-globe ${dim('internet') ? 'dim' : ''}`} data-topo="internet">
               <StepIcon k="visitor" />
-              <strong>Visiteurs</strong>
-              <span className="muted">{topo.domain ? `*.${topo.domain}` : 'pas de domaine'}</span>
+              <span>visiteurs</span>
             </div>
-            <span className="topo-col-label">Entrée</span>
-            <div className="topo-card" data-topo="entry">
-              <StepIcon k="entry" />
-              <strong>Box {topo.publicIp ?? ''}</strong>
-              <span className="mono muted">:80 :443 → {local?.name ?? 'Forgeyard'}</span>
-              {topo.sshPort ? <span className="mono muted">:{topo.sshPort} → SSH</span> : null}
+          </div>
+          <div className="topo-col-entry">
+            <div className={`topo-box ${dim('entry') ? 'dim' : ''}`} data-topo="entry">
+              <strong>Box{topo.publicIp ? ` · ${topo.publicIp}` : ''}</strong>
+              <span className="mono">:80 :443 → {local?.name ?? 'Forgeyard'}</span>
+              {topo.sshPort ? (
+                <span className="mono">
+                  :{topo.sshPort} → {local?.name ?? 'Forgeyard'} (SSH)
+                </span>
+              ) : null}
+              <span className="muted">{topo.domain ? `DNS *.${topo.domain}` : 'pas de domaine'}</span>
             </div>
           </div>
           <div className="topo-nodes">
             {nodes.map((n) => {
               const traefik = n.containers.find((c) => c.role === 'traefik')
               const shown = n.containers.filter((c) => c.role !== 'traefik' && visible(c))
-              const zones = n.networks
-                .map((net) => ({ net, members: shown.filter((c) => c.endpoints.some((e) => e.network === net.name)) }))
-                .filter((z) => z.members.length > 0)
-              const loose = shown.filter((c) => !c.endpoints.length)
+              const ordered = [...n.networks].sort((a, b) => Number(b.name === 'forgeyard') - Number(a.name === 'forgeyard'))
+              const groups = zones
+                ? ordered.map((net) => ({ net, members: shown.filter((c) => c.endpoints.some((e) => e.network === net.name)) })).filter((z) => z.members.length > 0)
+                : [{ net: null, members: shown }]
+              const loose = zones ? shown.filter((c) => !c.endpoints.length) : []
+              const chip = (c: TopoContainer) => (
+                <ContainerChip key={c.id} c={c} n={n} selected={selected} onSelect={setSelected} dim={dim(`c:${topoKey(n, c)}`)} />
+              )
               return (
                 <section key={n.id} className={`topo-node ${n.state === 'offline' ? 'topo-node-off' : ''}`}>
                   <header className="topo-node-head">
-                    <span className={`dot ${n.state === 'online' ? 'dot-up' : 'dot-down'}`} />
-                    <strong>{n.name}</strong>
+                    <strong>
+                      {n.name}
+                      {n.isLocal ? ' · Forgeyard' : ''}
+                    </strong>
                     <span className="muted">
-                      {n.localIp ?? ''} · {nodeEntry(n, nodes)}
+                      {n.localIp ? `${n.localIp} · ` : ''}
+                      {nodeEntry(n, nodes)}
+                      {n.state === 'offline' ? ' · hors ligne' : ''}
                     </span>
                   </header>
-                  {!n.measured && <p className="muted">{n.state === 'offline' ? 'Hors ligne.' : 'L’agent de ce node ne décrit pas encore ses réseaux : il le fera après sa mise à jour.'}</p>}
-                  {traefik && (
-                    <ContainerChip
-                      c={traefik}
-                      tkey={topoKey(n, traefik)}
-                      selected={selected}
-                      onSelect={setSelected}
-                      dim={!!sel && !(sel.c.url && (sel.n.id === n.id || sel.n.relayedBy === n.id)) && selected !== topoKey(n, traefik)}
-                    />
+                  {!n.measured && (
+                    <p className="muted topo-node-note">
+                      {n.state === 'offline' ? 'Hors ligne : sa dernière description n’est pas connue.' : 'L’agent de ce node ne décrit pas encore ses réseaux : il le fera après sa mise à jour.'}
+                    </p>
                   )}
-                  {zones.map(({ net, members }) => (
-                    <div key={net.name} className="topo-zone">
-                      <span className="topo-zone-label mono">
-                        {net.name}
-                        {net.subnet ? ` · ${net.subnet}` : ''}
-                        {net.internal ? ' · interne' : ''}
+                  {traefik && (
+                    <button
+                      type="button"
+                      className={`topo-traefik ${selected === topoKey(n, traefik) ? 'on' : ''} ${dim(`c:${topoKey(n, traefik)}`) ? 'dim' : ''} ${traefik.issue ? 'topo-chip-down' : ''}`}
+                      data-topo={`c:${topoKey(n, traefik)}`}
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        setSelected(selected === topoKey(n, traefik) ? '' : topoKey(n, traefik))
+                      }}
+                    >
+                      <span className="topo-traefik-icon" aria-hidden="true">
+                        <StepIcon k="traefik" />
                       </span>
-                      <div className="topo-chips">
-                        {members.map((c) => (
-                          <ContainerChip
-                            key={c.id}
-                            c={c}
-                            tkey={topoKey(n, c)}
-                            selected={selected}
-                            onSelect={setSelected}
-                            dim={!!sel && selected !== topoKey(n, c)}
-                          />
-                        ))}
-                      </div>
-                    </div>
-                  ))}
-                  {loose.length > 0 && (
-                    <div className="topo-zone topo-zone-host">
-                      <span className="topo-zone-label mono">réseau de l’hôte</span>
-                      <div className="topo-chips">
-                        {loose.map((c) => (
-                          <ContainerChip key={c.id} c={c} tkey={topoKey(n, c)} selected={selected} onSelect={setSelected} dim={!!sel && selected !== topoKey(n, c)} />
-                        ))}
-                      </div>
+                      <span>
+                        <strong>traefik</strong>
+                        <span className="mono">{traefikLine(n, traefik)}</span>
+                      </span>
+                    </button>
+                  )}
+                  {(groups.length > 0 || loose.length > 0) && (
+                    <div className="topo-zones">
+                      {groups.map(({ net, members }) =>
+                        net ? (
+                          <div key={net.name} className={`topo-zone ${net.name === 'forgeyard' ? '' : 'topo-zone-ext'}`}>
+                            <span className="topo-zone-label mono">
+                              {net.name === 'forgeyard' ? 'réseau forgeyard' : net.name}
+                              {net.subnet ? ` · ${net.subnet}` : ''}
+                              {net.internal ? ' · interne' : ''}
+                            </span>
+                            <div className="topo-chips">{members.map(chip)}</div>
+                          </div>
+                        ) : (
+                          <div key="all" className="topo-chips topo-chips-flat">
+                            {members.map(chip)}
+                          </div>
+                        ),
+                      )}
+                      {loose.length > 0 && (
+                        <div className="topo-zone topo-zone-host">
+                          <span className="topo-zone-label mono">réseau de l’hôte</span>
+                          <div className="topo-chips">{loose.map(chip)}</div>
+                        </div>
+                      )}
                     </div>
                   )}
                 </section>
@@ -465,123 +538,128 @@ export function TopologyMap() {
         </div>
         <Inspector sel={sel} nodes={nodes} onChange={reload} />
       </div>
-      <p className="muted topo-legend">
-        Un cadre = un réseau Docker : ceux qui y sont peuvent se joindre, ce qui ne veut pas dire qu’ils le font. Trait plein = route configurée.
-      </p>
     </div>
   )
 }
 
-function ContainerChip({
-  c,
-  tkey,
-  selected,
-  onSelect,
-  dim,
-}: {
-  c: TopoContainer
-  tkey: string
-  selected: string
-  onSelect: (k: string) => void
-  dim: boolean
-}) {
-  const tone = containerTone(c)
+function FilterChip({ on, set, label }: { on: boolean; set: (v: boolean) => void; label: string }) {
   return (
-    <button
-      type="button"
-      className={`topo-chip topo-chip-${tone} ${selected === tkey ? 'on' : ''} ${dim ? 'dim' : ''} ${c.role === 'traefik' ? 'topo-chip-traefik' : ''}`}
-      data-topo={`c:${tkey}`}
-      onClick={(e) => {
-        e.stopPropagation()
-        onSelect(selected === tkey ? '' : tkey)
-      }}
-    >
-      <span className="topo-chip-head">
-        <span className={`dot dot-${tone}`} />
-        <strong>{c.role === 'traefik' ? 'Traefik' : c.name}</strong>
-        {c.role !== 'app' && c.role !== 'traefik' && <span className="topo-role">{roleLabels[c.role]}</span>}
-        {c.issue && <span className="topo-bang">!</span>}
-      </span>
-      <span className="mono topo-chip-line">{containerLine(c)}</span>
+    <button type="button" className={`chip ${on ? 'on' : ''}`} aria-pressed={on} onClick={() => set(!on)}>
+      {label}
     </button>
   )
 }
 
-/** The selected container: where it sits, what it offers, and its problem with its fix. */
+function ContainerChip({ c, n, selected, onSelect, dim }: { c: TopoContainer; n: TopoNode; selected: string; onSelect: (k: string) => void; dim: boolean }) {
+  const tone = containerTone(c)
+  const key = topoKey(n, c)
+  return (
+    <button
+      type="button"
+      className={`topo-chip topo-chip-${tone} ${c.issue ? 'topo-chip-issue' : ''} ${selected === key ? 'on' : ''} ${dim ? 'dim' : ''}`}
+      data-topo={`c:${key}`}
+      title={c.issue?.message}
+      onClick={(e) => {
+        e.stopPropagation()
+        onSelect(selected === key ? '' : key)
+      }}
+    >
+      {c.issue && (
+        <span className="topo-bang" aria-label="problème">
+          !
+        </span>
+      )}
+      <span className="topo-chip-head">
+        <span className={`dot dot-${tone}`} />
+        <strong>{c.name}</strong>
+      </span>
+      <span className="mono topo-chip-line">{chipLine(c)}</span>
+    </button>
+  )
+}
+
+/** The selected container: who it is, its problem with its fix, and where it sits. */
 function Inspector({ sel, nodes, onChange }: { sel: { n: TopoNode; c: TopoContainer } | null; nodes: TopoNode[]; onChange: () => void }) {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
+  const legend = (
+    <p className="muted topo-legend">
+      <span className="legend-line legend-route" /> route configurée <span className="legend-line legend-relay" /> relais{' '}
+      <span className="legend-line legend-down" /> en erreur
+      <br />
+      Liens « possibles » (même réseau) masqués par défaut : être sur un même réseau permet de se joindre, sans dire qu’on le fait.
+    </p>
+  )
   if (!sel) {
     const problems = nodes.flatMap((n) => n.containers.filter((c) => c.issue).map((c) => ({ n, c })))
     return (
       <aside className="panel topo-inspector">
         <strong>Inspecter</strong>
         <span className="muted">Cliquez un conteneur pour voir ses réseaux, ses ports et le chemin de ses visites.</span>
-        {problems.length > 0 && (
-          <>
-            <strong className="topo-inspector-sub">À corriger</strong>
-            {problems.map(({ n, c }) => (
-              <div key={n.id + c.id} className="topo-problem">
-                <strong>{c.name}</strong> <span className="muted">· {n.name}</span>
-                <span>{c.issue!.message}</span>
-              </div>
-            ))}
-          </>
-        )}
+        {problems.map(({ n, c }) => (
+          <div key={n.id + c.id} className="topo-problem">
+            <strong>
+              {c.role === 'traefik' ? 'Traefik' : c.name} <span className="muted">· {n.name}</span>
+            </strong>
+            <span>{c.issue!.message}</span>
+          </div>
+        ))}
+        {legend}
       </aside>
     )
   }
   const { n, c } = sel
+  const first = c.endpoints.find((e) => e.ip) ?? c.endpoints[0]
   return (
     <aside className="panel topo-inspector">
       <div className="topo-inspector-head">
-        <span className={`dot dot-${containerTone(c)}`} />
-        <strong>{c.role === 'traefik' ? `Traefik · ${n.name}` : c.name}</strong>
-        <span className="topo-role">{roleLabels[c.role]}</span>
+        <AppLogo url={c.logoUrl} color={c.logoColor} name={c.role === 'traefik' ? 'Traefik' : c.name} size={38} />
+        <span className="topo-inspector-title">
+          <strong>{c.role === 'traefik' ? 'traefik' : c.name}</strong>
+          <span className="muted">
+            {n.name}
+            {c.ownerName ? ` · ${c.ownerName}` : c.role !== 'app' ? ` · ${roleLabels[c.role]}` : ''}
+          </span>
+        </span>
       </div>
-      <span className="muted mono topo-image">{c.image}</span>
       {c.issue && (
-        <Issue
-          d={c.issue}
-          busy={busy}
-          onFix={
-            c.appId
-              ? async (port) => {
-                  setBusy(true)
-                  setError('')
-                  try {
-                    await setAppPort(c.appId!, port)
-                    onChange()
-                  } catch (err) {
-                    setError(errorMessage(err))
-                  } finally {
-                    setBusy(false)
-                  }
+        <div className={`topo-issue topo-issue-${c.issue.level}`}>
+          <span>{c.issue.message}</span>
+          {c.issue.fixPort && c.appId && (
+            <button
+              type="button"
+              className="btn btn-primary btn-small"
+              disabled={busy}
+              onClick={async () => {
+                setBusy(true)
+                setError('')
+                try {
+                  await setAppPort(c.appId!, c.issue!.fixPort!)
+                  onChange()
+                } catch (err) {
+                  setError(errorMessage(err))
+                } finally {
+                  setBusy(false)
                 }
-              : undefined
-          }
-        />
+              }}
+            >
+              Utiliser {c.issue.fixPort}
+            </button>
+          )}
+        </div>
       )}
       {error && <p className="error">{error}</p>}
       <dl className="kv">
-        <dt>Node</dt>
-        <dd>{n.name}</dd>
-        {c.ownerName && (
-          <>
-            <dt>Propriétaire</dt>
-            <dd>{c.ownerName}</dd>
-          </>
-        )}
-        {c.composeProject && (
-          <>
-            <dt>Compose</dt>
-            <dd className="mono">{c.composeProject}</dd>
-          </>
-        )}
+        <dt>IP</dt>
+        <dd className="mono">{first?.ip || '—'}</dd>
+        <dt>Alias</dt>
+        <dd className="mono">{first?.aliases?.length ? first.aliases.join(', ') : '—'}</dd>
+        <dt>Réseaux</dt>
+        <dd className="mono">{c.endpoints.length ? c.endpoints.map((e) => e.network).join(', ') : 'hôte'}</dd>
         <dt>Écoute</dt>
         <dd className="mono">{c.listening.length ? c.listening.join(', ') : '—'}</dd>
-        <dt>Publié</dt>
-        <dd className="mono">{c.published.length ? c.published.map((p) => `${p.hostPort}→${p.containerPort}/${p.protocol}`).join(' ') : '—'}</dd>
+        <dt>Hôte</dt>
+        <dd className="mono">{c.published.length ? c.published.map((p) => `${p.hostPort}→${p.containerPort}`).join(' ') : '—'}</dd>
         {c.url && (
           <>
             <dt>Route</dt>
@@ -591,40 +669,17 @@ function Inspector({ sel, nodes, onChange }: { sel: { n: TopoNode; c: TopoContai
           </>
         )}
       </dl>
-      {c.endpoints.length > 0 && (
-        <>
-          <strong className="topo-inspector-sub">Réseaux</strong>
-          {c.endpoints.map((e) => (
-            <div key={e.network} className="net-line">
-              <span className="mono">{e.network}</span>
-              <span className="muted mono">
-                {e.ip || '—'}
-                {e.aliases?.length ? ` · ${e.aliases.join(', ')}` : ''}
-              </span>
-            </div>
-          ))}
-        </>
-      )}
-      {c.steps && c.steps.length > 0 && (
-        <>
-          <strong className="topo-inspector-sub">Chemin d’une visite</strong>
-          <ol className="path-list">
-            {c.steps.map((s, i) => (
-              <li key={i} className={`path-${s.state}`}>
-                <span className={`dot ${stateTone[s.state] ? `dot-${stateTone[s.state]}` : ''}`} />
-                <span>
-                  <strong>{s.title}</strong> <span className="muted">{s.note}</span>
-                </span>
-              </li>
-            ))}
-          </ol>
-        </>
-      )}
       {c.appId && (
-        <a className="btn btn-block" href={`#/apps/${c.appId}`}>
-          Ouvrir l’app
-        </a>
+        <>
+          <a className="btn btn-block" href={`#/apps/${c.appId}`}>
+            Ouvrir l’app
+          </a>
+          <a className="btn btn-block" href={`#/apps/${c.appId}/network`}>
+            Voir le chemin complet
+          </a>
+        </>
       )}
+      {legend}
     </aside>
   )
 }

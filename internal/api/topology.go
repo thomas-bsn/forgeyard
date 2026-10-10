@@ -473,6 +473,8 @@ type topoContainer struct {
 	ComposeProject string         `json:"composeProject,omitempty"`
 	Issue          *diagnosis     `json:"issue,omitempty"`
 	Steps          []pathStep     `json:"steps,omitempty"` // an app's path, to light it up when selected
+	LogoURL        string         `json:"logoUrl,omitempty"`
+	LogoColor      string         `json:"logoColor,omitempty"`
 }
 
 type topoNetwork struct {
@@ -558,7 +560,8 @@ func (s *Server) handleTopology(w http.ResponseWriter, r *http.Request) {
 			}
 			for _, c := range live.Topology.GetContainers() {
 				tc := topoContainer{ID: c.GetId(), Name: c.GetName(), Image: c.GetImage(), State: c.GetState(), Role: c.GetRole(),
-					ComposeProject: c.GetComposeProject(), Listening: c.GetListening(), Published: []topoPort{}, Endpoints: []topoEndpoint{}}
+					ComposeProject: c.GetComposeProject(), Listening: c.GetListening(), Published: []topoPort{}, Endpoints: []topoEndpoint{},
+					LogoURL: imageLogoURL(c.GetImage())}
 				if tc.Listening == nil {
 					tc.Listening = []int32{}
 				}
@@ -574,6 +577,8 @@ func (s *Server) handleTopology(w http.ResponseWriter, r *http.Request) {
 					}
 					a := row.App
 					tc.AppID, tc.Name, tc.OwnerName = a.ID, a.Name, row.OwnerName
+					logo := toAppLogo(a)
+					tc.LogoURL, tc.LogoColor = logo.URL, logo.Color
 					if a.Kind == kindSandbox {
 						tc.Role = "sandbox"
 					} else if host := webHost(t.c, a); host != "" {

@@ -93,6 +93,8 @@ export type TopoContainer = {
   composeProject?: string
   issue?: Diagnosis
   steps?: PathStep[]
+  logoUrl?: string
+  logoColor?: string
 }
 
 export type TopoNode = {
