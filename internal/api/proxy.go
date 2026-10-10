@@ -69,6 +69,16 @@ func ParseTrustedProxies(s string) ([]netip.Prefix, error) {
 	return out, nil
 }
 
+func inPrefixes(addr netip.Addr, list []netip.Prefix) bool {
+	addr = addr.Unmap()
+	for _, p := range list {
+		if p.Contains(addr) {
+			return true
+		}
+	}
+	return false
+}
+
 func (s *Server) trusted(addr netip.Addr) bool {
 	addr = addr.Unmap()
 	for _, p := range s.trustedProxies {
@@ -103,6 +113,14 @@ func (s *Server) realClient(next http.Handler) http.Handler {
 			if !s.trusted(addr) || i == 0 {
 				r.RemoteAddr = net.JoinHostPort(addr.Unmap().String(), "0")
 				break
+			}
+		}
+		// Behind Cloudflare then a proxy that drops forwarded addresses it does not trust (Caddy does), the
+		// chain ends at Cloudflare's edge: Cloudflare gives the client in CF-Connecting-IP, which is only
+		// believed when the request came from Cloudflare and Cloudflare is trusted.
+		if client, err := netip.ParseAddrPort(r.RemoteAddr); err == nil && s.trusted(client.Addr()) && inPrefixes(client.Addr(), CloudflareProxies) {
+			if cf, err := netip.ParseAddr(strings.TrimSpace(r.Header.Get("CF-Connecting-IP"))); err == nil {
+				r.RemoteAddr = net.JoinHostPort(cf.Unmap().String(), "0")
 			}
 		}
 		if p := r.Header.Get("X-Forwarded-Proto"); p != "http" && p != "https" {

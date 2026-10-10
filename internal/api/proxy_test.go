@@ -74,3 +74,32 @@ func TestRealClientBehindCloudflare(t *testing.T) {
 		}
 	}
 }
+
+// Caddy replaces X-Forwarded-For with Cloudflare's address; Cloudflare's CF-Connecting-IP then gives the
+// client, but only when Cloudflare is trusted and the request really came from it.
+func TestRealClientCFConnectingIP(t *testing.T) {
+	private, _ := ParseTrustedProxies("private")
+	withCloudflare, _ := ParseTrustedProxies("private,cloudflare")
+	for _, c := range []struct {
+		name    string
+		trusted []netip.Prefix
+		xff     string
+		want    string
+	}{
+		{"cloudflare trusted", withCloudflare, "172.71.232.34", "203.0.113.7"},
+		{"cloudflare not trusted", private, "172.71.232.34", "172.71.232.34"},
+		{"not from cloudflare", withCloudflare, "198.51.100.9", "198.51.100.9"},
+	} {
+		s := &Server{trustedProxies: c.trusted}
+		var got *http.Request
+		h := s.realClient(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { got = r }))
+		r := httptest.NewRequest(http.MethodGet, "/", nil)
+		r.RemoteAddr = "172.18.0.5:4000" // Caddy in Docker
+		r.Header.Set("X-Forwarded-For", c.xff)
+		r.Header.Set("CF-Connecting-IP", "203.0.113.7")
+		h.ServeHTTP(httptest.NewRecorder(), r)
+		if ip := clientIP(got); ip != c.want {
+			t.Errorf("%s: client IP %s, want %s", c.name, ip, c.want)
+		}
+	}
+}

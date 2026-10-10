@@ -3,10 +3,10 @@ package api
 import (
 	"bytes"
 	"encoding/base64"
-	"net/http"
 	"image"
 	"image/png"
 	"math/rand"
+	"net/http"
 	"testing"
 )
 
