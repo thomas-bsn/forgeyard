@@ -2336,3 +2336,92 @@ a.link-btn {
   flex: 1;
   accent-color: var(--accent);
 }
+
+/* --- Sign-in page ---------------------------------------------------------------- */
+
+.login-screen {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 40px 16px;
+  background-color: var(--bg);
+  background-image: radial-gradient(var(--border) 1px, transparent 1px);
+  background-size: 22px 22px;
+}
+
+.login-column {
+  width: 100%;
+  max-width: 420px;
+  display: grid;
+  justify-items: center;
+  gap: 4px;
+}
+
+.login-art {
+  width: 280px;
+  max-width: 80%;
+}
+
+.login-art-platform {
+  fill: var(--card);
+  stroke: var(--border);
+}
+
+.login-card {
+  width: 100%;
+  display: grid;
+  gap: 16px;
+  padding: 32px;
+  border-radius: 20px;
+  border: 1px solid var(--border);
+  background: var(--card);
+  box-shadow: 0 30px 80px rgb(0 0 0 / 0.18);
+}
+
+.login-brand {
+  display: grid;
+  justify-items: center;
+  gap: 4px;
+  text-align: center;
+}
+
+.login-name {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 1.3rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+.login-discord {
+  padding: 13px 16px;
+  font-size: 1rem;
+}
+
+.login-secondary {
+  background: transparent;
+  color: var(--muted);
+}
+
+.login-hint {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.82rem;
+  text-align: center;
+}
+
+.login-footer {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 12px;
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+@media (max-width: 480px) {
+  .login-card {
+    padding: 22px;
+  }
+}

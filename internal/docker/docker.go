@@ -70,6 +70,7 @@ type Info struct {
 	Architecture      string `json:"Architecture"`
 	NCPU              int    `json:"NCPU"`
 	MemTotal          uint64 `json:"MemTotal"`
+	DockerRootDir     string `json:"DockerRootDir"` // where images and containers are stored on the host
 }
 
 // Info returns the daemon's version and container counts.

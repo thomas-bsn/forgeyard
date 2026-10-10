@@ -52,23 +52,44 @@ export default function Login({
   }
 
   return (
-    <div className="auth-screen">
-      <div className="auth-column">
-        <div className="brand">
-          <Logo size={34} />
-          {instance.name}
-        </div>
+    <div className="login-screen">
+      <div className="login-column">
+        <svg className="login-art" viewBox="0 0 320 186" role="img" aria-label="Un serveur avec ses apps">
+          <polygon points="160,60 280,120 160,180 40,120" className="login-art-platform" />
+          <polygon points="160,45 188,59 160,73 132,59" fill="#a5b4fc" />
+          <polygon points="132,59 160,73 160,109 132,95" fill="#818cf8" />
+          <polygon points="160,73 188,59 188,95 160,109" fill="#6366f1" />
+          <polygon points="105,72 133,86 105,100 77,86" fill="#a5b4fc" />
+          <polygon points="77,86 105,100 105,136 77,122" fill="#818cf8" />
+          <polygon points="105,100 133,86 133,122 105,136" fill="#6366f1" />
+          <polygon points="215,72 243,86 215,100 187,86" fill="#86efac" />
+          <polygon points="187,86 215,100 215,136 187,122" fill="#22c55e" />
+          <polygon points="215,100 243,86 243,122 215,136" fill="#15803d" />
+        </svg>
 
-        <form className="panel" onSubmit={submit}>
-          <h2>Connexion</h2>
+        <form className="login-card" onSubmit={submit}>
+          <div className="login-brand">
+            <div className="login-name">
+              <Logo size={30} />
+              {instance.name}
+            </div>
+            <p className="muted">Vos apps, sur vos machines.</p>
+          </div>
+
+          {message && (
+            <div className={`banner banner-${message.tone}`} role="status">
+              <span className={`dot dot-${message.tone}`} />
+              <span>
+                <b>{message.title}</b> · {message.text}
+              </span>
+            </div>
+          )}
+
           {instance.discordEnabled && (
-            <>
-              <p className="muted">Connectez-vous avec votre compte Discord pour accéder à vos apps.</p>
-              <a className="btn btn-discord" href="/api/auth/discord">
-                <DiscordIcon />
-                Se connecter avec Discord
-              </a>
-            </>
+            <a className="btn btn-discord btn-block login-discord" href="/api/auth/discord">
+              <DiscordIcon />
+              Continuer avec Discord
+            </a>
           )}
 
           {!passwordLogin ? null : showPassword ? (
@@ -76,37 +97,30 @@ export default function Login({
               {instance.discordEnabled && <div className="separator">ou avec un identifiant</div>}
               <label className="field">
                 <span>Identifiant</span>
-                <input value={username} onChange={(e) => setUsername(e.target.value)} autoComplete="username" required autoFocus={!instance.discordEnabled} />
+                <input value={username} onChange={(e) => setUsername(e.target.value)} autoComplete="username" required autoFocus />
               </label>
               <label className="field">
                 <span>Mot de passe</span>
                 <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="current-password" required />
               </label>
               {error && <p className="error">{error}</p>}
-              <button type="submit" className="btn btn-primary" disabled={busy}>
+              <button type="submit" className="btn btn-primary btn-block" disabled={busy}>
                 {busy ? 'Connexion…' : 'Se connecter'}
               </button>
             </>
           ) : (
-            <button type="button" className="btn btn-ghost" onClick={() => setShowPassword(true)}>
-              Connexion avec un identifiant
+            <button type="button" className="btn btn-block login-secondary" onClick={() => setShowPassword(true)}>
+              Utiliser un identifiant
             </button>
           )}
 
-          <div className="panel-footer">
-            <span className="spacer" />
-            <ThemeToggle />
-          </div>
+          {instance.discordEnabled && <p className="login-hint">Nouveau ? Connectez-vous avec Discord : un admin validera votre accès.</p>}
         </form>
 
-        {message && (
-          <div className={`banner banner-${message.tone}`} role="status">
-            <span className={`dot dot-${message.tone}`} />
-            <span>
-              <b>{message.title}</b> · {message.text}
-            </span>
-          </div>
-        )}
+        <div className="login-footer">
+          <span>Propulsé par Forgeyard · open source</span>
+          <ThemeToggle />
+        </div>
       </div>
     </div>
   )

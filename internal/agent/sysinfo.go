@@ -4,6 +4,7 @@ import (
 	"context"
 	"log/slog"
 	"os"
+	"path/filepath"
 	"runtime"
 	"time"
 
@@ -18,11 +19,25 @@ import (
 
 // diskPath is the filesystem whose size is reported. In a container, the host's root is mounted read-only
 // and named by FORGEYARD_HOST_ROOT, so the host's disk is measured rather than the container's.
-func diskPath() string {
-	if root := os.Getenv("FORGEYARD_HOST_ROOT"); root != "" {
-		return root
+// diskPath is where the node's disk is measured: the disk holding Docker's data (images, containers,
+// volumes), which is what apps fill. A NAS keeps it on its data volume, not on its small system partition.
+// Without it, the host's root filesystem.
+func diskPath(ctx context.Context, dc *docker.Client) string {
+	root := os.Getenv("FORGEYARD_HOST_ROOT")
+	if root == "" {
+		root = "/"
 	}
-	return "/"
+	if dc != nil {
+		if di, err := dc.Info(ctx); err == nil && di.DockerRootDir != "" {
+			// Seen through the host's root mounted in the container; a data volume mounted elsewhere is
+			// only visible when the host's mounts are shared with the container.
+			p := filepath.Join(root, di.DockerRootDir)
+			if _, err := os.Stat(p); err == nil {
+				return p
+			}
+		}
+	}
+	return root
 }
 
 func nodeInfo(ctx context.Context, dc *docker.Client, logger *slog.Logger) *agentpb.NodeInfo {
@@ -37,7 +52,7 @@ func nodeInfo(ctx context.Context, dc *docker.Client, logger *slog.Logger) *agen
 	if v, err := mem.VirtualMemoryWithContext(ctx); err == nil {
 		info.MemoryBytes = v.Total
 	}
-	if d, err := disk.UsageWithContext(ctx, diskPath()); err == nil {
+	if d, err := disk.UsageWithContext(ctx, diskPath(ctx, dc)); err == nil {
 		info.DiskBytes = d.Total
 	}
 	// Docker describes the host itself, which gopsutil cannot do from inside a container.
@@ -72,7 +87,7 @@ func sampleMetrics(ctx context.Context, dc *docker.Client) *agentpb.Metrics {
 	if v, err := mem.VirtualMemoryWithContext(ctx); err == nil {
 		m.MemoryUsedBytes = v.Used
 	}
-	if d, err := disk.UsageWithContext(ctx, diskPath()); err == nil {
+	if d, err := disk.UsageWithContext(ctx, diskPath(ctx, dc)); err == nil {
 		m.DiskUsedBytes = d.Used
 	}
 	if dc != nil {
