@@ -189,7 +189,12 @@ func (s *Server) push(ctx context.Context, nodeID int64) {
 	if err := s.nodes.Push(ctx, nodeID); err != nil {
 		s.logger.Error("sending the desired state failed", "node_id", nodeID, "err", err)
 	}
-	if local, err := s.store.GetLocalNode(ctx); err == nil && local.ID != nodeID {
+	s.pushRelays(ctx, nodeID)
+}
+
+// pushRelays sends Forgeyard's own machine its desired state again, after a change on another node.
+func (s *Server) pushRelays(ctx context.Context, changedNodeID int64) {
+	if local, err := s.store.GetLocalNode(ctx); err == nil && local.ID != changedNodeID {
 		if err := s.nodes.Push(ctx, local.ID); err != nil {
 			s.logger.Error("sending the desired state failed", "node_id", local.ID, "err", err)
 		}

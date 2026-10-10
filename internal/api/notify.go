@@ -357,10 +357,11 @@ func (s *Server) onNodeChange(nodeID int64, online bool) {
 	}
 	if online {
 		// A node that comes back may have a new local address: the relays of Forgeyard's machine follow.
+		// (The hub itself sends the node its desired state when it connects.)
 		go func() {
 			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 			defer cancel()
-			s.push(ctx, nodeID)
+			s.pushRelays(ctx, nodeID)
 		}()
 		if wasReported {
 			s.notifyAdmins("nodes", notification{Title: "Le node « " + name() + " » est de retour", Text: "Ses apps sont de nouveau pilotées.", Path: "#/nodes", Color: colorSuccess})
