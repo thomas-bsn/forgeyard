@@ -19,6 +19,7 @@ type accountResponse struct {
 	Disabled      bool   `json:"disabled"`
 	AppsSuspended bool   `json:"appsSuspended"`
 	AppCount      int64  `json:"appCount"`
+	AvatarURL     string `json:"avatarUrl,omitempty"`
 	CreatedAt     int64  `json:"createdAt"`
 }
 
@@ -37,6 +38,7 @@ func (s *Server) handleListUsers(w http.ResponseWriter, r *http.Request) {
 		out = append(out, accountResponse{
 			ID: u.ID, DisplayName: u.DisplayName, Method: method, Role: u.Role, Disabled: u.Disabled != 0,
 			AppsSuspended: u.AppsSuspended != 0, AppCount: u.AppCount, CreatedAt: u.CreatedAt,
+			AvatarURL: avatarURL(db.User{ID: u.ID, DiscordID: u.DiscordID, DiscordAvatar: u.DiscordAvatar, AvatarUpdatedAt: u.AvatarUpdatedAt}),
 		})
 	}
 	writeJSON(w, http.StatusOK, out)

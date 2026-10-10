@@ -45,6 +45,12 @@ type AppEvent struct {
 	Message string
 }
 
+type Avatar struct {
+	UserID      int64
+	ContentType string
+	Data        []byte
+}
+
 type ContainerEvent struct {
 	ID      int64
 	NodeID  int64
@@ -90,6 +96,8 @@ type Session struct {
 	UserID    int64
 	CreatedAt int64
 	ExpiresAt int64
+	Ip        string
+	UserAgent string
 }
 
 type Setting struct {
@@ -98,14 +106,19 @@ type Setting struct {
 }
 
 type User struct {
-	ID            int64
-	Username      sql.NullString
-	PasswordHash  sql.NullString
-	DiscordID     sql.NullString
-	DisplayName   string
-	Role          string
-	Disabled      int64
-	CreatedAt     int64
-	Email         sql.NullString
-	AppsSuspended int64
+	ID              int64
+	Username        sql.NullString
+	PasswordHash    sql.NullString
+	DiscordID       sql.NullString
+	DisplayName     string
+	Role            string
+	Disabled        int64
+	CreatedAt       int64
+	Email           sql.NullString
+	AppsSuspended   int64
+	DiscordName     string
+	DiscordAvatar   string
+	NameFromDiscord int64
+	Bio             string
+	AvatarUpdatedAt int64
 }

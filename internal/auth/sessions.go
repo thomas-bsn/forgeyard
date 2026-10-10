@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"net"
 	"net/http"
 	"time"
 
@@ -30,6 +31,8 @@ func CreateSession(ctx context.Context, q *db.Queries, w http.ResponseWriter, r 
 		UserID:    userID,
 		CreatedAt: now.Unix(),
 		ExpiresAt: expires.Unix(),
+		Ip:        clientHost(r),
+		UserAgent: truncate(r.UserAgent(), 300),
 	}); err != nil {
 		return err
 	}
@@ -43,6 +46,31 @@ func CreateSession(ctx context.Context, q *db.Queries, w http.ResponseWriter, r 
 		SameSite: http.SameSiteLaxMode,
 	})
 	return nil
+}
+
+// clientHost is the client's address; RemoteAddr already holds the real client behind trusted proxies.
+func clientHost(r *http.Request) string {
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		return r.RemoteAddr
+	}
+	return host
+}
+
+func truncate(s string, n int) string {
+	if len(s) > n {
+		return s[:n]
+	}
+	return s
+}
+
+// SessionToken returns the hash of the request's session token, which identifies the session.
+func SessionToken(r *http.Request) string {
+	cookie, err := r.Cookie(SessionCookie)
+	if err != nil {
+		return ""
+	}
+	return HashToken(cookie.Value)
 }
 
 // SessionUser returns the user owning the request's session.

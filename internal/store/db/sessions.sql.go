@@ -10,8 +10,8 @@ import (
 )
 
 const createSession = `-- name: CreateSession :exec
-INSERT INTO sessions (token_hash, user_id, created_at, expires_at)
-VALUES (?, ?, ?, ?)
+INSERT INTO sessions (token_hash, user_id, created_at, expires_at, ip, user_agent)
+VALUES (?, ?, ?, ?, ?, ?)
 `
 
 type CreateSessionParams struct {
@@ -19,6 +19,8 @@ type CreateSessionParams struct {
 	UserID    int64
 	CreatedAt int64
 	ExpiresAt int64
+	Ip        string
+	UserAgent string
 }
 
 func (q *Queries) CreateSession(ctx context.Context, arg CreateSessionParams) error {
@@ -27,6 +29,8 @@ func (q *Queries) CreateSession(ctx context.Context, arg CreateSessionParams) er
 		arg.UserID,
 		arg.CreatedAt,
 		arg.ExpiresAt,
+		arg.Ip,
+		arg.UserAgent,
 	)
 	return err
 }
@@ -40,12 +44,40 @@ func (q *Queries) DeleteExpiredSessions(ctx context.Context, expiresAt int64) er
 	return err
 }
 
+const deleteOtherSessions = `-- name: DeleteOtherSessions :exec
+DELETE FROM sessions WHERE user_id = ? AND token_hash != ?
+`
+
+type DeleteOtherSessionsParams struct {
+	UserID    int64
+	TokenHash string
+}
+
+func (q *Queries) DeleteOtherSessions(ctx context.Context, arg DeleteOtherSessionsParams) error {
+	_, err := q.db.ExecContext(ctx, deleteOtherSessions, arg.UserID, arg.TokenHash)
+	return err
+}
+
 const deleteSession = `-- name: DeleteSession :exec
 DELETE FROM sessions WHERE token_hash = ?
 `
 
 func (q *Queries) DeleteSession(ctx context.Context, tokenHash string) error {
 	_, err := q.db.ExecContext(ctx, deleteSession, tokenHash)
+	return err
+}
+
+const deleteUserSession = `-- name: DeleteUserSession :exec
+DELETE FROM sessions WHERE user_id = ? AND token_hash = ?
+`
+
+type DeleteUserSessionParams struct {
+	UserID    int64
+	TokenHash string
+}
+
+func (q *Queries) DeleteUserSession(ctx context.Context, arg DeleteUserSessionParams) error {
+	_, err := q.db.ExecContext(ctx, deleteUserSession, arg.UserID, arg.TokenHash)
 	return err
 }
 
@@ -59,7 +91,7 @@ func (q *Queries) DeleteUserSessions(ctx context.Context, userID int64) error {
 }
 
 const getSessionUser = `-- name: GetSessionUser :one
-SELECT users.id, users.username, users.password_hash, users.discord_id, users.display_name, users.role, users.disabled, users.created_at, users.email, users.apps_suspended
+SELECT users.id, users.username, users.password_hash, users.discord_id, users.display_name, users.role, users.disabled, users.created_at, users.email, users.apps_suspended, users.discord_name, users.discord_avatar, users.name_from_discord, users.bio, users.avatar_updated_at
 FROM sessions
 JOIN users ON users.id = sessions.user_id
 WHERE sessions.token_hash = ? AND sessions.expires_at > ? AND users.disabled = 0
@@ -84,6 +116,50 @@ func (q *Queries) GetSessionUser(ctx context.Context, arg GetSessionUserParams) 
 		&i.CreatedAt,
 		&i.Email,
 		&i.AppsSuspended,
+		&i.DiscordName,
+		&i.DiscordAvatar,
+		&i.NameFromDiscord,
+		&i.Bio,
+		&i.AvatarUpdatedAt,
 	)
 	return i, err
+}
+
+const listUserSessions = `-- name: ListUserSessions :many
+SELECT token_hash, user_id, created_at, expires_at, ip, user_agent FROM sessions WHERE user_id = ? AND expires_at > ? ORDER BY created_at DESC
+`
+
+type ListUserSessionsParams struct {
+	UserID    int64
+	ExpiresAt int64
+}
+
+func (q *Queries) ListUserSessions(ctx context.Context, arg ListUserSessionsParams) ([]Session, error) {
+	rows, err := q.db.QueryContext(ctx, listUserSessions, arg.UserID, arg.ExpiresAt)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []Session{}
+	for rows.Next() {
+		var i Session
+		if err := rows.Scan(
+			&i.TokenHash,
+			&i.UserID,
+			&i.CreatedAt,
+			&i.ExpiresAt,
+			&i.Ip,
+			&i.UserAgent,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }

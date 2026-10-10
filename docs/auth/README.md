@@ -47,6 +47,16 @@ Onglet **Utilisateurs** (admins) : les demandes en attente en haut, puis tous le
 
 Le superadmin et son propre compte ne sont jamais modifiables depuis cet écran.
 
+## Mon profil
+
+Le menu sous la photo, en haut à droite, mène à « Mon profil » (et aux réglages de l'instance pour les admins), au thème, à la documentation et à la déconnexion.
+
+- **Photo** : celle de Discord, mise à jour à chaque connexion ; ou une photo envoyée, recadrée en 256×256 par le navigateur (PNG, JPEG, WebP ou GIF, 512 Ko au plus, jamais de SVG) ; sinon l'initiale.
+- **Nom affiché** : celui de Discord (suivi à chaque connexion) ou un nom choisi. L'identifiant des comptes locaux ne change pas.
+- **Description** (280 caractères) et **email** (prérempli avec celui de Discord, pour les notifications à venir).
+- **Sécurité** : changer de mot de passe (comptes locaux ; déconnecte les autres appareils), liste des appareils connectés avec leur IP, déconnexion d'un appareil ou de tous les autres.
+- **Notifications, clés SSH, jetons d'API** : à venir, la page décrit ce qu'ils feront.
+
 ## Rôles
 
 | Rôle | Peut |

@@ -21,7 +21,12 @@ Toutes les écritures sont en JSON. Les routes sont déclarées dans `internal/a
 
 | Route | Rôle |
 |---|---|
-| `GET /api/auth/me` | Compte courant |
+| `GET /api/auth/me` | Compte courant, avec son profil |
+| `PUT /api/me/profile` | Nom affiché (ou suivre Discord), description, email |
+| `PUT`, `DELETE /api/me/avatar` | Envoyer une photo (data URL) ou revenir à Discord / l'initiale |
+| `GET /api/users/{id}/avatar` | Photo envoyée par un utilisateur |
+| `PUT /api/me/password` | Changer de mot de passe (comptes locaux) |
+| `GET /api/me/sessions`, `DELETE /api/me/sessions/{id\|others}` | Appareils connectés, en déconnecter un ou tous les autres |
 | `GET`, `POST /api/apps` | Lister, créer |
 | `GET`, `PUT`, `DELETE /api/apps/{id}` | Voir, modifier, supprimer |
 | `POST /api/apps/{id}/{start\|stop\|redeploy}` | Actions |

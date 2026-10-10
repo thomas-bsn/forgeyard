@@ -5,6 +5,23 @@ export type User = {
   username?: string
   displayName: string
   role: Role
+  method: 'discord' | 'password'
+  avatarUrl?: string
+  customAvatar: boolean
+  email: string
+  bio: string
+  discordName?: string
+  nameFromDiscord: boolean
+  createdAt: number
+}
+
+export type Session = {
+  id: string
+  createdAt: number
+  expiresAt: number
+  ip: string
+  userAgent: string
+  current: boolean
 }
 
 export type Instance = {
@@ -135,6 +152,7 @@ export type Account = {
   appsSuspended: boolean
   appCount: number
   createdAt: number
+  avatarUrl?: string
 }
 
 export type AppInput = {
@@ -267,6 +285,13 @@ export const api = {
   updateUser: (id: number, body: { role?: 'user' | 'admin'; disabled?: boolean; appsSuspended?: boolean }) =>
     request<void>('PUT', `/api/admin/users/${id}`, body),
   deleteUser: (id: number) => request<void>('DELETE', `/api/admin/users/${id}`, {}),
+  saveProfile: (body: { displayName: string; nameFromDiscord: boolean; bio: string; email: string }) =>
+    request<User>('PUT', '/api/me/profile', body),
+  uploadAvatar: (image: string) => request<User>('PUT', '/api/me/avatar', { image }),
+  deleteAvatar: () => request<User>('DELETE', '/api/me/avatar', {}),
+  changePassword: (current: string, next: string) => request<void>('PUT', '/api/me/password', { current, new: next }),
+  sessions: () => request<Session[]>('GET', '/api/me/sessions'),
+  deleteSession: (id: string) => request<void>('DELETE', `/api/me/sessions/${id}`, {}),
   saveGeneralSettings: (name: string, publicUrl: string) =>
     request<{ name: string; publicUrl: string }>('PUT', '/api/admin/settings/general', { name, publicUrl }),
   nodes: () => request<Node[]>('GET', '/api/admin/nodes'),

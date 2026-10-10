@@ -39,7 +39,7 @@ L'agent ouvre toujours la connexion vers le server : un node n'a aucun port à o
 | Apps | tout le monde | Ses apps (admins : toutes, une colonne par node, avec les conteneurs externes). Page d'une app : observabilité, logs, événements, configuration. |
 | Nodes | admins | Machines, leur charge, leurs apps et conteneurs ; ajout et réseau dans des fenêtres. |
 | Utilisateurs | admins | Demandes de compte, comptes, rôles, suspension, suppression. |
-| Réglages | admins | Général, Domaine des apps, Connexion (superadmin) ; Discord. |
+| Menu du compte (photo, en haut à droite) | tout le monde | Mon profil (photo, nom, description, email, sécurité), Réglages de l'instance (admins : Général, Domaine des apps, Connexion, Discord), thème, documentation, déconnexion. |
 
 Chaque page a sa propre adresse (`#/apps/3`, `#/settings/domain`…).
 

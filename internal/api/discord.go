@@ -259,7 +259,7 @@ func (s *Server) handleDiscordCallback(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if err := s.store.UpdateDiscordProfile(ctx, db.UpdateDiscordProfileParams{
-			DisplayName: dUser.DisplayName(), Email: nullString(dUser.VerifiedEmail()), ID: user.ID,
+			DiscordName: dUser.DisplayName(), DiscordAvatar: dUser.Avatar, Email: nullString(dUser.VerifiedEmail()), ID: user.ID,
 		}); err != nil {
 			s.redirectDiscordError(w, r, err)
 			return
@@ -301,6 +301,11 @@ func (s *Server) completeDiscordSetup(w http.ResponseWriter, r *http.Request, dU
 			CreatedAt:   time.Now().Unix(),
 		})
 		if err != nil {
+			return err
+		}
+		if err := q.UpdateDiscordProfile(ctx, db.UpdateDiscordProfileParams{
+			DiscordName: dUser.DisplayName(), DiscordAvatar: dUser.Avatar, Email: nullString(dUser.VerifiedEmail()), ID: user.ID,
+		}); err != nil {
 			return err
 		}
 		if err := q.SetSetting(ctx, db.SetSettingParams{Key: settingPasswordLogin, Value: "0"}); err != nil {

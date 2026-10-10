@@ -57,26 +57,33 @@ export function applyStoredTheme() {
   if (t) document.documentElement.dataset.theme = t
 }
 
+/** The current theme, starting from the system preference, and a function switching to the other one. */
+export function useTheme(): ['light' | 'dark', () => void] {
+  const [, force] = useState(0)
+  const current = readTheme() ?? (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')
+  const toggle = () => {
+    const next = current === 'dark' ? 'light' : 'dark'
+    document.documentElement.dataset.theme = next
+    try {
+      localStorage.setItem('theme', next)
+    } catch {
+      // Private browsing: the choice just isn't remembered.
+    }
+    force((n) => n + 1)
+  }
+  return [current, toggle]
+}
+
 /** Toggles between light and dark, starting from the system preference. */
 export function ThemeToggle() {
-  const [, force] = useState(0)
-  const current =
-    readTheme() ?? (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')
+  const [current, toggle] = useTheme()
   const next = current === 'dark' ? 'light' : 'dark'
   return (
     <button
       type="button"
       className="icon-btn"
       aria-label={next === 'dark' ? 'Passer en thème sombre' : 'Passer en thème clair'}
-      onClick={() => {
-        document.documentElement.dataset.theme = next
-        try {
-          localStorage.setItem('theme', next)
-        } catch {
-          // Private browsing: the choice just isn't remembered.
-        }
-        force((n) => n + 1)
-      }}
+      onClick={toggle}
     >
       {next === 'dark' ? (
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -143,6 +150,7 @@ function proxyExample(kind: ProxyKind, host: string, ip: string, port: number): 
  */
 export function ProxySnippet({ domain, port, detectedIp }: { domain: string; port: number; detectedIp?: string }) {
   const [ip, setIp] = useState(() => detectedIp || guessLocalIp())
+  const [editIp, setEditIp] = useState(false)
   useEffect(() => {
     if (detectedIp) setIp((cur) => cur || detectedIp)
   }, [detectedIp])
@@ -157,16 +165,28 @@ export function ProxySnippet({ domain, port, detectedIp }: { domain: string; por
   ]
   return (
     <>
-      <label className="field">
-        <span>IP locale de cette machine</span>
-        <input value={ip} onChange={(e) => setIp(e.target.value)} placeholder="192.168.1.10" />
-        <small>
-          {detectedIp && ip.trim() === detectedIp
-            ? 'Trouvée automatiquement par l’agent. '
-            : 'Celle sur votre réseau (hostname -I), pas 127.0.0.1. '}
-          Elle marche que votre proxy tourne dans Docker ou non.
-        </small>
-      </label>
+      {detectedIp && !editIp ? (
+        <div className="field">
+          <span>IP locale de cette machine</span>
+          <div className="detected-ip">
+            <code>{detectedIp}</code>
+            <span className="muted">trouvée par l’agent</span>
+            <button type="button" className="link-btn" onClick={() => setEditIp(true)}>
+              utiliser une autre IP
+            </button>
+          </div>
+          <small>Si votre proxy joint cette machine par une autre adresse (autre carte réseau, VPN comme Tailscale…).</small>
+        </div>
+      ) : (
+        <label className="field">
+          <span>IP locale de cette machine</span>
+          <input value={ip} onChange={(e) => setIp(e.target.value)} placeholder="192.168.1.10" />
+          <small>
+            Celle par laquelle votre proxy joint cette machine (<code>hostname -I</code>), pas 127.0.0.1. Elle ne sert qu’à remplir
+            l’exemple ci-dessous.
+          </small>
+        </label>
+      )}
       <div className="proxy-rule">
         <strong>Une seule règle à ajouter à votre reverse proxy</strong>
         <div className="proxy-rule-line">
@@ -264,6 +284,21 @@ export function Modal({
       </div>
       {onSubmit ? <form onSubmit={onSubmit}>{content}</form> : content}
     </dialog>
+  )
+}
+
+/** A person's picture: the one they uploaded or their Discord avatar, else their initial. */
+export function Avatar({ url, name, size = 32 }: { url?: string; name: string; size?: number }) {
+  const [broken, setBroken] = useState(false)
+  useEffect(() => setBroken(false), [url])
+  const style = { width: size, height: size, fontSize: size * 0.42 }
+  if (url && !broken) {
+    return <img className="avatar" src={url} alt="" style={style} onError={() => setBroken(true)} />
+  }
+  return (
+    <span className="avatar avatar-initial" aria-hidden="true" style={style}>
+      {name.trim().charAt(0).toUpperCase() || '?'}
+    </span>
   )
 }
 

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { api, errorMessage, type Account, type AccountRequest, type App, type User } from './api'
-import { Modal } from './ui'
+import { Avatar, Modal } from './ui'
 
 const roleLabels: Record<Account['role'], string> = { superadmin: 'superadmin', admin: 'admin', user: 'utilisateur' }
 
@@ -76,9 +76,7 @@ export default function Users({ me, onRequestsChange }: { me: User; onRequestsCh
                   <tr key={u.id}>
                     <td>
                       <span className="user-cell">
-                        <span className="avatar avatar-sm" aria-hidden="true">
-                          {u.displayName.charAt(0).toUpperCase()}
-                        </span>
+                        <Avatar url={u.avatarUrl} name={u.displayName} size={32} />
                         <strong>{u.displayName}</strong>
                       </span>
                     </td>
@@ -136,13 +134,7 @@ function RequestRow({ request, onDone }: { request: AccountRequest; onDone: () =
 
   return (
     <div className="request-row">
-      {request.avatarUrl ? (
-        <img className="avatar avatar-sm" src={request.avatarUrl} alt="" />
-      ) : (
-        <span className="avatar avatar-sm" aria-hidden="true">
-          {request.displayName.charAt(0).toUpperCase()}
-        </span>
-      )}
+      <Avatar url={request.avatarUrl} name={request.displayName} size={32} />
       <div className="list-main">
         <strong>{request.displayName}</strong>
         <p className="muted">
@@ -195,7 +187,12 @@ function ManageUser({ user, apps, onClose, onChanged }: { user: Account; apps: A
 
   return (
     <Modal
-      title={user.displayName}
+      title={
+        <span className="user-cell">
+          <Avatar url={user.avatarUrl} name={user.displayName} size={36} />
+          {user.displayName}
+        </span>
+      }
       subtitle={`${user.method === 'discord' ? 'Discord' : 'Identifiant et mot de passe'} · inscrit le ${new Date(user.createdAt * 1000).toLocaleDateString('fr-FR')}`}
       onClose={onClose}
       footer={

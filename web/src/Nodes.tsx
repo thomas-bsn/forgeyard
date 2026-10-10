@@ -268,8 +268,9 @@ function NodeCard({
           <p className="muted node-specs">
             {node.hostname} · {node.os} · {node.arch} · {node.cpus} CPU
             {node.dockerVersion ? ` · Docker ${node.dockerVersion}` : ''}
+            {!m && <> · vu {since(node.lastSeenAt)}</>}
           </p>
-          {!node.dockerVersion && (
+          {node.state === 'online' && !node.dockerVersion && (
             <div className="banner banner-down">
               <span className="dot dot-down" />
               <span>
@@ -278,15 +279,12 @@ function NodeCard({
               </span>
             </div>
           )}
-          {m ? (
-            <div className="meters-row">
-              <Meter label="CPU" pct={m.cpuPercent} text={`${m.cpuPercent.toFixed(0)} %`} />
-              <Meter label="RAM" used={m.memoryUsedBytes} total={node.memoryBytes} />
-              <Meter label="Disque" used={m.diskUsedBytes} total={node.diskBytes} />
-            </div>
-          ) : (
-            <p className="muted">Vu pour la dernière fois {since(node.lastSeenAt)}.</p>
-          )}
+          {/* Offline, the same meters stay in place, empty, so cards keep the same layout. */}
+          <div className={`meters-row ${m ? '' : 'meters-off'}`}>
+            <Meter label="CPU" pct={m?.cpuPercent ?? 0} text={m ? `${m.cpuPercent.toFixed(0)} %` : '–'} />
+            <Meter label="RAM" used={m?.memoryUsedBytes ?? 0} total={node.memoryBytes} text={m ? undefined : '–'} />
+            <Meter label="Disque" used={m?.diskUsedBytes ?? 0} total={node.diskBytes} text={m ? undefined : '–'} />
+          </div>
           <div className="tiles tiles-2">
             <div className="tile">
               <div className="k">Apps</div>

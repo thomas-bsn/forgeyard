@@ -1,6 +1,15 @@
 -- name: CreateSession :exec
-INSERT INTO sessions (token_hash, user_id, created_at, expires_at)
-VALUES (?, ?, ?, ?);
+INSERT INTO sessions (token_hash, user_id, created_at, expires_at, ip, user_agent)
+VALUES (?, ?, ?, ?, ?, ?);
+
+-- name: ListUserSessions :many
+SELECT * FROM sessions WHERE user_id = ? AND expires_at > ? ORDER BY created_at DESC;
+
+-- name: DeleteOtherSessions :exec
+DELETE FROM sessions WHERE user_id = ? AND token_hash != ?;
+
+-- name: DeleteUserSession :exec
+DELETE FROM sessions WHERE user_id = ? AND token_hash = ?;
 
 -- name: GetSessionUser :one
 SELECT users.*

@@ -1553,7 +1553,18 @@ button.row:hover {
 /* --- Nodes ------------------------------------------------------------------ */
 
 .node-card {
+  display: flex;
+  flex-direction: column;
   gap: 14px;
+}
+
+/* The actions stay at the bottom, so cards of different heights line up. */
+.node-card .card-actions {
+  margin-top: auto;
+}
+
+.meters-off {
+  opacity: 0.5;
 }
 
 .node-head h2 {
@@ -1872,4 +1883,220 @@ button.row:hover {
   display: flex;
   align-items: center;
   gap: 16px;
+}
+
+/* --- Top bar and account menu ----------------------------------------------- */
+
+.topbar {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  flex-wrap: wrap;
+}
+
+.brand-link {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--text);
+  text-decoration: none;
+}
+
+.avatar-initial {
+  background: color-mix(in srgb, var(--accent) 15%, var(--card));
+  color: var(--accent);
+}
+
+.user-menu {
+  position: relative;
+}
+
+.user-button {
+  position: relative;
+  display: grid;
+  padding: 2px;
+  border: 2px solid transparent;
+  border-radius: 50%;
+  background: none;
+  cursor: pointer;
+}
+
+.user-button:hover,
+.user-button[aria-expanded='true'] {
+  border-color: var(--accent);
+}
+
+.user-dot {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  background: var(--warn);
+  border: 2px solid var(--bg);
+}
+
+.menu {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 8px);
+  z-index: 20;
+  width: 260px;
+  padding: 6px;
+  border-radius: 14px;
+  border: 1px solid var(--border);
+  background: var(--card);
+  box-shadow: 0 12px 32px rgb(0 0 0 / 0.2);
+  display: grid;
+}
+
+.menu-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px;
+}
+
+.menu-head div {
+  display: grid;
+  min-width: 0;
+}
+
+.menu-head strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.menu-head .muted {
+  font-size: 0.8rem;
+}
+
+.menu a,
+.menu button {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 9px 10px;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  font-size: 0.9rem;
+  text-align: left;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.menu a:hover,
+.menu button:hover {
+  background: var(--card-hover);
+}
+
+.menu .muted {
+  font-size: 0.8rem;
+}
+
+.menu hr {
+  width: 100%;
+  margin: 4px 0;
+  border: 0;
+  border-top: 1px solid var(--border);
+}
+
+.menu-danger {
+  color: var(--down) !important;
+}
+
+/* --- Profile ---------------------------------------------------------------- */
+
+.settings-nav a {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.avatar-row {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  flex-wrap: wrap;
+}
+
+.avatar-actions {
+  display: grid;
+  gap: 10px;
+}
+
+.field textarea {
+  width: 100%;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  font-size: 0.95rem;
+  resize: vertical;
+}
+
+.field input:disabled {
+  opacity: 0.65;
+}
+
+.session-main {
+  display: grid;
+  flex: 1;
+  min-width: 0;
+}
+
+.session-main .muted {
+  margin-left: 0;
+  font-size: 0.82rem;
+}
+
+.coming-soon {
+  gap: 10px;
+  justify-items: start;
+}
+
+.coming-soon ul {
+  margin: 0;
+  padding-left: 20px;
+  display: grid;
+  gap: 6px;
+  color: var(--muted);
+}
+
+.detected-ip {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.detected-ip code {
+  padding: 6px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  font-size: 0.95rem;
+}
+
+.link-btn {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--accent);
+  font: inherit;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+
+.link-btn:hover {
+  text-decoration: underline;
 }

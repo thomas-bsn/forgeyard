@@ -284,7 +284,7 @@ function AppList({
 
       {error && <p className="error">{error}</p>}
 
-      {apps && all.length === 0 && (
+      {apps && all.length === 0 && (!admin || sections.length === 0) && (
         <div className="empty-state">
           <strong>Aucune app pour le moment</strong>
           <span>Déployez une image Docker, par exemple nginx:alpine sur le port 80.</span>

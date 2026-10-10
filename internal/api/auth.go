@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"errors"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/thomas-bsn/forgeyard/internal/auth"
@@ -11,14 +12,45 @@ import (
 )
 
 type userResponse struct {
-	ID          int64  `json:"id"`
-	Username    string `json:"username,omitempty"`
-	DisplayName string `json:"displayName"`
-	Role        string `json:"role"`
+	ID              int64  `json:"id"`
+	Username        string `json:"username,omitempty"`
+	DisplayName     string `json:"displayName"`
+	Role            string `json:"role"`
+	Method          string `json:"method"` // "discord" or "password"
+	AvatarURL       string `json:"avatarUrl,omitempty"`
+	CustomAvatar    bool   `json:"customAvatar"`
+	Email           string `json:"email"`
+	Bio             string `json:"bio"`
+	DiscordName     string `json:"discordName,omitempty"`
+	NameFromDiscord bool   `json:"nameFromDiscord"`
+	CreatedAt       int64  `json:"createdAt"`
 }
 
 func toUserResponse(u db.User) userResponse {
-	return userResponse{ID: u.ID, Username: u.Username.String, DisplayName: u.DisplayName, Role: u.Role}
+	return userResponse{
+		ID: u.ID, Username: u.Username.String, DisplayName: u.DisplayName, Role: u.Role, Method: signInMethod(u),
+		AvatarURL: avatarURL(u), CustomAvatar: u.AvatarUpdatedAt > 0, Email: u.Email.String, Bio: u.Bio,
+		DiscordName: u.DiscordName, NameFromDiscord: u.DiscordID.Valid && u.NameFromDiscord != 0, CreatedAt: u.CreatedAt,
+	}
+}
+
+func signInMethod(u db.User) string {
+	if u.DiscordID.Valid {
+		return "discord"
+	}
+	return "password"
+}
+
+// avatarURL is the picture the user uploaded, else their Discord avatar, else empty (the UI shows an
+// initial). The version in an uploaded picture's URL lets browsers cache it until it changes.
+func avatarURL(u db.User) string {
+	switch {
+	case u.AvatarUpdatedAt > 0:
+		return "/api/users/" + strconv.FormatInt(u.ID, 10) + "/avatar?v=" + strconv.FormatInt(u.AvatarUpdatedAt, 10)
+	case u.DiscordID.Valid && u.DiscordAvatar != "":
+		return "https://cdn.discordapp.com/avatars/" + u.DiscordID.String + "/" + u.DiscordAvatar + ".png?size=128"
+	}
+	return ""
 }
 
 type loginRequest struct {
