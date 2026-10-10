@@ -181,8 +181,12 @@ func appHostname(c dnsConfig, name string) string {
 	return name + "." + c.Domain
 }
 
-// nodeIP is where a node's app domains point: its own public IP, or the instance-wide one.
+// nodeIP is where a node's app domains point: Forgeyard's machine for a relayed node, else its own public
+// IP, or the instance-wide one.
 func nodeIP(node db.Node, c dnsConfig) string {
+	if node.Relayed != 0 {
+		return c.FrontIP
+	}
 	if node.PublicIp != "" {
 		return node.PublicIp
 	}
@@ -244,13 +248,11 @@ func (s *Server) desiredState(ctx context.Context, nodeID int64) (*agentpb.Desir
 	return d, nil
 }
 
-// relays lists the apps Forgeyard's own machine passes on to other nodes. Behind one public IP (a home
-// box), web traffic reaches a single machine: the one running Forgeyard, whose proxy or Traefik receives
-// it. Apps on other nodes with the same public IP are relayed there over the local network, to their
-// node's Traefik in "behind my proxy" mode.
+// relays lists the apps Forgeyard's own machine passes on to the relayed nodes: their visits reach it
+// (their DNS points to it), and its Traefik sends them over the local network to the node's Traefik,
+// which listens on its HTTP port.
 func (s *Server) relays(ctx context.Context, front db.Node, c dnsConfig) ([]*agentpb.Relay, error) {
-	ip := nodeIP(front, c)
-	if ip == "" || c.Mode == "none" {
+	if c.Mode == "none" {
 		return nil, nil
 	}
 	nodeList, err := s.store.ListNodes(ctx)
@@ -259,7 +261,7 @@ func (s *Server) relays(ctx context.Context, front db.Node, c dnsConfig) ([]*age
 	}
 	var out []*agentpb.Relay
 	for _, n := range nodeList {
-		if n.ID == front.ID || n.Status != "active" || nodeIP(n, c) != ip || n.LocalIp == "" || n.IngressMode != "proxy" {
+		if n.ID == front.ID || n.Status != "active" || n.Relayed == 0 || n.LocalIp == "" {
 			continue
 		}
 		apps, err := s.store.ListAppsByNode(ctx, n.ID)

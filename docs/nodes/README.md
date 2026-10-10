@@ -57,9 +57,9 @@ Les données viennent de l'agent, qui décrit toutes les 10 secondes les réseau
 
 Réglé dans la fenêtre « Réseau… » de sa carte :
 
-- **qui gère les ports 80/443** : Traefik de Forgeyard, ou votre reverse proxy (voir [routing](../network/routing.md)) ;
+- **comment arrivent ses visites** : pour la machine de Forgeyard, Traefik ou ton reverse proxy ; pour les autres, relais par la machine de Forgeyard, directement, ou leur propre reverse proxy (voir [routing](../network/routing.md#les-modes-dentrée-dun-node)) ;
 - **IP locale** : trouvée par l'agent, pré-remplie dans l'exemple de règle pour votre proxy ;
-- **IP publique** : celle vers laquelle Forgeyard fait pointer le DNS des apps de ce node. Un node derrière la même box que Forgeyard (même IP) doit être en mode « Mon reverse proxy » : la machine de Forgeyard lui relaie ses apps (voir [routing](../network/routing.md#plusieurs-nodes-derrière-la-même-box)). Vide, c'est celle de Réglages › Domaine des apps : il ne faut la remplir que pour un node qui n'est pas derrière la même box (un VPS, un autre site).
+- **IP publique** : celle vers laquelle Forgeyard fait pointer le DNS des apps de ce node. Sans objet en relais (le DNS pointe vers la machine de Forgeyard). Vide, c'est celle de Réglages › Domaine des apps : il ne faut la remplir que pour un node qui n'est pas derrière la même box (un VPS, un autre site).
 
 ## La carte d'un node
 

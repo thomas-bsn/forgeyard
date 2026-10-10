@@ -112,7 +112,7 @@ export default function Nodes({ localSupported }: { localSupported: boolean }) {
             <NodeCard
               key={n.id}
               node={n}
-              sharesBox={sharesBox(n, nodes)}
+              local={nodes.find((x) => x.isLocal)}
               apps={apps.filter((a) => a.nodeId === n.id)}
               externals={containers.filter((c) => c.nodeId === n.id)}
               onJoin={setJoin}
@@ -137,7 +137,7 @@ export default function Nodes({ localSupported }: { localSupported: boolean }) {
       {network && (
         <NetworkSettings
           node={network}
-          sharesBox={sharesBox(network, nodes ?? [])}
+          local={(nodes ?? []).find((x) => x.isLocal)}
           onClose={() => setNetwork(null)}
           onSaved={() => {
             setNetwork(null)
@@ -153,11 +153,6 @@ export default function Nodes({ localSupported }: { localSupported: boolean }) {
  * Whether a node sits behind the same public IP as Forgeyard's machine (a home box): it is then reached
  * through Forgeyard's machine, which relays its apps to it over the local network.
  */
-function sharesBox(n: Node, all: Node[]): boolean {
-  const front = all.find((x) => x.isLocal)
-  return !!front && !n.isLocal && (n.publicIp === '' || n.publicIp === front.publicIp)
-}
-
 function AddNode({ localAvailable, onCreated, onClose }: { localAvailable: boolean; onCreated: (j: JoinCommand) => void; onClose: () => void }) {
   const [where, setWhere] = useState<'local' | 'remote'>(localAvailable ? 'local' : 'remote')
   const local = localAvailable && where === 'local'
@@ -302,7 +297,7 @@ function Meter({ label, used, total, pct: rawPct, text }: { label: string; used?
 
 function NodeCard({
   node,
-  sharesBox,
+  local,
   apps,
   externals,
   onJoin,
@@ -310,7 +305,7 @@ function NodeCard({
   onChange,
 }: {
   node: Node
-  sharesBox: boolean
+  local?: Node
   apps: App[]
   externals: Container[]
   onJoin: (j: JoinCommand) => void
@@ -393,12 +388,12 @@ function NodeCard({
               <div className="v">{m ? appsOnline + externalsRunning : '–'}</div>
             </div>
           </div>
-          {sharesBox && node.ingressMode === 'traefik' && (
+          {!node.isLocal && local && node.ingressMode === 'traefik' && (!node.publicIp || node.publicIp === local.publicIp) && (
             <div className="banner banner-warn">
               <span className="dot dot-warn" />
               <span>
-                Ce node est derrière la même box que Forgeyard : ses apps n’y arrivent pas. Dans « Réseau… », choisissez « Via la machine
-                de Forgeyard ».
+                Ce node reçoit ses visites directement, mais partage l’IP publique de {local.name} : elles n’y arrivent pas. Dans « Réseau… »,
+                choisissez « Relais par {local.name} » ou donnez-lui son IP publique.
               </span>
             </div>
           )}
@@ -408,16 +403,10 @@ function NodeCard({
               <path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18" />
             </svg>
             <div>
-              <strong>
-                {node.ingressMode === 'traefik'
-                  ? 'Forgeyard gère les ports 80 et 443'
-                  : sharesBox
-                    ? 'Apps relayées par la machine de Forgeyard'
-                    : 'Derrière votre reverse proxy'}
-              </strong>
+              <strong>{ingressLine(node, local).title}</strong>
               <span className="muted">
-                {node.ingressMode === 'traefik' ? 'HTTPS automatique' : `Apps reçues sur le port ${node.ingressHttpPort}`}
-                {node.publicIp ? ` · IP publique ${node.publicIp}` : ''}
+                {ingressLine(node, local).text}
+                {node.publicIp && node.ingressMode !== 'relay' ? ` · IP publique ${node.publicIp}` : ''}
               </span>
             </div>
           </div>
@@ -456,15 +445,19 @@ function NodeCard({
   )
 }
 
-/** How the node receives the web traffic of its apps. */
-function NetworkSettings({ node, sharesBox, onClose, onSaved }: { node: Node; sharesBox: boolean; onClose: () => void; onSaved: () => void }) {
+type Ingress = Node['ingressMode']
+
+/** How the node receives the web traffic of its apps: directly, through Forgeyard's machine, or behind its own proxy. */
+function NetworkSettings({ node, local, onClose, onSaved }: { node: Node; local?: Node; onClose: () => void; onSaved: () => void }) {
   const [ip, setIp] = useState(node.publicIp)
-  const [mode, setMode] = useState(node.ingressMode)
+  const [mode, setMode] = useState<Ingress>(node.ingressMode)
   const [port, setPort] = useState(String(node.ingressHttpPort))
   const [domain, setDomain] = useState('')
   const [defaultIp, setDefaultIp] = useState('')
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
+  const isFront = node.isLocal
+  const front = local && !isFront ? local : undefined
 
   useEffect(() => {
     // Only the superadmin may read the domain settings; others see a placeholder domain in the example.
@@ -482,7 +475,7 @@ function NetworkSettings({ node, sharesBox, onClose, onSaved }: { node: Node; sh
     setBusy(true)
     setError('')
     try {
-      await api.setNodeIngress(node.id, { publicIp: ip, ingressMode: mode, ingressHttpPort: Number(port) })
+      await api.setNodeIngress(node.id, { publicIp: mode === 'relay' ? '' : ip, ingressMode: mode, ingressHttpPort: Number(port) })
       onSaved()
     } catch (err) {
       setError(errorMessage(err))
@@ -490,9 +483,31 @@ function NetworkSettings({ node, sharesBox, onClose, onSaved }: { node: Node; sh
     }
   }
 
+  // Forgeyard's machine takes ports 80 and 443 of its box: a node behind the same IP cannot get them too.
+  const frontIp = front ? front.publicIp || defaultIp : ''
+  const sameIpAsFront = !!front && (ip.trim() === '' || ip.trim() === frontIp)
+
+  const options: { key: Ingress; title: string; text: string; hidden?: boolean }[] = isFront
+    ? [
+        { key: 'traefik', title: 'Forgeyard', text: 'Traefik prend les ports 80 et 443 de cette machine et gère le HTTPS : rien à configurer.' },
+        { key: 'proxy', title: 'Mon reverse proxy', text: 'Caddy, Nginx… garde 80/443 et envoie les apps au Traefik de Forgeyard.' },
+      ]
+    : [
+        {
+          key: 'relay',
+          title: front ? `Relais par ${front.name}` : 'Relais par la machine de Forgeyard',
+          text: front
+            ? `Sur le même réseau que ${front.name} : les visites arrivent chez lui, qui les passe à ce node par le réseau local. Rien à configurer.`
+            : 'Il faut d’abord activer la machine de Forgeyard comme node.',
+        },
+        { key: 'traefik', title: 'Directement', text: 'Ce node a sa propre IP publique (un VPS, une autre box) : son Traefik prend 80 et 443 et gère le HTTPS.' },
+        { key: 'proxy', title: 'Son propre reverse proxy', text: 'Un Caddy ou un Nginx devant ce node lui envoie ses apps : à configurer chez toi.' },
+      ]
+
   return (
     <Modal
       title={`Réseau de « ${node.name} »`}
+      subtitle="Comment les visites de ses apps arrivent jusqu’à lui."
       onClose={onClose}
       onSubmit={save}
       wide
@@ -501,65 +516,84 @@ function NetworkSettings({ node, sharesBox, onClose, onSaved }: { node: Node; sh
           <button type="button" className="btn" onClick={onClose} disabled={busy}>
             Annuler
           </button>
-          <button type="submit" className="btn btn-primary" disabled={busy}>
+          <button type="submit" className="btn btn-primary" disabled={busy || (mode === 'relay' && !front)}>
             Enregistrer
           </button>
         </>
       }
     >
-      <div className="field">
-        <span>{sharesBox ? 'Comment ce node reçoit le trafic de ses apps ?' : 'Qui gère les ports 80 et 443 de cette machine ?'}</span>
-        <div className="auth-options">
-          <button type="button" className={`auth-option ${mode === 'traefik' ? 'selected' : ''}`} onClick={() => setMode('traefik')} aria-pressed={mode === 'traefik'}>
-            <strong>{sharesBox ? 'Directement sur ce node' : 'Forgeyard'}</strong>
-            <small>
-              {sharesBox
-                ? 'Ce node prend les ports 80 et 443 : il faudrait que la box lui envoie le trafic.'
-                : 'HTTPS automatique, rien à configurer.'}
-            </small>
+      <div className={`auth-options ${options.length === 3 ? 'auth-options-3' : ''}`}>
+        {options.map((o) => (
+          <button
+            key={o.key}
+            type="button"
+            className={`auth-option ${mode === o.key ? 'selected' : ''}`}
+            onClick={() => setMode(o.key)}
+            aria-pressed={mode === o.key}
+            disabled={o.key === 'relay' && !front}
+          >
+            <strong>{o.title}</strong>
+            <small>{o.text}</small>
           </button>
-          <button type="button" className={`auth-option ${mode === 'proxy' ? 'selected' : ''}`} onClick={() => setMode('proxy')} aria-pressed={mode === 'proxy'}>
-            {sharesBox ? (
-              <>
-                <strong>Via la machine de Forgeyard</strong>
-                <small>Elle reçoit le trafic de la box et passe à ce node ses apps, sur votre réseau local.</small>
-              </>
-            ) : (
-              <>
-                <strong>Mon reverse proxy</strong>
-                <small>Caddy, Nginx… garde 80/443 et envoie les apps à Forgeyard.</small>
-              </>
-            )}
-          </button>
-        </div>
+        ))}
       </div>
-      {sharesBox && (
-        <p className="hint">
-          Ce node est derrière la même box que Forgeyard : choisissez « Via la machine de Forgeyard ». Elle reçoit le trafic et relaie à
-          ce node ses apps sur votre réseau local{node.localIp ? ` (${node.localIp})` : ''} : rien à installer ni à configurer.
-        </p>
+
+      {mode === 'relay' && front && (
+        <>
+          <label className="field">
+            <span>Port de ce node pour le relais</span>
+            <input type="number" min={1} max={65535} value={port} onChange={(e) => setPort(e.target.value)} required />
+            <small>
+              {front.name} envoie les apps à <span className="mono">{node.localIp || 'l’IP locale de ce node'}:{port || '8090'}</span>, en HTTP sur le réseau
+              local. Laissez 8090 sauf s’il est déjà pris.
+            </small>
+          </label>
+          <p className="hint">Le DNS des apps de ce node pointe vers {front.name}{frontIp ? ` (${frontIp})` : ''}, qui reçoit les visites et gère le HTTPS.</p>
+        </>
+      )}
+      {mode === 'traefik' && !isFront && sameIpAsFront && (
+        <div className="banner banner-warn">
+          <span className="dot dot-warn" />
+          <span>
+            Sans IP publique à lui, ce node partage celle de {front!.name} : la box n’envoie 80 et 443 qu’à une seule machine, et les visites
+            n’arriveraient pas ici. Indiquez son IP publique, ou choisissez « Relais par {front!.name} ».
+          </span>
+        </div>
       )}
       {mode === 'proxy' && (
         <>
           <label className="field">
             <span>Port d’entrée HTTP</span>
             <input type="number" min={1} max={65535} value={port} onChange={(e) => setPort(e.target.value)} required />
-            <small>Le port de cette machine où Forgeyard reçoit les apps. Laissez 8090 sauf s’il est déjà pris.</small>
+            <small>Le port de cette machine où ton reverse proxy envoie les apps. Laissez 8090 sauf s’il est déjà pris.</small>
           </label>
-          {!sharesBox && <ProxySnippet domain={domain} port={Number(port) || 8090} detectedIp={node.localIp} />}
+          <ProxySnippet domain={domain} port={Number(port) || 8090} detectedIp={node.localIp} />
         </>
       )}
-      <label className="field">
-        <span>IP publique de ce node</span>
-        <input value={ip} onChange={(e) => setIp(e.target.value)} placeholder={defaultIp ? `${defaultIp} (celle de Réglages › Domaine)` : 'Celle de Réglages › Domaine'} />
-        <small>
-          L’IP vers laquelle Forgeyard fait pointer le DNS des apps de ce node. Laissez vide si ce node est derrière la même box que
-          {defaultIp ? ` ${defaultIp}` : ' celle des réglages'} ; remplissez-la seulement s’il est ailleurs (un VPS, une autre maison…).
-        </small>
-      </label>
+      {mode !== 'relay' && (
+        <label className="field">
+          <span>IP publique de ce node</span>
+          <input value={ip} onChange={(e) => setIp(e.target.value)} placeholder={defaultIp ? `${defaultIp} (celle de Réglages › Domaine)` : 'Celle de Réglages › Domaine'} />
+          <small>
+            L’IP vers laquelle Forgeyard fait pointer le DNS des apps de ce node. Vide : celle de Réglages › Domaine
+            {defaultIp ? ` (${defaultIp})` : ''}.
+          </small>
+        </label>
+      )}
       {error && <p className="error">{error}</p>}
     </Modal>
   )
+}
+
+/** How a node receives its visits, in a line for its card. */
+function ingressLine(node: Node, local?: Node): { title: string; text: string } {
+  switch (node.ingressMode) {
+    case 'relay':
+      return { title: `Relayé par ${local?.name ?? 'la machine de Forgeyard'}`, text: `Apps reçues sur le port ${node.ingressHttpPort}, par le réseau local` }
+    case 'proxy':
+      return { title: 'Derrière son reverse proxy', text: `Apps reçues sur le port ${node.ingressHttpPort}` }
+  }
+  return { title: node.isLocal ? 'Forgeyard gère les ports 80 et 443' : 'Reçoit ses visites directement', text: 'HTTPS automatique' }
 }
 
 /** The commit as people read it. */

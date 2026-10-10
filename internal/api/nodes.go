@@ -56,12 +56,21 @@ type nodeResponse struct {
 	UpdateError   string `json:"updateError,omitempty"`
 }
 
+// ingressMode is how a node receives its apps' visits: traefik (directly, on 80/443), proxy (behind its
+// own reverse proxy) or relay (through Forgeyard's machine).
+func ingressMode(n db.Node) string {
+	if n.Relayed != 0 {
+		return "relay"
+	}
+	return n.IngressMode
+}
+
 func (s *Server) toNodeResponse(n db.Node) nodeResponse {
 	resp := nodeResponse{
 		ID: n.ID, Name: n.Name, State: "pending", Hostname: n.Hostname, OS: n.Os, Arch: n.Arch, CPUs: n.Cpus,
 		MemoryBytes: n.MemoryBytes, DiskBytes: n.DiskBytes, DockerVersion: n.DockerVersion,
 		AgentVersion: n.AgentVersion, LastSeenAt: n.LastSeenAt.Int64,
-		PublicIP: n.PublicIp, LocalIP: n.LocalIp, DockerError: n.DockerError, IngressMode: n.IngressMode, IngressPort: n.IngressHttpPort, IsLocal: n.IsLocal != 0,
+		PublicIP: n.PublicIp, LocalIP: n.LocalIp, DockerError: n.DockerError, IngressMode: ingressMode(n), IngressPort: n.IngressHttpPort, IsLocal: n.IsLocal != 0,
 	}
 	if n.Status != "active" {
 		return resp
@@ -359,7 +368,21 @@ func (s *Server) handleNodeIngress(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "IP publique invalide")
 		return
 	}
-	if body.Mode != "traefik" && body.Mode != "proxy" {
+	// relay: a node behind a proxy, Forgeyard's own machine.
+	relayed := int64(0)
+	switch body.Mode {
+	case "traefik", "proxy":
+	case "relay":
+		if node.IsLocal != 0 {
+			writeError(w, http.StatusBadRequest, "la machine de Forgeyard ne se relaie pas elle-même : Traefik ou votre reverse proxy")
+			return
+		}
+		if _, err := s.store.GetLocalNode(ctx); err != nil {
+			writeError(w, http.StatusConflict, "pas de machine de Forgeyard pour relayer : activez-la comme node, ou choisissez un autre mode")
+			return
+		}
+		body.Mode, relayed, body.PublicIP = "proxy", 1, ""
+	default:
 		writeError(w, http.StatusBadRequest, "mode inconnu")
 		return
 	}
@@ -371,7 +394,7 @@ func (s *Server) handleNodeIngress(w http.ResponseWriter, r *http.Request) {
 		body.HTTPPort = int(node.IngressHttpPort)
 	}
 	updated, err := s.store.UpdateNodeIngress(ctx, db.UpdateNodeIngressParams{
-		PublicIp: body.PublicIP, IngressMode: body.Mode, IngressHttpPort: int64(body.HTTPPort), ID: node.ID,
+		PublicIp: body.PublicIP, IngressMode: body.Mode, IngressHttpPort: int64(body.HTTPPort), Relayed: relayed, ID: node.ID,
 	})
 	if err != nil {
 		s.internalError(w, r, err)
@@ -383,9 +406,23 @@ func (s *Server) handleNodeIngress(w http.ResponseWriter, r *http.Request) {
 		s.internalError(w, r, err)
 		return
 	}
-	if nodeIP(updated, c) != nodeIP(node, c) {
+	// The apps' records follow the node's address; when Forgeyard's machine's changes, the relayed
+	// nodes' too.
+	old, oldErr := s.loadDNSConfigAt(ctx, node)
+	if oldErr == nil && nodeIP(updated, c) != nodeIP(node, old) {
 		if err := s.repointAppRecords(ctx, updated, c); err != nil {
 			s.logger.Warn("updating DNS records after an IP change failed", "node", node.Name, "err", err)
+		}
+	}
+	if updated.IsLocal != 0 && oldErr == nil && c.FrontIP != old.FrontIP {
+		if list, err := s.store.ListNodes(ctx); err == nil {
+			for _, n := range list {
+				if n.Relayed != 0 {
+					if err := s.repointAppRecords(ctx, n, c); err != nil {
+						s.logger.Warn("updating a relayed node's DNS records failed", "node", n.Name, "err", err)
+					}
+				}
+			}
 		}
 	}
 	s.logger.Info("node ingress changed", "node", node.Name, "mode", body.Mode, "ip", body.PublicIP, "by", currentUser(r).DisplayName)
@@ -394,6 +431,19 @@ func (s *Server) handleNodeIngress(w http.ResponseWriter, r *http.Request) {
 }
 
 // repointAppRecords points the DNS records of a node's apps to its current IP.
+// loadDNSConfigAt is the DNS configuration as it was before a node changed: c.FrontIP follows Forgeyard's
+// machine, which may be the node that changed.
+func (s *Server) loadDNSConfigAt(ctx context.Context, before db.Node) (dnsConfig, error) {
+	c, err := s.loadDNSConfig(ctx)
+	if err == nil && before.IsLocal != 0 {
+		c.FrontIP = c.PublicIP
+		if before.PublicIp != "" {
+			c.FrontIP = before.PublicIp
+		}
+	}
+	return c, err
+}
+
 func (s *Server) repointAppRecords(ctx context.Context, node db.Node, c dnsConfig) error {
 	p, err := s.dnsProvider(c)
 	if err != nil || p == nil {

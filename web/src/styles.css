@@ -4592,3 +4592,12 @@ a.link-btn {
   border: 1px solid color-mix(in srgb, var(--warn) 40%, transparent);
   background: color-mix(in srgb, var(--warn) 10%, transparent);
 }
+
+.auth-options.auth-options-3 {
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+}
+
+.auth-option:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}

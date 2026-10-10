@@ -42,7 +42,7 @@ UPDATE apps SET dns_name = ? WHERE id = ?;
 DELETE FROM apps WHERE id = ?;
 
 -- name: UpdateNodeIngress :one
-UPDATE nodes SET public_ip = ?, ingress_mode = ?, ingress_http_port = ? WHERE id = ? RETURNING *;
+UPDATE nodes SET public_ip = ?, ingress_mode = ?, ingress_http_port = ?, relayed = ? WHERE id = ? RETURNING *;
 
 -- name: AppExistsByName :one
 SELECT EXISTS (SELECT 1 FROM apps WHERE name = ? AND kind = 'web');

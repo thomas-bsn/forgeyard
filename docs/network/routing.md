@@ -54,15 +54,25 @@ https:// {
 
 Quel que soit le proxy, la règle est la même : envoyer `*.mondomaine.com` vers `http://IP_LOCALE:8090`. La fenêtre « Réseau… » l'affiche avec l'IP et le domaine remplis, et donne l'exemple prêt à copier pour Caddy, Nginx, Traefik (configuration dynamique) et Nginx Proxy Manager.
 
-## Plusieurs nodes derrière la même box
+## Les modes d'entrée d'un node
 
-Derrière une seule IP publique, la box envoie tout le trafic web à une seule machine : celle de Forgeyard (son Traefik, ou votre proxy puis son Traefik). Les apps des autres nodes de la même IP y sont donc **relayées** :
+La machine de Forgeyard (node A) reçoit ses visites de deux façons : **Traefik** prend les ports 80/443 et gère le HTTPS, ou **ton reverse proxy** les garde et envoie les apps à Traefik.
 
-- ces nodes se mettent en mode « Via la machine de Forgeyard » (c'est le mode « Mon reverse proxy », ainsi nommé pour eux : Traefik en HTTP sur leur port d'entrée, 8090 par défaut ; pratique aussi quand le port 80 est déjà pris, par Pi-hole par exemple) ;
-- le Traefik de la machine de Forgeyard reçoit, pour chacune de leurs apps, une règle ``Host(`<app>.<domaine>`)`` vers `http://<IP locale du node>:<port>` ; le Traefik du node la sert ensuite à son app ;
-- l'agent écrit ces règles dans un fichier de configuration du conteneur Traefik (`/forgeyard/relays.yml`), que Traefik relit seul ; elles suivent les apps, les nodes et leurs IP locales.
+Les autres nodes ont trois modes, choisis dans leur fenêtre « Réseau… » :
 
-Un node avec sa propre IP publique (un VPS) n'est pas relayé : son DNS pointe sur lui et il gère ses ports 80/443 ou son propre proxy. La page Nodes signale un node derrière la même box resté en mode « Forgeyard gère les ports 80 et 443 ».
+| Mode | Les visites arrivent… | DNS des apps | Pour |
+|---|---|---|---|
+| **Relais par le node A** | sur le node A, dont le Traefik les passe au Traefik du node par le réseau local | IP du node A | un node sur le même réseau que le node A (derrière la même box) |
+| **Directement** | sur le node, dont le Traefik prend 80/443 et gère le HTTPS | IP publique du node | un node avec sa propre IP publique (VPS, autre box) |
+| **Son propre reverse proxy** | sur un Caddy ou un Nginx devant le node, qui les envoie à son Traefik | IP publique du node | un node d'un autre réseau, avec un proxy déjà en place |
+
+En relais :
+
+- le Traefik du node écoute en HTTP sur son port d'entrée (8090 par défaut ; pratique aussi quand le port 80 est déjà pris, par Pi-hole par exemple) ;
+- le Traefik du node A reçoit, pour chaque app du node, une règle ``Host(`<app>.<domaine>`)`` vers `http://<IP locale du node>:<port>` ; l'agent l'écrit dans un fichier de configuration du conteneur Traefik (`/forgeyard/relays.yml`), que Traefik relit seul ; les règles suivent les apps, les nodes et leurs IP locales ;
+- il faut que le node A joigne le node à son IP locale (même réseau, ou un VPN).
+
+Une box n'envoie les ports 80 et 443 qu'à une seule machine : un node en « Directement » sans IP publique à lui (donc celle du node A) ne reçoit rien ; sa carte et sa fenêtre Réseau le signalent, et l'onglet Réseau de ses apps le montre en rouge. Avant que le relais soit un mode à part, il était deviné (un node derrière un proxy avec l'IP du node A) : ces nodes sont passés en « Relais » à la mise à jour.
 
 ## Pourquoi Forgeyard ne modifie pas votre proxy
 

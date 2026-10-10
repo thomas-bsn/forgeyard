@@ -127,6 +127,7 @@ type Node struct {
 	IsLocal         int64
 	LocalIp         string
 	DockerError     string
+	Relayed         int64
 }
 
 type Session struct {

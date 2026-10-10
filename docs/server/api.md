@@ -62,7 +62,7 @@ Les routes d'app vérifient que l'utilisateur est le propriétaire ou un admin.
 | `GET`, `PUT /api/admin/settings/discord` | App Discord |
 | `GET`, `POST /api/admin/nodes` | Lister, créer un node (`local: true` pour la machine de Forgeyard) |
 | `POST /api/admin/nodes/{id}/join-command` | Nouvelle commande (node en attente) |
-| `PUT /api/admin/nodes/{id}/ingress` | IP publique et mode réseau |
+| `PUT /api/admin/nodes/{id}/ingress` | IP publique et mode d’entrée : `traefik` (directement), `proxy` (son reverse proxy), `relay` (par la machine de Forgeyard) |
 | `DELETE /api/admin/nodes/{id}` | Retirer (refusé s'il a des apps) |
 | `GET /api/admin/nodes/choices` | Nodes en ligne pour une nouvelle app, la recommandée en premier |
 | `GET /api/admin/topology` | Nodes, réseaux Docker, conteneurs (IP, noms, ports, route) et problèmes, pour les vues Topologie et Tableau |

@@ -11,8 +11,8 @@ import (
 	"github.com/thomas-bsn/forgeyard/internal/dns/dnstest"
 )
 
-// Behind one public IP, Forgeyard's machine relays the apps of the other nodes that run Traefik behind
-// a proxy, to their local address.
+// Forgeyard's machine relays the apps of the nodes set to be relayed, to their local address; their DNS
+// records point to it.
 func TestRelays(t *testing.T) {
 	ts, server := newTestServerWithHandle(t)
 	admin := newClient()
@@ -32,7 +32,15 @@ func TestRelays(t *testing.T) {
 	}
 	pi := connectFakeAgent(t, ts.URL, server, admin, "pi")
 	pi.desired(t)
+	// Behind a proxy on the same IP is not relayed: the proxy is the user's own.
 	put(t, admin, ts.URL+"/api/admin/nodes/"+itoa(pi.nodeID)+"/ingress", nodeIngressRequest{Mode: "proxy", HTTPPort: 8090})
+	if code := put(t, admin, ts.URL+"/api/admin/nodes/"+itoa(front.nodeID)+"/ingress", nodeIngressRequest{Mode: "relay", HTTPPort: 8090}); code != http.StatusBadRequest {
+		t.Fatalf("Forgeyard's machine relaying itself: %d", code)
+	}
+	var relayed nodeResponse
+	if code := putJSON(t, admin, ts.URL+"/api/admin/nodes/"+itoa(pi.nodeID)+"/ingress", nodeIngressRequest{PublicIP: "198.51.100.9", Mode: "relay", HTTPPort: 8090}, &relayed); code != http.StatusOK || relayed.IngressMode != "relay" || relayed.PublicIP != "" {
+		t.Fatalf("relay: %d %+v", code, relayed)
+	}
 	// Apps go to the node with the fewest: the first on nas, the second on pi.
 	var a1, a2 appResponse
 	postJSON(t, admin, ts.URL+"/api/apps", appInput{Name: "one", Image: "nginx", Port: 80}, &a1)
@@ -44,12 +52,18 @@ func TestRelays(t *testing.T) {
 	front.drainUntil(t, func(relays int, hosts []string, targets []string) bool {
 		return relays == 1 && hosts[0] == "two.example.com" && targets[0] == "http://192.168.1.12:8090"
 	})
+	if ip := mem.Lookup("example.com.", "two", "A"); ip != "203.0.113.1" {
+		t.Fatalf("relayed app's record: %q", ip)
+	}
 
-	// A node with its own public IP is reached directly: no relay.
+	// A node behind its own proxy, with its own public IP, is reached directly: no relay, its own address.
 	if code := put(t, admin, ts.URL+"/api/admin/nodes/"+itoa(pi.nodeID)+"/ingress", nodeIngressRequest{PublicIP: "198.51.100.9", Mode: "proxy", HTTPPort: 8090}); code != http.StatusOK {
 		t.Fatalf("pi ingress: %d", code)
 	}
 	front.drainUntil(t, func(relays int, _, _ []string) bool { return relays == 0 })
+	if ip := mem.Lookup("example.com.", "two", "A"); ip != "198.51.100.9" {
+		t.Fatalf("record after leaving the relay: %q", ip)
+	}
 }
 
 func TestNodeChoice(t *testing.T) {

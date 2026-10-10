@@ -56,6 +56,8 @@ type dnsConfig struct {
 	Mode     string
 	Domain   string
 	PublicIP string
+	// FrontIP is the public IP of Forgeyard's own machine, where the apps of relayed nodes point.
+	FrontIP  string
 	Provider string
 	Zone     string
 	Creds    map[string]string
@@ -102,6 +104,10 @@ func (s *Server) loadDNSConfig(ctx context.Context) (dnsConfig, error) {
 				c.Creds = map[string]string{"api_token": token}
 			}
 		}
+	}
+	c.FrontIP = c.PublicIP
+	if local, err := s.store.GetLocalNode(ctx); err == nil && local.PublicIp != "" {
+		c.FrontIP = local.PublicIp
 	}
 	return c, nil
 }

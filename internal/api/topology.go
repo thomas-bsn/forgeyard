@@ -150,18 +150,20 @@ func (t *topoContext) appPath(ctx context.Context, a db.App, withDNS bool) ([]pa
 		if withDNS {
 			steps = append(steps, t.dnsStep(ctx, host, ip, &diags))
 		}
-		shares := t.local != nil && t.local.ID != node.ID && ip != "" && nodeIP(*t.local, t.c) == ip
+		// A node receiving its visits directly behind the same public IP as Forgeyard's machine: the box
+		// sends ports 80 and 443 to one machine only, Forgeyard's.
+		shares := t.local != nil && t.local.ID != node.ID && node.Relayed == 0 && ip != "" && nodeIP(*t.local, t.c) == ip
 		switch {
 		case node.IngressMode == "traefik" && shares:
 			steps = append(steps, pathStep{Key: "entry", Title: "Box → " + t.local.Name, Detail: ip + " :80 :443", State: "error", Note: "pas vers ce node"})
 			diags = append(diags, diagnosis{Level: "error",
-				Message: "Ce node est derrière la même box que la machine de Forgeyard : les visites arrivent sur celle-ci, qui ne connaît pas l'app (404).",
-				Help:    "Dans Nodes › Réseau, passez " + node.Name + " en « Via la machine de Forgeyard »."})
+				Message: "Ce node reçoit ses visites directement, mais il a la même IP publique que la machine de Forgeyard : la box envoie les ports 80 et 443 à celle-ci, qui ne connaît pas l'app (404).",
+				Help:    "Dans Nodes › Réseau, passez " + node.Name + " en « Relais par " + t.local.Name + " », ou donnez-lui sa propre IP publique."})
 		case node.IngressMode == "traefik":
 			steps = append(steps, pathStep{Key: "entry", Title: "Box → " + node.Name, Detail: ip + " :80 :443", State: "info", Note: "redirection de la box"})
 		case node.IsLocal != 0:
 			steps = append(steps, pathStep{Key: "entry", Title: "Ton reverse proxy", Detail: "→ :" + port, State: "info", Note: "Caddy, Nginx…"})
-		case shares:
+		case node.Relayed != 0 && t.local != nil:
 			steps = append(steps, pathStep{Key: "entry", Title: "Box → " + t.local.Name, Detail: ip + " :443", State: "info", Note: "machine de Forgeyard"})
 			relay := pathStep{Key: "relay", Title: "Relais · " + t.local.Name, Detail: "→ " + node.LocalIp + ":" + port, State: "ok", Note: "relais en place"}
 			_, localOnline := t.live[t.local.ID]
@@ -534,12 +536,12 @@ func (s *Server) handleTopology(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		live, online := t.live[n.ID]
-		tn := topoNode{ID: n.ID, Name: n.Name, State: "offline", IsLocal: n.IsLocal != 0, IngressMode: n.IngressMode,
+		tn := topoNode{ID: n.ID, Name: n.Name, State: "offline", IsLocal: n.IsLocal != 0, IngressMode: ingressMode(n),
 			HTTPPort: n.IngressHttpPort, LocalIP: n.LocalIp, PublicIP: nodeIP(n, t.c), Networks: []topoNetwork{}, Containers: []topoContainer{}}
 		if online {
 			tn.State = "online"
 		}
-		if t.local != nil && t.local.ID != n.ID && n.IngressMode == "proxy" && tn.PublicIP != "" && nodeIP(*t.local, t.c) == tn.PublicIP {
+		if t.local != nil && t.local.ID != n.ID && n.Relayed != 0 {
 			tn.RelayedBy = t.local.ID
 		}
 		if online && live.Topology != nil {
