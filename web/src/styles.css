@@ -183,6 +183,8 @@ code {
 .field {
   display: grid;
   gap: 6px;
+  /* Side by side, a field with a hint under it is taller: its label and input stay at the top. */
+  align-content: start;
 }
 
 .field > span {
