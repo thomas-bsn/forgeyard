@@ -73,6 +73,26 @@ func LoadState(dir string) (*State, error) {
 	}}, nil
 }
 
+// SaveAgentServer remembers another address for the server's agent port, so the agent keeps using it
+// when it is restarted or recreated without the option (an update, a new docker run).
+func SaveAgentServer(dir, addr string) error {
+	path := filepath.Join(dir, configFile)
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return err
+	}
+	var cfg Config
+	if err := json.Unmarshal(raw, &cfg); err != nil {
+		return err
+	}
+	cfg.AgentServer = addr
+	out, err := json.MarshalIndent(cfg, "", "  ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(path, append(out, '\n'), 0o644)
+}
+
 func saveState(dir string, cfg Config, keyPEM, certPEM, caPEM []byte) error {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return err

@@ -65,5 +65,5 @@ Les agents suivent la version du server : chaque binaire embarque le commit dont
 |---|---|---|
 | `--state-dir` | `FORGEYARD_AGENT_STATE` | Dossier d'identité (`/state` dans l'image) |
 | `--join-file` | `FORGEYARD_JOIN_FILE` | Fichier de join déposé par le server (node local) |
-| `--agent-server` | `FORGEYARD_AGENT_SERVER` | `hôte:port` du port agent s'il diffère de l'adresse publique (ex. l'IP locale du server). Lu à chaque démarrage, donc aussi pour un node déjà rejoint. |
+| `--agent-server` | `FORGEYARD_AGENT_SERVER` | `hôte:port` du port agent s'il diffère de l'adresse publique (ex. l'IP locale du server). Enregistré dans le dossier d'identité : il reste valable aux redémarrages et mises à jour, même sans l'option. |
 | `--docker-host` | `DOCKER_HOST` | Socket Docker. Par défaut : `/var/run/docker.sock`, puis les sockets d'OrbStack, Docker Desktop et Colima. |

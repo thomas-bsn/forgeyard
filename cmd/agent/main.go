@@ -127,6 +127,9 @@ func start(ctx context.Context, args []string, mustJoin bool, logger *slog.Logge
 	if *agentServer != "" && *agentServer != st.AgentServer {
 		logger.Info("using another address for the server", "joined_with", st.AgentServer, "now", *agentServer)
 		st.AgentServer = *agentServer
+		if err := agent.SaveAgentServer(*stateDir, *agentServer); err != nil {
+			logger.Warn("remembering the server's address failed: give --agent-server at each start", "err", err)
+		}
 	}
 	dc, err := docker.New(*dockerHost)
 	if err != nil {
