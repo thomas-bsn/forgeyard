@@ -594,6 +594,21 @@ function dockerfileBase(dockerfile: string): string {
   return ''
 }
 
+/** The ports a Dockerfile exposes, from its EXPOSE lines (TCP only). */
+function dockerfileExposed(dockerfile: string): number[] {
+  const ports: number[] = []
+  for (const line of dockerfile.split('\n')) {
+    const f = line.trim().split(/\s+/)
+    if (f[0]?.toUpperCase() !== 'EXPOSE') continue
+    for (const p of f.slice(1)) {
+      const [num, proto] = p.split('/')
+      const n = Number(num)
+      if (Number.isInteger(n) && n > 0 && n < 65536 && (!proto || proto === 'tcp') && !ports.includes(n)) ports.push(n)
+    }
+  }
+  return ports
+}
+
 function AppFormModal({
   title,
   submitLabel,
@@ -638,6 +653,27 @@ function AppFormModal({
   const [cropping, setCropping] = useState<File | null>(null)
   const logoFile = useRef<HTMLInputElement>(null)
   const [port, setPort] = useState(String(initial?.port ?? 80))
+  // The port fills in from what the image (or the Dockerfile) declares, until it is typed by hand.
+  const [portTouched, setPortTouched] = useState(!!initial)
+  const [declared, setDeclared] = useState<{ image: string; ports: number[] } | null>(null)
+  useEffect(() => {
+    if (!settledImage.trim()) return
+    let live = true
+    api.imagePorts(settledImage).then(
+      (r) => live && setDeclared({ image: settledImage, ports: r.ports }),
+      () => live && setDeclared({ image: settledImage, ports: [] }),
+    )
+    return () => {
+      live = false
+    }
+  }, [settledImage])
+  const exposed = source === 'dockerfile' ? dockerfileExposed(dockerfile) : []
+  const fromImage = declared?.image === settledImage ? declared.ports : null
+  const suggested = exposed.length ? exposed : (fromImage ?? [])
+  const suggestedKey = suggested.join(',')
+  useEffect(() => {
+    if (!portTouched && suggestedKey) setPort(suggestedKey.split(',')[0])
+  }, [suggestedKey, portTouched])
   const [memory, setMemory] = useState(String(initial?.memoryMb ?? 512))
   const [env, setEnv] = useState<{ key: string; value: string }[]>(Object.entries(initial?.env ?? {}).map(([key, value]) => ({ key, value })))
   const [envOpen, setEnvOpen] = useState(env.length > 0)
@@ -772,7 +808,32 @@ function AppFormModal({
         )}
         <label className="field">
           <span>Port</span>
-          <input type="number" min={1} max={65535} value={port} onChange={(e) => setPort(e.target.value)} required title="Le port sur lequel l’app écoute dans son conteneur" />
+          <input
+            type="number"
+            min={1}
+            max={65535}
+            value={port}
+            onChange={(e) => {
+              setPort(e.target.value)
+              setPortTouched(true)
+            }}
+            required
+            title="Le port sur lequel l’app écoute dans son conteneur"
+          />
+          {suggested.length > 0 && suggested.includes(Number(port)) ? (
+            <small>{exposed.length ? 'Celui du Dockerfile (EXPOSE).' : 'Celui que l’image indique.'}</small>
+          ) : suggested.length > 0 ? (
+            <small>
+              {exposed.length ? 'Le Dockerfile indique' : 'L’image indique'}{' '}
+              {suggested.map((p) => (
+                <button key={p} type="button" className="link-button" onClick={() => setPort(String(p))}>
+                  {p}
+                </button>
+              ))}
+            </small>
+          ) : (
+            fromImage && <small>L’image n’indique pas de port : voir sa doc.</small>
+          )}
         </label>
         <label className="field">
           <span>Mémoire (Mo)</span>

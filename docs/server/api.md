@@ -35,6 +35,7 @@ Toutes les écritures sont en JSON. Les routes sont déclarées dans `internal/a
 | `PUT /api/apps/{id}/public` | Afficher ou masquer une app sur le profil de son propriétaire |
 | `PUT /api/me/notifications`, `POST /api/me/notifications/test` | Webhook personnel, message de test |
 | `GET /api/me/sessions`, `DELETE /api/me/sessions/{id\|others}` | Appareils connectés, en déconnecter un ou tous les autres |
+| `GET /api/images/ports?image=` | Ports TCP qu'une image publique déclare, lus sur son registre |
 | `GET`, `POST /api/apps` | Lister, créer (`image` ou `dockerfile` ; `nodeId` facultatif, admins seulement) |
 | `GET`, `PUT`, `DELETE /api/apps/{id}` | Voir, modifier, supprimer |
 | `POST /api/apps/{id}/{start\|stop\|redeploy}` | Actions |

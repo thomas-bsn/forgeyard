@@ -28,7 +28,7 @@ Les conteneurs externes ont le logo automatique de leur image.
 |---|---|
 | Nom | `a-z`, `0-9`, `-`, 32 caractères max., unique. Devient le sous-domaine. Non modifiable. Réservés : `www`, `mail`, `forgeyard` et le sous-domaine de Forgeyard lui-même. |
 | Image | ex. `nginx:alpine` (`:latest` ajouté si pas de tag) ; ou un Dockerfile |
-| Port | Le port **dans** le conteneur (ex. 3000) |
+| Port | Le port **dans** le conteneur (ex. 3000). Rempli tout seul avec celui que l'image déclare (`EXPOSE`), lu sur son registre sans la télécharger (`internal/registry`, réponses gardées 1 h), ou avec l'`EXPOSE` du Dockerfile. Tapé à la main, il n'est plus remplacé : le formulaire propose alors le port déclaré. Images privées ou registres du réseau local : pas de suggestion. |
 | Variables | 100 max., stockées chiffrées |
 | Mémoire | 64 à 16384 Mo, 512 par défaut |
 

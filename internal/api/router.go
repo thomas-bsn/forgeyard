@@ -17,6 +17,7 @@ import (
 	"github.com/thomas-bsn/forgeyard/internal/dns"
 	"github.com/thomas-bsn/forgeyard/internal/nodes"
 	"github.com/thomas-bsn/forgeyard/internal/pki"
+	"github.com/thomas-bsn/forgeyard/internal/registry"
 	"github.com/thomas-bsn/forgeyard/internal/secrets"
 	"github.com/thomas-bsn/forgeyard/internal/store"
 )
@@ -61,6 +62,7 @@ type Server struct {
 	newDNSProvider func(name string, creds map[string]string) (dns.Provider, error)
 	lookupHost     func(ctx context.Context, host string) ([]string, error)
 	httpClient     *http.Client // for Docker Hub logos
+	registryClient *http.Client // for the ports images expose
 
 	mu          sync.Mutex
 	setupToken  string                // empty once setup is completed
@@ -70,6 +72,7 @@ type Server struct {
 	crashNotified map[int64]time.Time   // when the owner last heard of a crash, by app ID
 	nodeGen       map[int64]int         // bumped at each connection change, to cancel a pending offline alert
 	nodeReported  map[int64]bool        // nodes reported offline to the admins
+	imagePorts    map[string]imagePorts // ports images expose, by image name
 }
 
 // NewServer returns a Server. setupToken must be non-empty while the setup wizard has not been completed.
@@ -94,10 +97,12 @@ func NewServer(d Deps, setupToken string) *Server {
 		crashNotified:  make(map[int64]time.Time),
 		nodeGen:        make(map[int64]int),
 		nodeReported:   make(map[int64]bool),
+		imagePorts:     make(map[string]imagePorts),
 
 		newDNSProvider: dns.New,
 		lookupHost:     net.DefaultResolver.LookupHost,
 		httpClient:     &http.Client{Timeout: 10 * time.Second},
+		registryClient: registry.PublicClient(),
 	}
 	d.Nodes.Desired = s.desiredState
 	d.Nodes.StateChanged = s.onAppStateChange
@@ -138,6 +143,7 @@ func (s *Server) Handler(webFS fs.FS) http.Handler {
 	mux.HandleFunc("PUT /api/apps/{id}/logo", s.requireUser(s.handlePutAppLogo))
 	mux.HandleFunc("GET /api/apps/{id}/logo", s.requireUser(s.handleGetAppLogo))
 	mux.HandleFunc("GET /api/logos", s.requireUser(s.handleImageLogo))
+	mux.HandleFunc("GET /api/images/ports", s.requireUser(s.handleImagePorts))
 	mux.HandleFunc("GET /api/auth/link", s.handleLoginLink)
 	mux.HandleFunc("GET /api/auth/discord", s.handleDiscordStart)
 	mux.HandleFunc("GET /api/auth/discord/callback", s.handleDiscordCallback)

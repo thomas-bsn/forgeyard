@@ -330,6 +330,7 @@ export const api = {
   apps: () => request<App[]>('GET', '/api/apps'),
   app: (id: number) => request<App>('GET', `/api/apps/${id}`),
   createApp: (input: AppInput) => request<App>('POST', '/api/apps', input),
+  imagePorts: (image: string) => request<{ ports: number[]; error?: string }>('GET', `/api/images/ports?image=${encodeURIComponent(image)}`),
   updateApp: (id: number, input: AppInput) => request<App>('PUT', `/api/apps/${id}`, input),
   appAction: (id: number, action: 'start' | 'stop' | 'redeploy') => request<App>('POST', `/api/apps/${id}/${action}`, {}),
   deleteApp: (id: number) => request<void>('DELETE', `/api/apps/${id}`, {}),
