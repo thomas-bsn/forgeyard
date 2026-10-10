@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { api, errorMessage, type Session, type User } from './api'
 import { Avatar, Switch } from './ui'
+import { ImageCropper } from './Cropper'
 
 type Section = 'profile' | 'security' | 'notifications' | 'ssh' | 'tokens'
 
@@ -83,32 +84,6 @@ function ComingSoon({ items }: { items: string[] }) {
       </ul>
     </section>
   )
-}
-
-/** Resizes an image to width×height, cropped at its centre, so uploads stay small. */
-function resizeImage(file: File, width: number, height: number): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const url = URL.createObjectURL(file)
-    const img = new Image()
-    img.onload = () => {
-      const scale = Math.max(width / img.width, height / img.height)
-      const sw = width / scale
-      const sh = height / scale
-      const canvas = document.createElement('canvas')
-      canvas.width = width
-      canvas.height = height
-      canvas.getContext('2d')!.drawImage(img, (img.width - sw) / 2, (img.height - sh) / 2, sw, sh, 0, 0, width, height)
-      URL.revokeObjectURL(url)
-      const webp = canvas.toDataURL('image/webp', 0.85)
-      // Browsers that cannot encode WebP give back a PNG: JPEG is lighter then.
-      resolve(webp.startsWith('data:image/webp') ? webp : canvas.toDataURL('image/jpeg', 0.85))
-    }
-    img.onerror = () => {
-      URL.revokeObjectURL(url)
-      reject(new Error('Image illisible.'))
-    }
-    img.src = url
-  })
 }
 
 /** The banner of a profile: an image, else the profile colour, else the theme's accent. */
@@ -221,6 +196,8 @@ function ProfilePanel({ user, onChange }: { user: User; onChange: () => void }) 
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
   const [busy, setBusy] = useState(false)
+  // The image being framed before upload, and what it is for.
+  const [cropping, setCropping] = useState<{ file: File; kind: 'avatar' | 'banner' } | null>(null)
 
   async function run(action: () => Promise<unknown>, done: string) {
     setBusy(true)
@@ -277,7 +254,7 @@ function ProfilePanel({ user, onChange }: { user: User; onChange: () => void }) 
           fromDiscord="Votre photo Discord, mise à jour à chaque connexion."
           missing={user.avatarUrl ? '' : 'Forgeyard n’a pas encore votre photo Discord.'}
           busy={busy}
-          onUpload={(f) => run(async () => api.uploadAvatar(await resizeImage(f, 256, 256)), 'Photo enregistrée.')}
+          onUpload={(f) => setCropping({ file: f, kind: 'avatar' })}
           onReset={() => run(() => api.deleteAvatar(), discord ? 'Photo Discord reprise.' : 'Photo retirée.')}
         />
         <ImageSource
@@ -287,11 +264,29 @@ function ProfilePanel({ user, onChange }: { user: User; onChange: () => void }) 
           fromDiscord={user.bannerUrl ? 'Votre bannière Discord, mise à jour à chaque connexion.' : 'Pas de bannière sur Discord : la couleur de votre profil Discord est utilisée.'}
           missing={user.bannerUrl || user.accentColor ? '' : 'Forgeyard n’a pas encore votre bannière Discord.'}
           busy={busy}
-          onUpload={(f) => run(async () => api.uploadBanner(await resizeImage(f, 1500, 500)), 'Bannière enregistrée.')}
+          onUpload={(f) => setCropping({ file: f, kind: 'banner' })}
           onReset={() => run(() => api.deleteBanner(), discord ? 'Bannière Discord reprise.' : 'Bannière retirée.')}
         />
-        <small className="muted">PNG, JPEG, WebP ou GIF, recadrés automatiquement.</small>
+        <small className="muted">PNG, JPEG, WebP ou GIF : vous cadrez l’image avant de l’enregistrer.</small>
       </section>
+
+      {cropping && (
+        <ImageCropper
+          file={cropping.file}
+          title={cropping.kind === 'avatar' ? 'Cadrer la photo' : 'Cadrer la bannière'}
+          outWidth={cropping.kind === 'avatar' ? 256 : 1500}
+          outHeight={cropping.kind === 'avatar' ? 256 : 500}
+          round={cropping.kind === 'avatar'}
+          onCancel={() => setCropping(null)}
+          onSave={async (image) => {
+            if (cropping.kind === 'avatar') await api.uploadAvatar(image)
+            else await api.uploadBanner(image)
+            setCropping(null)
+            setNotice(cropping.kind === 'avatar' ? 'Photo enregistrée.' : 'Bannière enregistrée.')
+            onChange()
+          }}
+        />
+      )}
 
       <form className="panel" onSubmit={save}>
         <h2>Informations</h2>

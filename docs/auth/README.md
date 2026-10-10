@@ -51,7 +51,7 @@ Le superadmin et son propre compte ne sont jamais modifiables depuis cet écran.
 
 Le menu sous la photo, en haut à droite, mène à « Mon profil » (et aux réglages de l'instance pour les admins), au thème, à la documentation et à la déconnexion.
 
-- **Photo** : celle de Discord, mise à jour à chaque connexion (« Mettre à jour depuis Discord » refait la connexion Discord pour la récupérer tout de suite) ; ou une photo envoyée, recadrée en 256×256 par le navigateur (PNG, JPEG, WebP ou GIF, 512 Ko au plus, jamais de SVG) ; sinon l'initiale.
+- **Photo** : celle de Discord, mise à jour à chaque connexion (« Mettre à jour depuis Discord » refait la connexion Discord pour la récupérer tout de suite) ; ou une photo envoyée, que l'on cadre avant l'enregistrement (glisser, zoom ; le navigateur n'envoie que la zone choisie, en 256×256 ; la bannière en 1500×500) (PNG, JPEG, WebP ou GIF, 512 Ko au plus, jamais de SVG) ; sinon l'initiale.
 - **Nom affiché** : celui de Discord (suivi à chaque connexion) ou un nom choisi. L'identifiant des comptes locaux ne change pas.
 - **Description** (280 caractères) et **email** (prérempli avec celui de Discord, pour les notifications à venir).
 - **Sécurité** : changer de mot de passe (comptes locaux ; déconnecte les autres appareils), liste des appareils connectés avec leur IP, déconnexion d'un appareil ou de tous les autres.
