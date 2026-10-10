@@ -2923,3 +2923,24 @@ a.link-btn {
   border: 2px dashed var(--border);
   font-size: 1.6rem;
 }
+
+.instance-icon {
+  flex-shrink: 0;
+  object-fit: cover;
+}
+
+.icon-picker {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+
+.icon-picker-text {
+  display: grid;
+  gap: 8px;
+}
+
+.icon-picker-text .muted {
+  font-size: 0.85rem;
+}

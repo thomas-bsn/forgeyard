@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Forgeyard">
+  <rect width="64" height="64" rx="14" fill="#0F1115"/>
+  <g transform="translate(10.88 10.88) scale(0.66)">
+    <path d="M32 5L55 18.5V45.5L32 59L9 45.5V18.5Z" fill="none" stroke="#C9CED6" stroke-width="4" stroke-linejoin="round"/>
+    <path d="M32 16C34 24 41 28 41 37C41 43 37 48 32 48C27 48 23 43 23 37C23 32 26 29 28 25C29 29 31 30 32 30C32 25 31 20 32 16Z" fill="#F26B1D"/>
+  </g>
+</svg>

@@ -26,7 +26,7 @@ Au démarrage, tant que le setup n'est pas terminé, le server affiche un **toke
 | Étape | Contenu |
 |---|---|
 | Token | Le token des logs (vérifié à la fin seulement) |
-| Instance | Nom du PaaS, adresse de Forgeyard (par défaut celle du navigateur), « faire tourner les apps sur cette machine » |
+| Instance | Nom du PaaS, icône (facultative), adresse de Forgeyard (par défaut celle du navigateur), « faire tourner les apps sur cette machine » |
 | Domaine | Domaine des apps et token API du fournisseur DNS (ou « plus tard ») ; qui gère les ports 80/443 de cette machine |
 | Méthode | Discord ou identifiant / mot de passe pour le superadmin |
 | Compte admin | Identifiant et mot de passe (12 caractères min.), ou Client ID / Secret de l'app Discord |

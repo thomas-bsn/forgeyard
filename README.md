@@ -1,3 +1,5 @@
+<p align="center"><img src="docs/assets/forgeyard-icon.png" alt="" width="96"></p>
+
 # Forgeyard
 
 PaaS open source auto-hébergé. Fonctionnement : [docs/](docs/README.md).

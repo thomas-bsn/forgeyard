@@ -84,6 +84,13 @@ type ImageLogo struct {
 	FetchedAt   int64
 }
 
+type InstanceIcon struct {
+	ID          int64
+	ContentType string
+	Data        []byte
+	UpdatedAt   int64
+}
+
 type LoginLink struct {
 	TokenHash string
 	UserID    int64

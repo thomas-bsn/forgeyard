@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type KeyboardEvent, type PointerEvent } from 'react'
-import { Modal } from './ui'
+import { Logo, Modal } from './ui'
 
 /**
  * Lets the user frame an image before it is uploaded: drag to move it, zoom with the slider or the wheel,
@@ -12,6 +12,7 @@ export function ImageCropper({
   outWidth,
   outHeight,
   round,
+  png,
   onCancel,
   onSave,
 }: {
@@ -20,6 +21,8 @@ export function ImageCropper({
   outWidth: number
   outHeight: number
   round?: boolean
+  // PNG keeps transparency, for icons; photos default to the lighter WebP or JPEG.
+  png?: boolean
   onCancel: () => void
   onSave: (dataUrl: string) => Promise<void>
 }) {
@@ -110,6 +113,10 @@ export function ImageCropper({
       canvas.width = outWidth
       canvas.height = outHeight
       canvas.getContext('2d')!.drawImage(img, -pos.x / scale, -pos.y / scale, frameW / scale, frameH / scale, 0, 0, outWidth, outHeight)
+      if (png) {
+        await onSave(canvas.toDataURL('image/png'))
+        return
+      }
       const webp = canvas.toDataURL('image/webp', 0.85)
       // Browsers that cannot encode WebP give back a PNG: JPEG is lighter then.
       await onSave(webp.startsWith('data:image/webp') ? webp : canvas.toDataURL('image/jpeg', 0.85))
@@ -166,5 +173,57 @@ export function ImageCropper({
       </label>
       {error && <p className="error">{error}</p>}
     </Modal>
+  )
+}
+
+/**
+ * Picks the instance's icon: shows the current one (or Forgeyard's), asks for an image, frames it as a
+ * square and hands it over as a PNG data URL. "" means going back to Forgeyard's icon.
+ */
+export function IconPicker({ current, busy, onPick }: { current?: string; busy?: boolean; onPick: (dataUrl: string) => void | Promise<void> }) {
+  const file = useRef<HTMLInputElement>(null)
+  const [cropping, setCropping] = useState<File | null>(null)
+  return (
+    <div className="icon-picker">
+      <Logo size={56} src={current} />
+      <div className="icon-picker-text">
+        <span className="muted">{current ? 'Votre icône, aussi utilisée dans l’onglet du navigateur.' : 'L’icône de Forgeyard, en attendant la vôtre.'}</span>
+        <span className="row-actions">
+          <button type="button" className="btn btn-small" disabled={busy} onClick={() => file.current?.click()}>
+            {current ? 'Changer' : 'Choisir une icône'}
+          </button>
+          {current && (
+            <button type="button" className="btn btn-small" disabled={busy} onClick={() => onPick('')}>
+              Reprendre celle de Forgeyard
+            </button>
+          )}
+        </span>
+      </div>
+      <input
+        ref={file}
+        type="file"
+        accept="image/png,image/jpeg,image/webp,image/gif"
+        hidden
+        onChange={(e) => {
+          const f = e.target.files?.[0]
+          e.target.value = ''
+          if (f) setCropping(f)
+        }}
+      />
+      {cropping && (
+        <ImageCropper
+          file={cropping}
+          title="Cadrer l’icône"
+          outWidth={256}
+          outHeight={256}
+          png
+          onCancel={() => setCropping(null)}
+          onSave={async (dataUrl) => {
+            await onPick(dataUrl)
+            setCropping(null)
+          }}
+        />
+      )}
+    </div>
   )
 }

@@ -70,7 +70,7 @@ export default function Login({
         <form className="login-card" onSubmit={submit}>
           <div className="login-brand">
             <div className="login-name">
-              <Logo size={30} />
+              <Logo size={30} src={instance.iconUrl} />
               {instance.name}
             </div>
             <p className="muted">Vos apps, sur vos machines.</p>

@@ -54,7 +54,7 @@ export default function Dashboard({
     <div className="page">
       <header className="topbar">
         <a href="#/apps" className="brand-link">
-          <Logo size={32} />
+          <Logo size={32} src={instance.iconUrl} />
           <span className="brand-name">{instance.name}</span>
         </a>
         <nav className="tabs" aria-label="Sections">

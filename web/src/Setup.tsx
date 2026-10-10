@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from 'react'
 import { api, ApiError, errorMessage, type DNSProviderKind, type DomainChoice, type IngressChoice, type Instance } from './api'
 import { DiscordAppSteps, DiscordIcon, Logo, ProxySnippet, ThemeToggle } from './ui'
+import { IconPicker } from './Cropper'
 
 const steps = ['Token', 'Instance', 'Domaine', 'Méthode', 'Compte admin'] as const
 const DOMAIN_STEP = 2
@@ -17,6 +18,7 @@ export default function Setup({ instance, onDone }: { instance: Instance; onDone
   const [clientId, setClientId] = useState('')
   const [clientSecret, setClientSecret] = useState('')
   const [instanceName, setInstanceName] = useState('Forgeyard')
+  const [icon, setIcon] = useState('') // a framed PNG data URL, sent with the setup
   const [publicUrl, setPublicUrl] = useState(window.location.origin)
   const [localNode, setLocalNode] = useState(instance.localNodeSupported)
   const [domain, setDomain] = useState<DomainChoice>({
@@ -60,12 +62,12 @@ export default function Setup({ instance, onDone }: { instance: Instance; onDone
     setBusy(true)
     try {
       if (method === 'discord') {
-        const { authorizeUrl } = await api.setupDiscord({ token, instanceName, publicUrl: cleanUrl, clientId, clientSecret, localNode, domain, ingress })
+        const { authorizeUrl } = await api.setupDiscord({ token, instanceName, publicUrl: cleanUrl, clientId, clientSecret, localNode, domain, ingress, icon: icon || undefined })
         // Discord sends the browser back to the server, which makes this account the superadmin.
         window.location.href = authorizeUrl
         return
       }
-      await api.setup({ token, instanceName, publicUrl: cleanUrl, username, password, localNode, domain, ingress })
+      await api.setup({ token, instanceName, publicUrl: cleanUrl, username, password, localNode, domain, ingress, icon: icon || undefined })
       onDone()
     } catch (err) {
       setError(errorMessage(err))
@@ -81,7 +83,7 @@ export default function Setup({ instance, onDone }: { instance: Instance; onDone
     <div className="auth-screen">
       <div className="auth-column wide">
         <div className="brand">
-          <Logo size={34} />
+          <Logo size={34} src={icon || undefined} />
           Bienvenue sur Forgeyard
         </div>
 
@@ -116,6 +118,10 @@ export default function Setup({ instance, onDone }: { instance: Instance; onDone
                 <span>Nom de votre PaaS</span>
                 <input value={instanceName} onChange={(e) => setInstanceName(e.target.value)} maxLength={64} required autoFocus />
               </label>
+              <div className="field">
+                <span>Icône (facultatif)</span>
+                <IconPicker current={icon || undefined} onPick={setIcon} />
+              </div>
               <label className="field">
                 <span>Adresse de Forgeyard</span>
                 <input type="url" value={publicUrl} onChange={(e) => setPublicUrl(e.target.value)} placeholder="https://forgeyard.mondomaine.com" required />

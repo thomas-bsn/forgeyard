@@ -1,17 +1,28 @@
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react'
 
-export function Logo({ size = 32 }: { size?: number }) {
+/** The instance's icon when it has one, else Forgeyard's: a flame in a hexagon. */
+export function Logo({ size = 32, src }: { size?: number; src?: string }) {
+  if (src) {
+    return <img className="instance-icon" src={src} alt="" width={size} height={size} style={{ borderRadius: size * 0.22 }} />
+  }
   return (
-    <svg width={size} height={size} viewBox="0 0 32 32" aria-hidden="true">
-      <rect width="32" height="32" rx="7" fill="#4f46e5" />
-      <g fill="#fff">
-        <rect x="7" y="7" width="7" height="7" rx="1.5" />
-        <rect x="18" y="7" width="7" height="7" rx="1.5" />
-        <rect x="7" y="18" width="7" height="7" rx="1.5" />
-        <rect x="18" y="18" width="7" height="7" rx="1.5" />
+    <svg width={size} height={size} viewBox="0 0 64 64" aria-hidden="true">
+      <rect width="64" height="64" rx="14" fill="#0F1115" />
+      <g transform="translate(10.88 10.88) scale(0.66)">
+        <path d="M32 5L55 18.5V45.5L32 59L9 45.5V18.5Z" fill="none" stroke="#C9CED6" strokeWidth="4" strokeLinejoin="round" />
+        <path d="M32 16C34 24 41 28 41 37C41 43 37 48 32 48C27 48 23 43 23 37C23 32 26 29 28 25C29 29 31 30 32 30C32 25 31 20 32 16Z" fill="#F26B1D" />
       </g>
     </svg>
   )
+}
+
+/** Shows the instance's icon in the browser tab, or Forgeyard's. */
+export function setFavicon(src?: string) {
+  const link = document.getElementById('favicon') as HTMLLinkElement | null
+  if (link) {
+    link.href = src || '/favicon.svg'
+    link.type = src ? '' : 'image/svg+xml'
+  }
 }
 
 export function DiscordIcon() {

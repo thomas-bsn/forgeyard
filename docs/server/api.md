@@ -7,6 +7,7 @@ Toutes les écritures sont en JSON. Les routes sont déclarées dans `internal/a
 | Route | Rôle |
 |---|---|
 | `GET /api/health` | Santé |
+| `GET /api/instance/icon` | Icône de l'instance (publique : la page de connexion l'affiche) |
 | `GET /api/instance` | Nom, setup requis, méthodes de connexion (et, pendant le setup : fournisseurs DNS, ports 80/443 de la machine) |
 | `POST /api/setup` | Termine le wizard avec un compte mot de passe (token de setup) |
 | `POST /api/setup/discord` | Termine le wizard avec Discord : renvoie l'adresse d'autorisation |
@@ -64,7 +65,8 @@ Les routes d'app vérifient que l'utilisateur est le propriétaire ou un admin.
 
 | Route | Rôle |
 |---|---|
-| `PUT /api/admin/settings/general` | Nom de l'instance, adresse de Forgeyard |
+| `PUT /api/admin/settings/general` | Nom de l'instance, adresse de Forgeyard, vue de l'onglet Apps |
+| `PUT`, `DELETE /api/admin/settings/icon` | Icône de l'instance (aussi son favicon) |
 | `GET`, `PUT /api/admin/settings/domain` | Domaine, fournisseur DNS (et adresse de Forgeyard) |
 | `POST /api/admin/nodes/{node}/containers/{id}/{start\|stop\|restart}` | Agir sur un conteneur externe |
 | `GET /api/admin/nodes/{node}/containers/{id}/logs` | Logs d'un conteneur externe (SSE) |

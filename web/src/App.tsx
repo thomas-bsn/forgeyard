@@ -3,6 +3,7 @@ import { api, ApiError, errorMessage, type Instance, type User } from './api'
 import Setup from './Setup'
 import Login from './Login'
 import Dashboard from './Dashboard'
+import { setFavicon } from './ui'
 
 type State =
   | { kind: 'loading' }
@@ -35,6 +36,7 @@ export default function App() {
     try {
       const instance = await api.instance()
       document.title = instance.name
+      setFavicon(instance.iconUrl)
       if (instance.setupRequired) {
         setState({ kind: 'setup', instance })
         return

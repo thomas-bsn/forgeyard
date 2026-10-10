@@ -57,6 +57,7 @@ export type Instance = {
   localWebPorts?: 'busy' | 'free'
   localIp?: string
   appsLayout: 'sidebar' | 'nodes' | 'launcher'
+  iconUrl?: string
   dnsProviders?: DNSProviderKind[]
   discordEnabled: boolean
   discordRedirectUrl: string
@@ -277,6 +278,7 @@ export const api = {
     localNode: boolean
     domain: DomainChoice
     ingress: IngressChoice
+    icon?: string
   }) =>
     request<User>('POST', '/api/setup', body),
   setupDiscord: (body: {
@@ -288,6 +290,7 @@ export const api = {
     localNode: boolean
     domain: DomainChoice
     ingress: IngressChoice
+    icon?: string
   }) =>
     request<{ authorizeUrl: string }>('POST', '/api/setup/discord', body),
   login: (username: string, password: string) =>
@@ -331,6 +334,8 @@ export const api = {
   changePassword: (current: string, next: string) => request<void>('PUT', '/api/me/password', { current, new: next }),
   sessions: () => request<Session[]>('GET', '/api/me/sessions'),
   deleteSession: (id: string) => request<void>('DELETE', `/api/me/sessions/${id}`, {}),
+  uploadIcon: (image: string) => request<{ iconUrl: string }>('PUT', '/api/admin/settings/icon', { image }),
+  deleteIcon: () => request<void>('DELETE', '/api/admin/settings/icon', {}),
   saveGeneralSettings: (name: string, publicUrl: string, appsLayout: Instance['appsLayout']) =>
     request<{ name: string; publicUrl: string; appsLayout: Instance['appsLayout'] }>('PUT', '/api/admin/settings/general', { name, publicUrl, appsLayout }),
   nodes: () => request<Node[]>('GET', '/api/admin/nodes'),

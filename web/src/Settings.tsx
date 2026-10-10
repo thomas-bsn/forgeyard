@@ -2,6 +2,7 @@ import { useEffect, useState, type FormEvent } from 'react'
 import { api, errorMessage, type DiscordSettings, type Instance } from './api'
 import { CopyField, DiscordAppSteps, Switch } from './ui'
 import DomainPanel from './Domain'
+import { IconPicker } from './Cropper'
 
 function DiscordSettingsPanel() {
   const [settings, setSettings] = useState<DiscordSettings | null>(null)
@@ -130,6 +131,7 @@ function GeneralPanel({ onRenamed }: { onRenamed: () => void }) {
   const [savedUrl, setSavedUrl] = useState('')
   const [redirect, setRedirect] = useState('')
   const [layout, setLayout] = useState<Instance['appsLayout']>('sidebar')
+  const [icon, setIcon] = useState<string | undefined>()
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
   const [busy, setBusy] = useState(false)
@@ -139,6 +141,7 @@ function GeneralPanel({ onRenamed }: { onRenamed: () => void }) {
       .then(([i, d]) => {
         setName(i.name)
         setLayout(i.appsLayout)
+        setIcon(i.iconUrl)
         setPublicUrl(d.publicUrl)
         setSavedUrl(d.publicUrl)
         setRedirect(d.discordRedirectUrl)
@@ -174,6 +177,26 @@ function GeneralPanel({ onRenamed }: { onRenamed: () => void }) {
   if (!loaded) return error ? <p className="error">{error}</p> : null
   return (
     <form className="panel" onSubmit={save}>
+      <div className="field">
+        <span>Icône</span>
+        <IconPicker
+          current={icon}
+          busy={busy}
+          onPick={async (dataUrl) => {
+            setError('')
+            try {
+              if (dataUrl) setIcon((await api.uploadIcon(dataUrl)).iconUrl)
+              else {
+                await api.deleteIcon()
+                setIcon(undefined)
+              }
+              onRenamed()
+            } catch (err) {
+              setError(errorMessage(err))
+            }
+          }}
+        />
+      </div>
       <label className="field">
         <span>Nom du PaaS</span>
         <input value={name} onChange={(e) => setName(e.target.value)} maxLength={64} required />

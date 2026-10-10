@@ -2,6 +2,8 @@ package api
 
 import (
 	"bytes"
+	"encoding/base64"
+	"net/http"
 	"image"
 	"image/png"
 	"math/rand"
@@ -40,5 +42,35 @@ func TestShrinkLogo(t *testing.T) {
 	}
 	if b := out.Bounds(); b.Dx() != logoSize || b.Dy() != 85 {
 		t.Fatalf("size %v", b)
+	}
+}
+
+func TestInstanceIcon(t *testing.T) {
+	ts, _ := newTestServerWithHandle(t)
+	var buf bytes.Buffer
+	png.Encode(&buf, image.NewNRGBA(image.Rect(0, 0, 8, 8)))
+	icon := "data:image/png;base64," + base64.StdEncoding.EncodeToString(buf.Bytes())
+	admin := newClient()
+	if resp := post(t, admin, ts.URL+"/api/setup", setupRequest{Token: testToken, InstanceName: "F", Username: "boss",
+		Password: "a-long-enough-password", PublicURL: "https://forgeyard.example.com", Icon: icon}); resp.StatusCode != http.StatusCreated {
+		t.Fatalf("setup with icon: %d", resp.StatusCode)
+	}
+	var inst instanceResponse
+	get(t, newClient(), ts.URL+"/api/instance", &inst)
+	if inst.IconURL == "" {
+		t.Fatal("no icon URL")
+	}
+	// Public: the sign-in page shows it before anyone signs in.
+	resp, err := http.Get(ts.URL + inst.IconURL)
+	if err != nil || resp.StatusCode != http.StatusOK || resp.Header.Get("Content-Type") != "image/png" {
+		t.Fatalf("icon: %v %v", resp, err)
+	}
+	if code := del(t, admin, ts.URL+"/api/admin/settings/icon"); code != http.StatusNoContent {
+		t.Fatalf("remove icon: %d", code)
+	}
+	var after instanceResponse
+	get(t, newClient(), ts.URL+"/api/instance", &after)
+	if after.IconURL != "" {
+		t.Fatal("icon still set")
 	}
 }

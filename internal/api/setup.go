@@ -55,6 +55,8 @@ type instanceResponse struct {
 	LocalIP string `json:"localIp,omitempty"`
 	// AppsLayout is how the Apps tab shows apps, chosen by the superadmin.
 	AppsLayout string `json:"appsLayout"`
+	// IconURL is the instance's own icon, if it has one.
+	IconURL string `json:"iconUrl,omitempty"`
 	// DNSProviders are listed during setup only, for the wizard's domain step.
 	DNSProviders       []dns.Kind `json:"dnsProviders,omitempty"`
 	DiscordEnabled     bool       `json:"discordEnabled"`
@@ -94,6 +96,7 @@ func (s *Server) handleInstance(w http.ResponseWriter, r *http.Request) {
 		LocalWebPorts:      webPorts,
 		LocalIP:            localIP,
 		AppsLayout:         s.appsLayout(r.Context()),
+		IconURL:            s.iconURL(r),
 		DiscordEnabled:     enabled && !s.setupRequired(),
 		DiscordRedirectURL: redirectURL,
 	})
@@ -156,6 +159,7 @@ type setupRequest struct {
 	// Domain and Ingress are optional: without them, apps get no domain and the local node uses Traefik.
 	Domain  *domainChoice `json:"domain"`
 	Ingress setupIngress  `json:"ingress"`
+	Icon    string        `json:"icon"` // optional, as a data URL
 }
 
 // prepareSetupDomain validates the domain and ingress chosen in the wizard, checking DNS credentials.
@@ -196,6 +200,10 @@ func (s *Server) handleSetup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	publicURL, ok := setupPublicURL(w, r, req.PublicURL)
+	if !ok {
+		return
+	}
+	icon, iconType, ok := setupIcon(w, req.Icon)
 	if !ok {
 		return
 	}
@@ -247,6 +255,11 @@ func (s *Server) handleSetup(w http.ResponseWriter, r *http.Request) {
 		}
 		if err := q.SetSetting(r.Context(), db.SetSettingParams{Key: settingPasswordLogin, Value: "1"}); err != nil {
 			return err
+		}
+		if icon != nil {
+			if err := q.PutInstanceIcon(r.Context(), db.PutInstanceIconParams{ContentType: iconType, Data: icon, UpdatedAt: time.Now().UnixMilli()}); err != nil {
+				return err
+			}
 		}
 		if err := storeSettings(r.Context(), q, domainValues); err != nil {
 			return err

@@ -166,6 +166,7 @@ type setupDiscordRequest struct {
 	LocalNode    bool          `json:"localNode"`
 	Domain       *domainChoice `json:"domain"`
 	Ingress      setupIngress  `json:"ingress"`
+	Icon         string        `json:"icon"`
 }
 
 // handleSetupDiscord saves the Discord application during setup and returns the consent URL. The first
@@ -191,6 +192,10 @@ func (s *Server) handleSetupDiscord(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "pour configurer Discord, ouvrez le wizard depuis "+publicURL+" : Discord ne renvoie que vers cette adresse")
 		return
 	}
+	icon, iconType, ok := setupIcon(w, req.Icon)
+	if !ok {
+		return
+	}
 	domainValues, ingress, ok := s.prepareSetupDomain(r.Context(), w, r, req.Domain, req.Ingress)
 	if !ok {
 		return
@@ -205,6 +210,11 @@ func (s *Server) handleSetupDiscord(w http.ResponseWriter, r *http.Request) {
 	err := s.store.InTx(r.Context(), func(q *db.Queries) error {
 		if err := s.saveDiscordConfig(r.Context(), q, req.ClientID, req.ClientSecret); err != nil {
 			return err
+		}
+		if icon != nil {
+			if err := q.PutInstanceIcon(r.Context(), db.PutInstanceIconParams{ContentType: iconType, Data: icon, UpdatedAt: time.Now().UnixMilli()}); err != nil {
+				return err
+			}
 		}
 		if err := q.SetSetting(r.Context(), db.SetSettingParams{Key: settingInstanceName, Value: name}); err != nil {
 			return err

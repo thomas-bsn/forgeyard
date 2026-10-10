@@ -9,6 +9,15 @@ import (
 	"context"
 )
 
+const deleteInstanceIcon = `-- name: DeleteInstanceIcon :exec
+DELETE FROM instance_icon WHERE id = 1
+`
+
+func (q *Queries) DeleteInstanceIcon(ctx context.Context) error {
+	_, err := q.db.ExecContext(ctx, deleteInstanceIcon)
+	return err
+}
+
 const deleteSetting = `-- name: DeleteSetting :exec
 DELETE FROM settings WHERE key = ?
 `
@@ -16,6 +25,22 @@ DELETE FROM settings WHERE key = ?
 func (q *Queries) DeleteSetting(ctx context.Context, key string) error {
 	_, err := q.db.ExecContext(ctx, deleteSetting, key)
 	return err
+}
+
+const getInstanceIcon = `-- name: GetInstanceIcon :one
+SELECT id, content_type, data, updated_at FROM instance_icon WHERE id = 1
+`
+
+func (q *Queries) GetInstanceIcon(ctx context.Context) (InstanceIcon, error) {
+	row := q.db.QueryRowContext(ctx, getInstanceIcon)
+	var i InstanceIcon
+	err := row.Scan(
+		&i.ID,
+		&i.ContentType,
+		&i.Data,
+		&i.UpdatedAt,
+	)
+	return i, err
 }
 
 const getSetting = `-- name: GetSetting :one
@@ -27,6 +52,22 @@ func (q *Queries) GetSetting(ctx context.Context, key string) (string, error) {
 	var value string
 	err := row.Scan(&value)
 	return value, err
+}
+
+const putInstanceIcon = `-- name: PutInstanceIcon :exec
+INSERT INTO instance_icon (id, content_type, data, updated_at) VALUES (1, ?, ?, ?)
+ON CONFLICT (id) DO UPDATE SET content_type = excluded.content_type, data = excluded.data, updated_at = excluded.updated_at
+`
+
+type PutInstanceIconParams struct {
+	ContentType string
+	Data        []byte
+	UpdatedAt   int64
+}
+
+func (q *Queries) PutInstanceIcon(ctx context.Context, arg PutInstanceIconParams) error {
+	_, err := q.db.ExecContext(ctx, putInstanceIcon, arg.ContentType, arg.Data, arg.UpdatedAt)
+	return err
 }
 
 const setSetting = `-- name: SetSetting :exec
