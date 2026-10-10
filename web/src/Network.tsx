@@ -269,7 +269,7 @@ export function TopologyMap() {
   const { topo, error, reload } = useTopology()
   const [selected, setSelected] = useState('')
   const [flows, setFlows] = useState(false)
-  const [externals, setExternals] = useState(true)
+  const [externals, setExternals] = useState(false)
   const [internals, setInternals] = useState(false)
   const box = useRef<HTMLDivElement>(null)
   const [lines, setLines] = useState<{ d: string; tone: string }[]>([])
@@ -634,7 +634,7 @@ type TableFilter = { query: string; problemsFirst: boolean; externals: boolean }
 /** Nodes › Tableau: every container on a line, with its networks, ports and route; it scales to many. */
 export function TopologyTable() {
   const { topo, error } = useTopology()
-  const [f, setF] = useState<TableFilter>({ query: '', problemsFirst: true, externals: true })
+  const [f, setF] = useState<TableFilter>({ query: '', problemsFirst: true, externals: false })
   if (!topo) return error ? <p className="error">{error}</p> : <div className="empty-state">Lecture de l’infrastructure…</div>
   const q = f.query.trim().toLowerCase()
   const groups = topo.nodes.map((n) => {
