@@ -1,7 +1,9 @@
-import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react'
+import { lazy, Suspense, useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react'
 import { api, errorMessage, type App, type AppEvent, type AppInput, type AppState, type AppUsage, type Container, type Node } from './api'
 import { AppLogo, AreaChart, formatBytes, LOGO_COLORS, Modal, since, Switch, upFor } from './ui'
 import { ImageCropper } from './Cropper'
+// xterm.js is large: it loads only when a terminal opens.
+const Terminal = lazy(() => import('./Terminal'))
 
 const POLL_MS = 3000
 const USAGE_POLL_MS = 15000
@@ -719,7 +721,7 @@ function AppFormModal({
   )
 }
 
-type DetailTab = 'observability' | 'logs' | 'events'
+type DetailTab = 'observability' | 'logs' | 'terminal' | 'events'
 
 function AppDetail({ app, onChange, go }: { app: App; onChange: () => void; go: (path: string) => void }) {
   const [full, setFull] = useState<App | null>(null)
@@ -863,7 +865,7 @@ function AppDetail({ app, onChange, go }: { app: App; onChange: () => void; go: 
       </aside>
 
       <main className="detail-main">
-        <DetailTabs tab={tab} onTab={setTab} label="Vues de l’app" />
+        <DetailTabs tab={tab} onTab={setTab} label="Vues de l’app" withTerminal />
         {tab === 'observability' && (
           <Observability
             m={{
@@ -880,6 +882,14 @@ function AppDetail({ app, onChange, go }: { app: App; onChange: () => void; go: 
           />
         )}
         {tab === 'logs' && <Logs url={`/api/apps/${app.id}/logs`} />}
+        {tab === 'terminal' &&
+          (app.state === 'running' ? (
+            <Suspense fallback={<div className="empty-state">Chargement du terminal…</div>}>
+              <Terminal path={`/api/apps/${app.id}/terminal`} />
+            </Suspense>
+          ) : (
+            <div className="empty-state">L’app doit être en ligne pour ouvrir un terminal.</div>
+          ))}
         {tab === 'events' && <Events eventsKey={`app-${app.id}`} load={() => api.appEvents(app.id)} />}
       </main>
 
@@ -1037,13 +1047,14 @@ function Events({ eventsKey, load }: { eventsKey: string; load: () => Promise<Ap
   )
 }
 
-function DetailTabs({ tab, onTab, label }: { tab: DetailTab; onTab: (t: DetailTab) => void; label: string }) {
+function DetailTabs({ tab, onTab, label, withTerminal }: { tab: DetailTab; onTab: (t: DetailTab) => void; label: string; withTerminal?: boolean }) {
   return (
     <div className="segmented" role="tablist" aria-label={label}>
       {(
         [
           ['observability', 'Observabilité'],
           ['logs', 'Logs'],
+          ...(withTerminal ? ([['terminal', 'Terminal']] as const) : []),
           ['events', 'Événements'],
         ] as const
       ).map(([value, text]) => (
@@ -1131,7 +1142,7 @@ function ContainerDetail({ container: c, superadmin, onChange, go }: { container
         )}
       </aside>
       <main className="detail-main">
-        <DetailTabs tab={tab} onTab={setTab} label="Vues du conteneur" />
+        <DetailTabs tab={tab} onTab={setTab} label="Vues du conteneur" withTerminal={superadmin} />
         {tab === 'observability' && (
           <Observability
             m={{
@@ -1148,6 +1159,14 @@ function ContainerDetail({ container: c, superadmin, onChange, go }: { container
             <Logs url={`/api/admin/nodes/${c.nodeId}/containers/${c.id}/logs`} />
           ) : (
             <div className="empty-state">Les logs des conteneurs externes sont réservés au superadmin.</div>
+          ))}
+        {tab === 'terminal' &&
+          (c.state === 'running' ? (
+            <Suspense fallback={<div className="empty-state">Chargement du terminal…</div>}>
+              <Terminal path={`/api/admin/nodes/${c.nodeId}/containers/${c.id}/terminal`} />
+            </Suspense>
+          ) : (
+            <div className="empty-state">Le conteneur doit être en marche pour ouvrir un terminal.</div>
           ))}
         {tab === 'events' && <Events eventsKey={`c-${c.nodeId}-${c.name}`} load={() => api.containerEvents(c)} />}
       </main>

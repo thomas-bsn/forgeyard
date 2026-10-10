@@ -146,6 +146,7 @@ type Hub struct {
 	externals  map[int64][]*agentpb.ExternalContainer // by node ID, while connected
 	extUsage   map[string][]UsageSample               // by ExternalKey, oldest first
 	logStreams map[string]chan *agentpb.LogLine       // by stream ID
+	execs      map[string]*execStream                 // terminals, by session ID
 }
 
 // NewHub returns an empty Hub.
@@ -154,6 +155,7 @@ func NewHub(st *store.Store, logger *slog.Logger) *Hub {
 		store: st, logger: logger, sessions: make(map[int64]*session),
 		statuses: make(map[int64]AppStatus), usage: make(map[int64][]UsageSample), extUsage: make(map[string][]UsageSample),
 		externals: make(map[int64][]*agentpb.ExternalContainer), logStreams: make(map[string]chan *agentpb.LogLine),
+		execs: make(map[string]*execStream),
 	}
 }
 
@@ -417,6 +419,8 @@ func (h *Hub) Connect(stream agentpb.AgentService_ConnectServer) error {
 					h.touch(node.ID)
 					lastTouch = time.Now()
 				}
+			case *agentpb.AgentMessage_ExecOutput:
+				h.deliverExec(m.ExecOutput)
 			case *agentpb.AgentMessage_ExternalContainers:
 				h.setExternals(node.ID, m.ExternalContainers.GetContainers())
 			case *agentpb.AgentMessage_AppStatuses:
@@ -526,5 +530,98 @@ func (h *Hub) touch(nodeID int64) {
 		LastSeenAt: sql.NullInt64{Int64: time.Now().Unix(), Valid: true}, ID: nodeID,
 	}); err != nil {
 		h.logger.Warn("updating node last seen failed", "node_id", nodeID, "err", err)
+	}
+}
+
+// ExecSession is a terminal opened in a container of a node.
+type ExecSession struct {
+	h      *Hub
+	nodeID int64
+	id     string
+	// Output carries what the shell prints, then a last message with Closed set; it is closed after.
+	Output <-chan *agentpb.ExecOutput
+}
+
+// Exec opens a terminal in an app's container, or in an external container when appID is 0.
+func (h *Hub) Exec(nodeID, appID int64, containerID string, cols, rows uint32) (*ExecSession, error) {
+	id := randomID()
+	st := &execStream{ch: make(chan *agentpb.ExecOutput, 1024)}
+	h.mu.Lock()
+	h.execs[id] = st
+	h.mu.Unlock()
+	if !h.send(nodeID, &agentpb.ServerMessage{Msg: &agentpb.ServerMessage_ExecStart{ExecStart: &agentpb.ExecStart{
+		SessionId: id, AppId: appID, ContainerId: containerID, Cols: cols, Rows: rows,
+	}}}) {
+		h.endExec(id)
+		return nil, ErrOffline
+	}
+	return &ExecSession{h: h, nodeID: nodeID, id: id, Output: st.ch}, nil
+}
+
+// Input types into the terminal.
+func (s *ExecSession) Input(data []byte) {
+	s.h.send(s.nodeID, &agentpb.ServerMessage{Msg: &agentpb.ServerMessage_ExecInput{ExecInput: &agentpb.ExecInput{SessionId: s.id, Data: data}}})
+}
+
+// Resize sets the terminal's size.
+func (s *ExecSession) Resize(cols, rows uint32) {
+	s.h.send(s.nodeID, &agentpb.ServerMessage{Msg: &agentpb.ServerMessage_ExecResize{ExecResize: &agentpb.ExecResize{SessionId: s.id, Cols: cols, Rows: rows}}})
+}
+
+// Close hangs up the shell.
+func (s *ExecSession) Close() {
+	s.h.send(s.nodeID, &agentpb.ServerMessage{Msg: &agentpb.ServerMessage_ExecClose{ExecClose: &agentpb.ExecClose{SessionId: s.id}}})
+	s.h.endExec(s.id)
+}
+
+// execStream is a terminal's output channel; its own lock lets a delivery wait for a slow viewer without
+// holding the hub, and never send on the channel once it is closed.
+type execStream struct {
+	mu     sync.Mutex
+	ch     chan *agentpb.ExecOutput
+	closed bool
+}
+
+func (st *execStream) close() {
+	st.mu.Lock()
+	defer st.mu.Unlock()
+	if !st.closed {
+		st.closed = true
+		close(st.ch)
+	}
+}
+
+func (h *Hub) endExec(id string) {
+	h.mu.Lock()
+	st, ok := h.execs[id]
+	delete(h.execs, id)
+	h.mu.Unlock()
+	if ok {
+		st.close()
+	}
+}
+
+// deliverExec passes a terminal's output on. A terminal must not lose output, so a slow viewer gets a few
+// seconds before its session is dropped.
+func (h *Hub) deliverExec(m *agentpb.ExecOutput) {
+	h.mu.Lock()
+	st, ok := h.execs[m.GetSessionId()]
+	h.mu.Unlock()
+	if !ok {
+		return
+	}
+	st.mu.Lock()
+	sent := false
+	if !st.closed {
+		select {
+		case st.ch <- m:
+			sent = true
+		case <-time.After(5 * time.Second):
+			h.logger.Warn("terminal viewer too slow, closing it", "session", m.GetSessionId())
+		}
+	}
+	st.mu.Unlock()
+	if !sent || m.GetClosed() {
+		h.endExec(m.GetSessionId())
 	}
 }

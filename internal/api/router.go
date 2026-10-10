@@ -155,6 +155,8 @@ func (s *Server) Handler(webFS fs.FS) http.Handler {
 	mux.HandleFunc("DELETE /api/apps/{id}", s.requireUser(s.handleDeleteApp))
 	mux.HandleFunc("GET /api/apps/{id}/logs", s.requireUser(s.handleAppLogs))
 	mux.HandleFunc("GET /api/apps/{id}/events", s.requireUser(s.handleAppEvents))
+	mux.HandleFunc("GET /api/apps/{id}/terminal", s.requireUser(s.handleAppTerminal))
+	mux.HandleFunc("GET /api/admin/nodes/{node}/containers/{container}/terminal", s.requireSuperadmin(s.handleContainerTerminal))
 	mux.HandleFunc("GET /api/apps/{id}/usage", s.requireUser(s.handleAppUsage))
 	mux.HandleFunc("GET /api/admin/containers", s.requireAdmin(s.handleListContainers))
 	mux.HandleFunc("POST /api/admin/nodes/{node}/containers/{container}/{action}", s.requireSuperadmin(s.handleContainerAction))

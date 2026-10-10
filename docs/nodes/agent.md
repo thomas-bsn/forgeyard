@@ -15,6 +15,8 @@ Un seul flux gRPC bidirectionnel (`AgentService.Connect`, défini dans `proto/ag
 | server → agent | `DesiredState` (toutes les apps du node + mode réseau) | à la connexion, puis à chaque changement |
 | server → agent | `StartLogs` / `StopLogs` | ouverture / fermeture des logs dans l'UI (d'une app, ou d'un conteneur externe) |
 | server → agent | `ContainerAction` | démarrer, arrêter ou redémarrer un conteneur externe |
+| server → agent | `ExecStart` / `ExecInput` / `ExecResize` / `ExecClose` | terminal dans un conteneur |
+| agent → server | `ExecOutput` | sortie du terminal, puis sa fin (code de sortie) |
 
 - Coupure : l'agent se reconnecte avec un délai qui double de 1 s à 30 s. Les conteneurs continuent de tourner pendant ce temps.
 - Si le server répond « node retiré » ou « certificat révoqué », l'agent s'arrête.

@@ -96,6 +96,14 @@ L'agent liste aussi les conteneurs du node que Forgeyard n'a pas créés (lancé
 - Les conteneurs de Forgeyard lui-même (server, agent, Traefik) sont exclus : leurs images portent le label `forgeyard.internal`, Traefik `forgeyard.ingress`, et l'agent reconnaît son propre conteneur.
 - L'agent revérifie qu'un conteneur est bien externe avant toute action.
 
+## Terminal
+
+L'onglet **Terminal** de la page d'une app (et d'un conteneur externe, pour le superadmin) ouvre un shell dans le conteneur, dans le navigateur (xterm.js) : `bash` si l'image l'a, sinon `sh`.
+
+- Le navigateur parle au server en WebSocket (`/api/apps/{id}/terminal`) ; le server relaie à l'agent, qui ouvre un `docker exec` avec un TTY. Taille de la fenêtre suivie, couleurs, raccourcis.
+- Seules les pages de l'instance peuvent l'ouvrir (Origin vérifiée), pour le propriétaire de l'app ou un admin. Chaque ouverture est notée dans les événements.
+- L'app doit être en ligne ; une image sans shell (distroless) affiche l'erreur.
+
 ## Logs en direct
 
 - `GET /api/apps/{id}/logs?tail=300` en Server-Sent Events (`/api/admin/nodes/{node}/containers/{id}/logs` pour un conteneur externe). Le server demande à l'agent d'ouvrir les logs Docker (`StartLogs`) et les relaie ; il ferme le flux (`StopLogs`) quand l'onglet se ferme.

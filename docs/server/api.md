@@ -41,6 +41,7 @@ Toutes les écritures sont en JSON. Les routes sont déclarées dans `internal/a
 | `GET /api/apps/{id}/logs?tail=` | Logs en direct (SSE) |
 | `GET /api/apps/{id}/usage` | CPU et mémoire de la dernière heure |
 | `GET /api/apps/{id}/events` | Derniers événements |
+| `GET /api/apps/{id}/terminal` (WebSocket) | Shell dans le conteneur : binaire = frappes et sortie, texte = `resize` et `exit` |
 
 Les routes d'app vérifient que l'utilisateur est le propriétaire ou un admin.
 
@@ -72,5 +73,6 @@ Les routes d'app vérifient que l'utilisateur est le propriétaire ou un admin.
 | `GET`, `PUT /api/admin/settings/domain` | Domaine, fournisseur DNS (et adresse de Forgeyard) |
 | `POST /api/admin/nodes/{node}/containers/{id}/{start\|stop\|restart}` | Agir sur un conteneur externe |
 | `GET /api/admin/nodes/{node}/containers/{id}/logs` | Logs d'un conteneur externe (SSE) |
+| `GET /api/admin/nodes/{node}/containers/{id}/terminal` (WebSocket) | Shell dans un conteneur externe |
 | `POST /api/admin/settings/domain/check` | Vérifier le domaine |
 | `GET`, `PUT /api/admin/settings/login` | Connexion par mot de passe |

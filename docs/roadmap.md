@@ -37,7 +37,8 @@
 - [ ] Rollback vers une version précédente
 
 ## v0.4 : confort
-- [ ] Passerelle SSH et terminal web
+- [x] Terminal web dans les conteneurs
+- [ ] Passerelle SSH (clés dans le profil)
 - [ ] Bases de données en un clic
 - [ ] Quotas utilisateurs
 - [ ] SMTP et emails

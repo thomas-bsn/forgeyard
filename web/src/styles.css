@@ -2965,3 +2965,15 @@ a.link-btn {
   display: grid;
   gap: 6px;
 }
+
+.terminal-box {
+  height: 480px;
+  padding: 8px 10px;
+}
+
+.terminal-ended {
+  padding: 8px 14px;
+  border-bottom: 1px solid #2a2f3a;
+  color: #fcd34d;
+  font-size: 0.85rem;
+}

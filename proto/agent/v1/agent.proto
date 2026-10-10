@@ -17,6 +17,7 @@ message AgentMessage {
     AppStatuses app_statuses = 3;
     LogLine log_line = 4;
     ExternalContainers external_containers = 5;
+    ExecOutput exec_output = 6;
   }
 }
 
@@ -27,6 +28,10 @@ message ServerMessage {
     StartLogs start_logs = 3;
     StopLogs stop_logs = 4;
     ContainerAction container_action = 5;
+    ExecStart exec_start = 6;
+    ExecInput exec_input = 7;
+    ExecResize exec_resize = 8;
+    ExecClose exec_close = 9;
   }
 }
 
@@ -149,4 +154,37 @@ message LogLine {
   string text = 2;
   bool stderr = 3;
   bool end = 4; // the stream is over (container gone or error in text)
+}
+
+// A terminal in a container: a shell with a TTY, opened by ExecStart and fed by ExecInput; its output
+// comes back as ExecOutput until one with closed set.
+message ExecStart {
+  string session_id = 1;
+  int64 app_id = 2;
+  string container_id = 3; // an external container, when app_id is 0
+  uint32 cols = 4;
+  uint32 rows = 5;
+}
+
+message ExecInput {
+  string session_id = 1;
+  bytes data = 2;
+}
+
+message ExecResize {
+  string session_id = 1;
+  uint32 cols = 2;
+  uint32 rows = 3;
+}
+
+message ExecClose {
+  string session_id = 1;
+}
+
+message ExecOutput {
+  string session_id = 1;
+  bytes data = 2;
+  bool closed = 3;    // the shell ended: nothing follows
+  int32 exit_code = 4;
+  string error = 5;   // why it could not start or broke
 }

@@ -3,6 +3,7 @@ module github.com/thomas-bsn/forgeyard
 go 1.27.1
 
 require (
+	github.com/coder/websocket v1.8.12
 	github.com/libdns/cloudflare v0.2.2
 	github.com/libdns/gandi v1.1.0
 	github.com/libdns/libdns v1.1.1

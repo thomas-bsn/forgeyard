@@ -163,6 +163,8 @@ func session(ctx context.Context, client agentpb.AgentServiceClient, dc *docker.
 
 	logs := newLogStreams()
 	defer logs.stopAll()
+	execs := newExecSessions()
+	defer execs.closeAll()
 	for {
 		msg, err := stream.Recv()
 		if err != nil {
@@ -179,6 +181,16 @@ func session(ctx context.Context, client agentpb.AgentServiceClient, dc *docker.
 			}
 		case *agentpb.ServerMessage_StopLogs:
 			logs.stop(m.StopLogs.GetStreamId())
+		case *agentpb.ServerMessage_ExecStart:
+			if dc != nil {
+				execs.start(ctx, dc, ext, m.ExecStart, send)
+			}
+		case *agentpb.ServerMessage_ExecInput:
+			execs.input(m.ExecInput)
+		case *agentpb.ServerMessage_ExecResize:
+			execs.resize(ctx, m.ExecResize)
+		case *agentpb.ServerMessage_ExecClose:
+			execs.close(m.ExecClose.GetSessionId())
 		case *agentpb.ServerMessage_ContainerAction:
 			if ext != nil {
 				go func(a *agentpb.ContainerAction) {

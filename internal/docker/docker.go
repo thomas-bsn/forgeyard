@@ -14,6 +14,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -43,6 +44,7 @@ func DefaultHost() string {
 // Client talks to one Docker daemon.
 type Client struct {
 	http *http.Client
+	path string // the Unix socket, dialed directly for interactive sessions
 }
 
 // New returns a client for a unix:// Docker host.
@@ -58,7 +60,7 @@ func New(host string) (*Client, error) {
 		},
 	}
 	// No client timeout: pulls and log streams last long; callers bound requests with their context.
-	return &Client{http: &http.Client{Transport: transport}}, nil
+	return &Client{http: &http.Client{Transport: transport}, path: path}, nil
 }
 
 // Info is the part of GET /info the agent reports.
@@ -423,4 +425,71 @@ func scanLines(r io.Reader, stderr bool, fn func(LogLine)) error {
 		fn(LogLine{Text: sc.Text(), Stderr: stderr})
 	}
 	return sc.Err()
+}
+
+// Exec is an interactive shell session in a container, with a TTY: what is written to it is typed in the
+// shell, what is read from it is the terminal's output.
+type Exec struct {
+	c    *Client
+	id   string
+	conn net.Conn
+	r    *bufio.Reader
+}
+
+func (e *Exec) Read(p []byte) (int, error)  { return e.r.Read(p) }
+func (e *Exec) Write(p []byte) (int, error) { return e.conn.Write(p) }
+func (e *Exec) Close() error                { return e.conn.Close() }
+
+// Resize sets the terminal's size.
+func (e *Exec) Resize(ctx context.Context, cols, rows uint32) error {
+	return e.c.call(ctx, http.MethodPost, fmt.Sprintf("/exec/%s/resize?h=%d&w=%d", e.id, rows, cols), nil, nil)
+}
+
+// ExitCode returns the exit code of the shell once it ended.
+func (e *Exec) ExitCode(ctx context.Context) (int, error) {
+	var info struct {
+		ExitCode int `json:"ExitCode"`
+	}
+	err := e.c.get(ctx, "/exec/"+e.id+"/json", &info)
+	return info.ExitCode, err
+}
+
+// StartExec runs cmd in a container with a TTY and returns the session. Docker hands over the raw
+// connection after a 101 Switching Protocols answer, which net/http's client does not support, so the
+// request is written by hand on a dedicated connection.
+func (c *Client) StartExec(ctx context.Context, container string, cmd []string, cols, rows uint32) (*Exec, error) {
+	var created struct {
+		ID string `json:"Id"`
+	}
+	if err := c.call(ctx, http.MethodPost, "/containers/"+url.PathEscape(container)+"/exec", map[string]any{
+		"AttachStdin": true, "AttachStdout": true, "AttachStderr": true, "Tty": true,
+		"Cmd": cmd, "Env": []string{"TERM=xterm-256color"},
+		"ConsoleSize": []uint32{rows, cols},
+	}, &created); err != nil {
+		return nil, err
+	}
+	var d net.Dialer
+	conn, err := d.DialContext(ctx, "unix", c.path)
+	if err != nil {
+		return nil, err
+	}
+	body := `{"Detach":false,"Tty":true}`
+	req := "POST /exec/" + created.ID + "/start HTTP/1.1\r\nHost: docker\r\nContent-Type: application/json\r\n" +
+		"Connection: Upgrade\r\nUpgrade: tcp\r\nContent-Length: " + strconv.Itoa(len(body)) + "\r\n\r\n" + body
+	if _, err := io.WriteString(conn, req); err != nil {
+		conn.Close()
+		return nil, err
+	}
+	br := bufio.NewReader(conn)
+	resp, err := http.ReadResponse(br, nil)
+	if err != nil {
+		conn.Close()
+		return nil, err
+	}
+	if resp.StatusCode != http.StatusSwitchingProtocols && resp.StatusCode != http.StatusOK {
+		raw, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+		conn.Close()
+		return nil, fmt.Errorf("docker exec: %d %s", resp.StatusCode, strings.TrimSpace(string(raw)))
+	}
+	return &Exec{c: c, id: created.ID, conn: conn, r: br}, nil
 }
