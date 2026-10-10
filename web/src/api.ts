@@ -257,7 +257,9 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
     const data = await res.json().catch(() => null)
     throw new ApiError(res.status, data?.error ?? `Erreur ${res.status}`)
   }
-  return res.status === 204 ? (undefined as T) : res.json()
+  // Some answers have no body (204, or 202 for an action the node carries out later).
+  const text = await res.text()
+  return (text ? JSON.parse(text) : undefined) as T
 }
 
 export const api = {
