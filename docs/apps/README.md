@@ -49,6 +49,8 @@ Les conteneurs externes ont le logo automatique de leur image.
 | Configuration | Même fenêtre que la création : source (image ou Dockerfile), port, variables, mémoire ; enregistrer déploie la nouvelle version sans coupure |
 | Supprimer | Supprime l'enregistrement DNS créé par Forgeyard, puis le conteneur. Si le fournisseur DNS ne répond pas, l'app est quand même supprimée et l'erreur est notée dans les logs du server. |
 
+Dans la liste, le menu « ⋯ » d'une app (au survol, toujours visible sur mobile) reprend ces actions : ouvrir le site, démarrer ou arrêter, redéployer, changer de node (admins), supprimer.
+
 L'onglet Apps a trois présentations, au choix du superadmin (Réglages › Général) :
 
 - **Nodes à gauche** (par défaut) : la liste des nodes avec leur nombre d'apps et leurs problèmes, le CPU et la RAM du node choisi ; à droite ses apps en cartes (logo, nom, propriétaire, état, adresse) ;
@@ -68,7 +70,7 @@ Partout « Tous » montre tous les nodes, le node choisi est retenu par le navig
 
 ## Changer de node
 
-Un admin déplace une app depuis sa page (bouton « Changer de node ») :
+Un admin déplace une app depuis sa page (ligne « Tourne sur … · Changer de node », en haut) ou depuis la liste (menu « ⋯ » de l'app) :
 
 1. l'app démarre sur le nouveau node pendant que l'ancien continue de la servir (« Déplacement depuis … ») ; l'ancien ne remonte plus son état, seul le nouveau le fait ;
 2. dès qu'elle est en ligne sur le nouveau node, l'ancien arrête son conteneur ;
@@ -116,11 +118,11 @@ L'agent liste aussi les conteneurs du node que Forgeyard n'a pas créés (lancé
 
 ## Terminal
 
-L'onglet **Terminal** de la page d'une app (et d'un conteneur externe, pour le superadmin) ouvre un shell dans le conteneur, dans le navigateur (xterm.js) : `bash` si l'image l'a, sinon `sh`.
+L'onglet **Terminal** de la page d'une app (et d'un conteneur externe, pour le superadmin) ouvre un shell dans le conteneur, dans le navigateur (xterm.js). L'agent cherche le shell dans les fichiers du conteneur, sans rien y exécuter : `bash`, sinon `sh`, `ash` ou `/busybox/sh`.
 
 - Le navigateur parle au server en WebSocket (`/api/apps/{id}/terminal`) ; le server relaie à l'agent, qui ouvre un `docker exec` avec un TTY. Taille de la fenêtre suivie, couleurs, raccourcis.
 - Seules les pages de l'instance peuvent l'ouvrir (Origin vérifiée), pour le propriétaire de l'app ou un admin. Chaque ouverture est notée dans les événements.
-- L'app doit être en ligne. Une image minimale (distroless, scratch : `traefik/whoami` par exemple) n'a pas de shell : le terminal l'explique au lieu d'ouvrir.
+- L'app doit être en ligne. Une image minimale (distroless, scratch : `traefik/whoami` par exemple) n'a aucun shell : le terminal le dit au lieu d'ouvrir.
 
 ## Logs en direct
 

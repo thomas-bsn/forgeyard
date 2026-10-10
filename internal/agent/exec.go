@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"errors"
 	"sync"
 	"time"
 
@@ -9,8 +10,25 @@ import (
 	"github.com/thomas-bsn/forgeyard/internal/docker"
 )
 
-// shell starts bash when the image has it, else sh, as a login shell.
-var shell = []string{"/bin/sh", "-c", "if command -v bash >/dev/null 2>&1; then exec bash -l; else exec sh -l; fi"}
+// shells are looked for in this order: bash when the image has it, else a plain sh, wherever it is.
+var shells = []string{"/bin/bash", "/usr/bin/bash", "/bin/sh", "/usr/bin/sh", "/bin/ash", "/busybox/sh"}
+
+// errNoShell is shown in the terminal of an image without any shell.
+const errNoShell = "cette image n'a pas de shell (image minimale, distroless ou scratch) : on ne peut pas y ouvrir de terminal, les logs restent disponibles"
+
+// findShell picks the container's shell by looking at its files, without running anything in it.
+func findShell(ctx context.Context, dc *docker.Client, container string) ([]string, error) {
+	for _, sh := range shells {
+		ok, err := dc.PathExists(ctx, container, sh)
+		if err != nil {
+			return nil, err
+		}
+		if ok {
+			return []string{sh, "-l"}, nil
+		}
+	}
+	return nil, errors.New(errNoShell)
+}
 
 // execSessions are the terminals the control plane opened in this node's containers.
 type execSessions struct {
@@ -41,6 +59,12 @@ func (x *execSessions) start(ctx context.Context, dc *docker.Client, ext *extern
 			name = c.ID
 		}
 		sctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+		shell, err := findShell(sctx, dc, name)
+		if err != nil {
+			cancel()
+			out(&agentpb.ExecOutput{Closed: true, Error: err.Error()})
+			return
+		}
 		e, err := dc.StartExec(sctx, name, shell, req.GetCols(), req.GetRows())
 		cancel()
 		if err != nil {

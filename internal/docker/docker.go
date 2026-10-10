@@ -442,6 +442,19 @@ func (c *Client) Remove(ctx context.Context, name string) error {
 	return err
 }
 
+// PathExists reports whether a file exists in a container, without running anything in it.
+func (c *Client) PathExists(ctx context.Context, container, path string) (bool, error) {
+	resp, err := c.do(ctx, http.MethodHead, "/containers/"+url.PathEscape(container)+"/archive?path="+url.QueryEscape(path), nil)
+	if errors.Is(err, ErrNotFound) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	resp.Body.Close()
+	return true, nil
+}
+
 // RemoveImage deletes an image tag; Docker refuses while a container still uses it.
 func (c *Client) RemoveImage(ctx context.Context, ref string) error {
 	err := c.call(ctx, http.MethodDelete, "/images/"+ref, nil, nil)

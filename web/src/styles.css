@@ -3134,3 +3134,132 @@ a.link-btn {
   text-decoration: underline;
   cursor: pointer;
 }
+
+/* --- An app's node, and the "⋯" menu of the apps in the list ------------------------------------------- */
+
+.node-line {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--bg);
+}
+
+.node-line > span {
+  flex: 1;
+  min-width: 0;
+}
+
+.node-line svg {
+  flex: none;
+  color: var(--muted);
+}
+
+.menu-wrap {
+  position: relative;
+  display: grid;
+}
+
+.item-menu-btn {
+  position: absolute;
+  z-index: 2;
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--card);
+  color: var(--muted);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+
+.menu-wrap:hover .item-menu-btn,
+.item-menu-btn:focus-visible,
+.item-menu-btn.open {
+  opacity: 1;
+}
+
+@media (hover: none) {
+  .item-menu-btn {
+    opacity: 1;
+  }
+}
+
+.item-menu-btn:hover,
+.item-menu-btn.open {
+  color: var(--text);
+  border-color: var(--accent);
+}
+
+.menu-card .item-menu-btn {
+  right: 10px;
+  bottom: 10px;
+}
+
+.menu-tile .item-menu-btn {
+  right: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+}
+
+.menu-launcher .item-menu-btn {
+  right: 4px;
+  top: 4px;
+}
+
+.item-menu {
+  position: absolute;
+  z-index: 20;
+  top: calc(100% - 6px);
+  right: 6px;
+  display: grid;
+  min-width: 190px;
+  padding: 6px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--card);
+  box-shadow: 0 12px 32px rgb(0 0 0 / 0.18);
+}
+
+.item-menu > a,
+.item-menu > button {
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  font-size: 0.9rem;
+  text-align: left;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.item-menu > a:hover,
+.item-menu > button:hover:not(:disabled) {
+  background: var(--card-hover);
+}
+
+.item-menu > button:disabled {
+  color: var(--muted);
+  cursor: default;
+}
+
+.item-menu > .danger {
+  color: var(--down);
+}
+
+.menu-tile .app-tile {
+  padding-right: 46px;
+}
+
+.menu-card .app-card-url,
+.menu-card .app-card-meta {
+  padding-right: 34px;
+}

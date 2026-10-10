@@ -339,7 +339,9 @@ function AppList({
         {shown.length > 0 && (
           <div className="launcher-grid">
             {shown.map((i) => (
-              <LauncherIcon key={i.key} item={i} />
+              <WithMenu key={i.key} item={i} admin={admin} onChange={onChange} place="launcher">
+                <LauncherIcon item={i} />
+              </WithMenu>
             ))}
             <button type="button" className="launcher-icon launcher-new" onClick={() => setCreating(true)}>
               <span className="launcher-plus" aria-hidden="true">
@@ -405,7 +407,9 @@ function AppList({
           {shown.length > 0 && (
             <div className="tile-grid">
               {shown.map((i) => (
-                <AppTile key={i.key} item={i} />
+                <WithMenu key={i.key} item={i} admin={admin} onChange={onChange} place="tile">
+                  <AppTile item={i} />
+                </WithMenu>
               ))}
             </div>
           )}
@@ -460,7 +464,9 @@ function AppList({
         {shown.length > 0 && (
           <div className="card-grid">
             {shown.map((i) => (
-              <AppCard key={i.key} item={i} admin={admin} />
+              <WithMenu key={i.key} item={i} admin={admin} onChange={onChange} place="card">
+                <AppCard item={i} admin={admin} />
+              </WithMenu>
             ))}
           </div>
         )}
@@ -499,6 +505,104 @@ function itemHref(i: Item): string {
 
 function itemState(i: Item): string {
   return i.app ? stateText(i.app) : containerText(i.container!)
+}
+
+/** An app of the list with a "⋯" menu of its actions; external containers have none. */
+function WithMenu({ item, admin, onChange, place, children }: { item: Item; admin: boolean; onChange: () => void; place: 'card' | 'tile' | 'launcher'; children: ReactNode }) {
+  const app = item.app
+  const [open, setOpen] = useState(false)
+  const [moving, setMoving] = useState(false)
+  const ref = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (!open) return
+    const close = (e: MouseEvent | KeyboardEvent) => {
+      if (e instanceof KeyboardEvent ? e.key === 'Escape' : !ref.current?.contains(e.target as globalThis.Node)) setOpen(false)
+    }
+    document.addEventListener('mousedown', close)
+    document.addEventListener('keydown', close)
+    return () => {
+      document.removeEventListener('mousedown', close)
+      document.removeEventListener('keydown', close)
+    }
+  }, [open])
+  if (!app) return <>{children}</>
+
+  const act = (action: () => Promise<unknown>) => async () => {
+    setOpen(false)
+    try {
+      await action()
+      onChange()
+    } catch (err) {
+      window.alert(errorMessage(err))
+    }
+  }
+  return (
+    <div className={`menu-wrap menu-${place}`} ref={ref}>
+      {children}
+      <button type="button" className={`item-menu-btn ${open ? 'open' : ''}`} aria-label={`Actions de ${app.name}`} aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen(!open)}>
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+          <circle cx="5" cy="12" r="2" />
+          <circle cx="12" cy="12" r="2" />
+          <circle cx="19" cy="12" r="2" />
+        </svg>
+      </button>
+      {open && (
+        <div className="item-menu" role="menu">
+          {app.url && (
+            <a role="menuitem" href={app.url} target="_blank" rel="noopener noreferrer" onClick={() => setOpen(false)}>
+              Ouvrir le site
+            </a>
+          )}
+          {app.running ? (
+            <button type="button" role="menuitem" onClick={act(() => api.appAction(app.id, 'stop'))}>
+              Arrêter
+            </button>
+          ) : (
+            <button type="button" role="menuitem" disabled={app.suspended} onClick={act(() => api.appAction(app.id, 'start'))}>
+              Démarrer
+            </button>
+          )}
+          <button type="button" role="menuitem" disabled={app.suspended} onClick={act(() => api.appAction(app.id, 'redeploy'))}>
+            Redéployer
+          </button>
+          {admin && (
+            <button
+              type="button"
+              role="menuitem"
+              disabled={!!app.movingFrom}
+              onClick={() => {
+                setOpen(false)
+                setMoving(true)
+              }}
+            >
+              Changer de node…
+            </button>
+          )}
+          <button
+            type="button"
+            role="menuitem"
+            className="danger"
+            onClick={() => {
+              if (window.confirm(`Supprimer l’app « ${app.name} » ? Son conteneur et son enregistrement DNS seront supprimés.`)) act(() => api.deleteApp(app.id))()
+              else setOpen(false)
+            }}
+          >
+            Supprimer
+          </button>
+        </div>
+      )}
+      {moving && (
+        <MoveApp
+          app={app}
+          onClose={() => setMoving(false)}
+          onMoved={() => {
+            setMoving(false)
+            onChange()
+          }}
+        />
+      )}
+    </div>
+  )
 }
 
 /** View B: logo, name, owner, state and address. */
@@ -961,6 +1065,22 @@ function AppDetail({ app, admin, nodes, onChange, go }: { app: App; admin: boole
           </p>
         )}
 
+        <div className="node-line">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <rect x="3" y="4" width="18" height="7" rx="2" />
+            <rect x="3" y="13" width="18" height="7" rx="2" />
+            <path d="M7 7.5h.01M7 16.5h.01" />
+          </svg>
+          <span>
+            Tourne sur <strong>{app.nodeName}</strong>
+          </span>
+          {admin && (
+            <button type="button" className="btn btn-small" disabled={busy || !!app.movingFrom} onClick={() => setMoving(true)}>
+              Changer de node
+            </button>
+          )}
+        </div>
+
         {app.movingFrom ? (
           <div className="banner banner-warn">
             <span className="dot dot-warn" />
@@ -990,8 +1110,6 @@ function AppDetail({ app, admin, nodes, onChange, go }: { app: App; admin: boole
         <dl className="kv">
           <dt>Image</dt>
           <dd className="mono">{app.image}</dd>
-          <dt>Node</dt>
-          <dd>{app.nodeName}</dd>
           <dt>Port</dt>
           <dd>{app.port}</dd>
           <dt>Mémoire</dt>
@@ -1026,11 +1144,6 @@ function AppDetail({ app, admin, nodes, onChange, go }: { app: App; admin: boole
           <button type="button" className="btn" disabled={busy || !full} onClick={() => setEditing(true)}>
             Configuration
           </button>
-          {admin && (
-            <button type="button" className="btn" disabled={busy || !!app.movingFrom} onClick={() => setMoving(true)}>
-              Changer de node
-            </button>
-          )}
           <button
             type="button"
             className="btn btn-danger"
