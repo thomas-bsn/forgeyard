@@ -266,7 +266,10 @@ type Container struct {
 			Status string `json:"Status"` // starting, healthy, unhealthy
 		} `json:"Health"`
 	} `json:"State"`
-	RestartCount    int `json:"RestartCount"`
+	RestartCount int `json:"RestartCount"`
+	HostConfig   struct {
+		Binds []string `json:"Binds"`
+	} `json:"HostConfig"`
 	NetworkSettings struct {
 		Ports map[string][]struct {
 			HostPort string `json:"HostPort"`
@@ -278,6 +281,21 @@ type Container struct {
 func (c *Client) Inspect(ctx context.Context, name string) (Container, error) {
 	var ct Container
 	return ct, c.get(ctx, "/containers/"+url.PathEscape(name)+"/json", &ct)
+}
+
+// RemoveVolume deletes a named volume; a missing one is not an error.
+func (c *Client) RemoveVolume(ctx context.Context, name string) error {
+	err := c.call(ctx, http.MethodDelete, "/volumes/"+url.PathEscape(name), nil, nil)
+	if errors.Is(err, ErrNotFound) {
+		return nil
+	}
+	return err
+}
+
+// InspectRaw returns a container's whole inspection, to recreate it with the same settings.
+func (c *Client) InspectRaw(ctx context.Context, name string) (map[string]any, error) {
+	var raw map[string]any
+	return raw, c.get(ctx, "/containers/"+url.PathEscape(name)+"/json", &raw)
 }
 
 // Stats is a one-shot sample of a running container's resource use.

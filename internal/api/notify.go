@@ -401,6 +401,9 @@ func crashOf(from, to *agentpb.AppStatus) (int, string) {
 
 // onNodeChange tells the admins when a node stays offline, and when it comes back.
 func (s *Server) onNodeChange(nodeID int64, online bool) {
+	if online {
+		go s.autoUpdateAgent(nodeID)
+	}
 	s.mu.Lock()
 	gen := s.nodeGen[nodeID] + 1
 	s.nodeGen[nodeID] = gen

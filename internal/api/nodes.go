@@ -49,6 +49,11 @@ type nodeResponse struct {
 	IngressPort   int64        `json:"ingressHttpPort"`
 	Metrics       *nodeMetrics `json:"metrics,omitempty"`
 	CPUHistory    []float64    `json:"cpuHistory,omitempty"`
+	// The agent's version against the server's, and its updates.
+	AgentOutdated bool   `json:"agentOutdated,omitempty"`
+	SelfUpdate    bool   `json:"selfUpdate,omitempty"`
+	Updating      bool   `json:"updating,omitempty"`
+	UpdateError   string `json:"updateError,omitempty"`
 }
 
 func (s *Server) toNodeResponse(n db.Node) nodeResponse {
@@ -67,6 +72,9 @@ func (s *Server) toNodeResponse(n db.Node) nodeResponse {
 		return resp
 	}
 	resp.State = "online"
+	resp.AgentOutdated, resp.SelfUpdate = agentOutdated(live), live.SelfUpdate
+	resp.Updating = !live.UpdatingSince.IsZero() && time.Since(live.UpdatingSince) < 10*time.Minute
+	resp.UpdateError = live.UpdateError
 	if len(live.Metrics) > 0 {
 		m := live.Metrics[len(live.Metrics)-1]
 		resp.Metrics = &nodeMetrics{

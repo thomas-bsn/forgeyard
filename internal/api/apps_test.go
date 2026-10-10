@@ -29,7 +29,7 @@ type fakeAgent struct {
 }
 
 // connectFakeAgent creates a node through the API, joins it and opens its stream.
-func connectFakeAgent(t *testing.T, ts string, server *Server, admin *http.Client, name string) *fakeAgent {
+func connectFakeAgent(t *testing.T, ts string, server *Server, admin *http.Client, name string, hello ...func(*agentpb.Hello)) *fakeAgent {
 	t.Helper()
 	tlsConfig, err := server.ca.ServerTLS()
 	if err != nil {
@@ -72,9 +72,11 @@ func connectFakeAgent(t *testing.T, ts string, server *Server, admin *http.Clien
 	if err != nil {
 		t.Fatal(err)
 	}
-	stream.Send(&agentpb.AgentMessage{Msg: &agentpb.AgentMessage_Hello{Hello: &agentpb.Hello{
-		AgentVersion: "test", Info: &agentpb.NodeInfo{Hostname: name, Cpus: 2, LocalIp: "192.168.1." + strconv.Itoa(10+len(name))},
-	}}})
+	h := &agentpb.Hello{AgentVersion: "test", Info: &agentpb.NodeInfo{Hostname: name, Cpus: 2, LocalIp: "192.168.1." + strconv.Itoa(10+len(name))}}
+	for _, f := range hello {
+		f(h)
+	}
+	stream.Send(&agentpb.AgentMessage{Msg: &agentpb.AgentMessage_Hello{Hello: h}})
 	msg, err := stream.Recv()
 	if err != nil || msg.GetWelcome() == nil {
 		t.Fatalf("welcome: %v %v", msg, err)

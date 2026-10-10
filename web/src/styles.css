@@ -3637,3 +3637,25 @@ a.link-btn {
   background: color-mix(in srgb, var(--warn) 14%, transparent);
   border: 1px solid color-mix(in srgb, var(--warn) 40%, transparent);
 }
+
+.toolbar-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 0.85rem;
+}
+
+.agent-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px;
+  margin: 0;
+  font-size: 0.85rem;
+}
+
+.agent-error {
+  flex-basis: 100%;
+  margin: 0;
+  font-size: 0.8rem;
+}

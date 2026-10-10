@@ -18,6 +18,7 @@ import (
 
 	"github.com/thomas-bsn/forgeyard/internal/agent"
 	"github.com/thomas-bsn/forgeyard/internal/docker"
+	"github.com/thomas-bsn/forgeyard/internal/version"
 )
 
 func main() {
@@ -34,6 +35,17 @@ func main() {
 		err = start(ctx, os.Args[2:], true, logger)
 	case "run":
 		err = start(ctx, os.Args[2:], false, logger)
+	case "version":
+		fmt.Println(version.Short())
+	case "replace":
+		// Run by the agent in a short-lived container of its next version: replaces the agent's container.
+		if len(os.Args) != 4 {
+			usage()
+		}
+		var dc *docker.Client
+		if dc, err = docker.New(docker.DefaultHost()); err == nil {
+			err = agent.Replace(ctx, dc, os.Args[2], os.Args[3])
+		}
 	case "host-ip":
 		// Run by the agent in a short-lived container on the host's network: prints the host's local IP.
 		fmt.Println(agent.RouteIP())
@@ -47,7 +59,7 @@ func main() {
 }
 
 func usage() {
-	fmt.Fprintln(os.Stderr, "usage : forgeyard-agent join|run [--server URL --token TOKEN --ca FINGERPRINT]")
+	fmt.Fprintln(os.Stderr, "usage : forgeyard-agent join|run|version [--server URL --token TOKEN --ca FINGERPRINT]")
 	os.Exit(2)
 }
 

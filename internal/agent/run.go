@@ -16,10 +16,8 @@ import (
 
 	"github.com/thomas-bsn/forgeyard/internal/agentpb"
 	"github.com/thomas-bsn/forgeyard/internal/docker"
+	"github.com/thomas-bsn/forgeyard/internal/version"
 )
-
-// Version is reported to the control plane.
-const Version = "0.2.0-dev"
 
 const (
 	metricsInterval   = 5 * time.Second
@@ -83,7 +81,7 @@ func session(ctx context.Context, client agentpb.AgentServiceClient, dc *docker.
 	// A failed Send only says io.EOF; the reason (e.g. PermissionDenied for a removed node) comes from
 	// Recv, so the error is always read there.
 	_ = stream.Send(&agentpb.AgentMessage{Msg: &agentpb.AgentMessage_Hello{
-		Hello: &agentpb.Hello{AgentVersion: Version, Info: nodeInfo(ctx, dc, logger)},
+		Hello: &agentpb.Hello{AgentVersion: version.Commit, SelfUpdate: canSelfUpdate(ctx, dc), Info: nodeInfo(ctx, dc, logger)},
 	}})
 	msg, err := stream.Recv()
 	if err != nil {
@@ -191,6 +189,19 @@ func session(ctx context.Context, client agentpb.AgentServiceClient, dc *docker.
 			execs.resize(ctx, m.ExecResize)
 		case *agentpb.ServerMessage_ExecClose:
 			execs.close(m.ExecClose.GetSessionId())
+		case *agentpb.ServerMessage_UpdateAgent:
+			go func(image string) {
+				logger.Info("updating the agent", "image", image)
+				uctx, cancel := context.WithTimeout(ctx, 10*time.Minute)
+				defer cancel()
+				if dc == nil {
+					return
+				}
+				if err := startUpdate(uctx, dc, image); err != nil {
+					logger.Warn("agent update failed", "image", image, "err", err)
+					send(&agentpb.AgentMessage{Msg: &agentpb.AgentMessage_UpdateFailed{UpdateFailed: &agentpb.UpdateFailed{Error: err.Error()}}})
+				}
+			}(m.UpdateAgent.GetImage())
 		case *agentpb.ServerMessage_ContainerAction:
 			if ext != nil {
 				go func(a *agentpb.ContainerAction) {

@@ -1,6 +1,6 @@
-import { useEffect, useState, type FormEvent } from 'react'
+import { useEffect, useState, type FormEvent, type ReactNode } from 'react'
 import { api, errorMessage, type App, type Container, type JoinCommand, type Node } from './api'
-import { CopyField, formatBytes, Modal, ProxySnippet, since } from './ui'
+import { CopyField, formatBytes, Modal, ProxySnippet, since, Switch } from './ui'
 
 const POLL_MS = 5000
 
@@ -12,6 +12,10 @@ export default function Nodes({ localSupported }: { localSupported: boolean }) {
   const [adding, setAdding] = useState(false)
   const [join, setJoin] = useState<JoinCommand | null>(null)
   const [network, setNetwork] = useState<Node | null>(null)
+  const [agents, setAgents] = useState<{ autoUpdate: boolean; serverVersion: string } | null>(null)
+  useEffect(() => {
+    api.agentSettings().then(setAgents, () => {})
+  }, [])
 
   async function load() {
     try {
@@ -43,6 +47,16 @@ export default function Nodes({ localSupported }: { localSupported: boolean }) {
             {online} en ligne sur {joined}
           </span>
         </h1>
+        {agents && (
+          <label className="toolbar-switch" title={`Les agents suivent la version du serveur (${shortVersion(agents.serverVersion)})`}>
+            <span className="muted">Mise à jour auto des agents</span>
+            <Switch
+              checked={agents.autoUpdate}
+              onChange={async (v) => setAgents(await api.saveAgentSettings(v).catch(() => agents))}
+              label="Mise à jour automatique des agents"
+            />
+          </label>
+        )}
         <button type="button" className="btn btn-primary" onClick={() => setAdding(true)}>
           + Ajouter un node
         </button>
@@ -313,6 +327,16 @@ function NodeCard({
               </span>
             </div>
           )}
+          <AgentLine
+            node={node}
+            busy={busy}
+            onUpdate={() =>
+              run(async () => {
+                await api.updateAgent(node.id)
+                onChange()
+              })
+            }
+          />
           {/* Offline, the same meters stay in place, empty, so cards keep the same layout. */}
           <div className={`meters-row ${m ? '' : 'meters-off'}`}>
             <Meter label="CPU" pct={m?.cpuPercent ?? 0} text={m ? `${m.cpuPercent.toFixed(0)} %` : '–'} />
@@ -497,5 +521,31 @@ function NetworkSettings({ node, sharesBox, onClose, onSaved }: { node: Node; sh
       </label>
       {error && <p className="error">{error}</p>}
     </Modal>
+  )
+}
+
+/** The commit as people read it. */
+function shortVersion(v: string): string {
+  return v ? v.slice(0, 7) : 'dev'
+}
+
+/** The agent's version against the server's, with its update. */
+function AgentLine({ node, busy, onUpdate }: { node: Node; busy: boolean; onUpdate: () => void }) {
+  if (node.state !== 'online') return null
+  let status: ReactNode
+  if (node.updating) status = <span className="text-warn">mise à jour…</span>
+  else if (!node.agentOutdated) status = <span className="text-up">à jour</span>
+  else if (node.selfUpdate)
+    status = (
+      <button type="button" className="link-button" disabled={busy} onClick={onUpdate}>
+        Mettre à jour
+      </button>
+    )
+  else status = <span className="muted">{node.isLocal ? 'se met à jour avec docker compose' : 'à mettre à jour à la main'}</span>
+  return (
+    <p className="agent-line muted">
+      Agent {shortVersion(node.agentVersion)} · {status}
+      {node.updateError && <span className="error agent-error">Échec de la mise à jour : {node.updateError}</span>}
+    </p>
   )
 }

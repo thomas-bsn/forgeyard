@@ -21,6 +21,7 @@ import (
 	"github.com/thomas-bsn/forgeyard/internal/agentpb"
 	"github.com/thomas-bsn/forgeyard/internal/dns"
 	"github.com/thomas-bsn/forgeyard/internal/dns/dnstest"
+	"github.com/thomas-bsn/forgeyard/internal/version"
 )
 
 // flagValue extracts "--name value" from a command line.
@@ -122,7 +123,7 @@ func TestNodeJoinConnectAndRemove(t *testing.T) {
 		}
 		time.Sleep(100 * time.Millisecond)
 	}
-	if listed[0].Hostname == "" || listed[0].CPUs == 0 || listed[0].AgentVersion != agent.Version {
+	if listed[0].Hostname == "" || listed[0].CPUs == 0 || listed[0].AgentVersion != version.Commit {
 		t.Fatalf("node info not reported: %+v", listed[0])
 	}
 

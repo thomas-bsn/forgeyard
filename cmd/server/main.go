@@ -118,15 +118,16 @@ func run(addr, agentAddr, dataDir string, logger *slog.Logger) error {
 			"  Ouvrez l'interface web et saisissez ce token de setup :\n\n    %s\n\n", setupToken)
 	}
 
+	apiServer := api.NewServer(api.Deps{
+		Store: st, Logger: logger, Secrets: box, CA: ca, Nodes: hub, AgentPort: agentPort,
+		TrustedProxies: trustedProxies,
+		AgentImage:     envOr("FORGEYARD_AGENT_IMAGE", "ghcr.io/thomas-bsn/forgeyard-agent:latest"),
+		JoinDir:        os.Getenv("FORGEYARD_JOIN_DIR"),
+		LocalServerURL: envOr("FORGEYARD_LOCAL_SERVER_URL", "http://forgeyard:8080"),
+	}, setupToken)
 	srv := &http.Server{
-		Addr: addr,
-		Handler: api.NewServer(api.Deps{
-			Store: st, Logger: logger, Secrets: box, CA: ca, Nodes: hub, AgentPort: agentPort,
-			TrustedProxies: trustedProxies,
-			AgentImage:     envOr("FORGEYARD_AGENT_IMAGE", "ghcr.io/thomas-bsn/forgeyard-agent:latest"),
-			JoinDir:        os.Getenv("FORGEYARD_JOIN_DIR"),
-			LocalServerURL: envOr("FORGEYARD_LOCAL_SERVER_URL", "http://forgeyard:8080"),
-		}, setupToken).Handler(web.Dist()),
+		Addr:              addr,
+		Handler:           apiServer.Handler(web.Dist()),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 
@@ -147,6 +148,7 @@ func run(addr, agentAddr, dataDir string, logger *slog.Logger) error {
 	}
 
 	go cleanExpired(ctx, st, logger)
+	go apiServer.AgentUpdates(ctx)
 
 	errc := make(chan error, 2)
 	go func() {

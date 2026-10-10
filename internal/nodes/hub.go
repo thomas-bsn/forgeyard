@@ -104,13 +104,23 @@ type StateChangeFunc func(appID int64, from, to *agentpb.AppStatus)
 type Live struct {
 	ConnectedAt time.Time
 	Metrics     []*agentpb.Metrics // oldest first
+	// AgentVersion is the commit the agent was built from; SelfUpdate whether it can replace itself.
+	AgentVersion string
+	SelfUpdate   bool
+	// UpdatingSince is when it was asked to update (zero when not), UpdateError why its last update failed.
+	UpdatingSince time.Time
+	UpdateError   string
 }
 
 type session struct {
-	cancel      context.CancelFunc
-	connectedAt time.Time
-	metrics     []*agentpb.Metrics
-	out         chan *agentpb.ServerMessage // the stream's only sender reads it
+	cancel        context.CancelFunc
+	connectedAt   time.Time
+	metrics       []*agentpb.Metrics
+	out           chan *agentpb.ServerMessage // the stream's only sender reads it
+	agentVersion  string
+	selfUpdate    bool
+	updatingSince time.Time
+	updateError   string
 }
 
 // AppStatus is the last state an agent reported for an app.
@@ -318,7 +328,34 @@ func (h *Hub) Live(nodeID int64) (live Live, ok bool) {
 	if !ok {
 		return Live{}, false
 	}
-	return Live{ConnectedAt: s.connectedAt, Metrics: append([]*agentpb.Metrics(nil), s.metrics...)}, true
+	return Live{
+		ConnectedAt: s.connectedAt, Metrics: append([]*agentpb.Metrics(nil), s.metrics...),
+		AgentVersion: s.agentVersion, SelfUpdate: s.selfUpdate, UpdatingSince: s.updatingSince, UpdateError: s.updateError,
+	}, true
+}
+
+// ErrNoSelfUpdate is returned for an agent that cannot replace its own container.
+var ErrNoSelfUpdate = errors.New("this agent cannot update itself")
+
+// UpdateAgent asks a node's agent to replace itself with image. The agent reconnects with its new version,
+// or reports why it could not.
+func (h *Hub) UpdateAgent(nodeID int64, image string) error {
+	h.mu.Lock()
+	s, ok := h.sessions[nodeID]
+	if ok && s.selfUpdate {
+		s.updatingSince, s.updateError = time.Now(), ""
+	}
+	h.mu.Unlock()
+	switch {
+	case !ok:
+		return ErrOffline
+	case !s.selfUpdate:
+		return ErrNoSelfUpdate
+	}
+	if !h.send(nodeID, &agentpb.ServerMessage{Msg: &agentpb.ServerMessage_UpdateAgent{UpdateAgent: &agentpb.UpdateAgent{Image: image}}}) {
+		return ErrOffline
+	}
+	return nil
 }
 
 // Disconnect closes the stream of a node, if connected. Used when a node is removed.
@@ -364,6 +401,9 @@ func (h *Hub) Connect(stream agentpb.AgentService_ConnectServer) error {
 	ctx, cancel := context.WithCancel(stream.Context())
 	defer cancel()
 	sess := h.register(node.ID, cancel)
+	h.mu.Lock()
+	sess.agentVersion, sess.selfUpdate = hello.GetAgentVersion(), hello.GetSelfUpdate()
+	h.mu.Unlock()
 	defer func() {
 		if h.unregister(node.ID, sess) && h.NodeChanged != nil {
 			h.NodeChanged(node.ID, false)
@@ -429,6 +469,11 @@ func (h *Hub) Connect(stream agentpb.AgentService_ConnectServer) error {
 				}
 			case *agentpb.AgentMessage_ExecOutput:
 				h.deliverExec(m.ExecOutput)
+			case *agentpb.AgentMessage_UpdateFailed:
+				h.logger.Warn("agent update failed", "node", node.Name, "err", m.UpdateFailed.GetError())
+				h.mu.Lock()
+				sess.updatingSince, sess.updateError = time.Time{}, m.UpdateFailed.GetError()
+				h.mu.Unlock()
 			case *agentpb.AgentMessage_ExternalContainers:
 				h.setExternals(node.ID, m.ExternalContainers.GetContainers())
 			case *agentpb.AgentMessage_AppStatuses:

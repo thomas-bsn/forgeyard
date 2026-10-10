@@ -62,6 +62,8 @@ Les routes d'app vérifient que l'utilisateur est le propriétaire ou un admin.
 | `PUT /api/admin/nodes/{id}/ingress` | IP publique et mode réseau |
 | `DELETE /api/admin/nodes/{id}` | Retirer (refusé s'il a des apps) |
 | `GET /api/admin/nodes/choices` | Nodes en ligne pour une nouvelle app, la recommandée en premier |
+| `POST /api/admin/nodes/{id}/update-agent` | Mettre à jour l'agent d'un node vers la version du server |
+| `GET`, `PUT /api/admin/settings/agents` | Mise à jour automatique des agents, version du server |
 | `POST /api/admin/apps/{id}/move` | Déplacer une app vers un autre node (`{nodeId}`) |
 | `GET`, `PUT /api/admin/settings/notifications`, `POST …/test`, `POST …/test-support` | Webhooks du salon des admins et du salon support, types d'alertes, messages de test |
 | `GET /api/admin/containers` | Conteneurs externes de tous les nodes en ligne |

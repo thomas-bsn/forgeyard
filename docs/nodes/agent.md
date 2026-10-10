@@ -42,12 +42,24 @@ L'agent gère aussi le conteneur **Traefik** du node (voir [routing](../network/
 
 Taille de la machine via Docker (`/info`) et gopsutil ; disque mesuré sur `FORGEYARD_HOST_ROOT` (le `/` de l'hôte monté en lecture seule dans `/host`), sinon sur `/`.
 
+## Mise à jour
+
+Les agents suivent la version du server : chaque binaire embarque le commit dont il est construit (`internal/version`, renseigné par `make build`, par la CI ou, dans `docker compose build`, lu dans `.git`), et l'agent l'annonce en se connectant.
+
+- **Automatique** (Nodes › « Mise à jour auto des agents », activée par défaut) : un agent d'un autre commit que le server reçoit l'ordre de passer à l'image `ghcr.io/thomas-bsn/forgeyard-agent:sha-<commit du server>`, publiée par la CI pour chaque commit de `main`. Si elle n'est pas encore publiée (CI en cours), l'agent le signale et le server réessaie toutes les 15 minutes.
+- **À la main** : bouton « Mettre à jour » sur la carte du node.
+- **Comment** : l'agent télécharge la nouvelle image, puis lance un conteneur éphémère de cette image (`forgeyard-agent replace`) qui arrête son conteneur, le recrée à l'identique (volumes, variables, réseau, politique de redémarrage) avec la nouvelle image et le démarre. Si la nouvelle version ne tient pas 5 secondes, l'ancienne revient. Les apps ne sont pas touchées.
+- **Exceptions** : l'agent de la machine de Forgeyard est géré par Docker Compose et se met à jour avec elle (`git pull && docker compose up -d --build`) ; un agent lancé hors conteneur se met à jour à la main. Un server construit sans commit (`go run`) ne demande rien.
+- Un agent d'avant cette fonction se met à jour une dernière fois à la main (`docker pull`, `docker rm -f`, `docker run` avec la commande de la page Nodes, sans token).
+
 ## Commandes et options
 
 | Commande | Effet |
 |---|---|
 | `forgeyard-agent join --server … --token … --ca …` | Rejoint puis tourne. Refuse si déjà rejoint. |
 | `forgeyard-agent run` | Tourne. S'il n'a pas encore rejoint : rejoint avec les options si elles sont données, sinon attend le fichier de join. |
+| `forgeyard-agent version` | Affiche le commit dont il est construit (`dev` sans). |
+| `forgeyard-agent replace <conteneur> <image>` | Interne : recrée le conteneur de l'agent avec une autre image (voir Mise à jour). |
 
 | Option | Variable | Rôle |
 |---|---|---|

@@ -47,7 +47,7 @@ git pull
 docker compose up -d --build
 ```
 
-Les données restent dans le volume `forgeyard-data`.
+Les données restent dans le volume `forgeyard-data`. Les agents des autres machines suivent tout seuls la nouvelle version (voir [agent](../nodes/agent.md#mise-à-jour)).
 
 ## Modifier sans conflit
 

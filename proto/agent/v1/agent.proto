@@ -18,7 +18,13 @@ message AgentMessage {
     LogLine log_line = 4;
     ExternalContainers external_containers = 5;
     ExecOutput exec_output = 6;
+    UpdateFailed update_failed = 7;
   }
+}
+
+// UpdateFailed tells why the agent could not update itself; it keeps running its current version.
+message UpdateFailed {
+  string error = 1;
 }
 
 message ServerMessage {
@@ -32,13 +38,21 @@ message ServerMessage {
     ExecInput exec_input = 7;
     ExecResize exec_resize = 8;
     ExecClose exec_close = 9;
+    UpdateAgent update_agent = 10;
   }
+}
+
+// UpdateAgent asks the agent to replace its own container with one of this image, same settings.
+message UpdateAgent {
+  string image = 1;
 }
 
 // Hello is the first message of a stream.
 message Hello {
-  string agent_version = 1;
+  string agent_version = 1; // the commit it was built from, empty for a development build
   NodeInfo info = 2;
+  // self_update: the agent runs in a container it can replace (not one Docker Compose manages).
+  bool self_update = 3;
 }
 
 message NodeInfo {

@@ -73,6 +73,8 @@ type Server struct {
 	nodeGen       map[int64]int         // bumped at each connection change, to cancel a pending offline alert
 	nodeReported  map[int64]bool        // nodes reported offline to the admins
 	imagePorts    map[string]imagePorts // ports images expose, by image name
+	// agentUpdateTried is when each node's agent was last asked to update.
+	agentUpdateTried map[int64]time.Time
 }
 
 // NewServer returns a Server. setupToken must be non-empty while the setup wizard has not been completed.
@@ -84,20 +86,21 @@ func NewServer(d Deps, setupToken string) *Server {
 		nodes:     d.Nodes,
 		agentPort: d.AgentPort,
 
-		trustedProxies: d.TrustedProxies,
-		agentImage:     d.AgentImage,
-		joinDir:        d.JoinDir,
-		localServerURL: d.LocalServerURL,
-		limiter:        auth.NewLoginLimiter(10, 15*time.Minute),
-		discord:        discord.NewClient(),
-		secrets:        d.Secrets,
-		setupToken:     setupToken,
-		oauthStates:    make(map[string]oauthState),
-		crashes:        make(map[int64][]time.Time),
-		crashNotified:  make(map[int64]time.Time),
-		nodeGen:        make(map[int64]int),
-		nodeReported:   make(map[int64]bool),
-		imagePorts:     make(map[string]imagePorts),
+		trustedProxies:   d.TrustedProxies,
+		agentImage:       d.AgentImage,
+		joinDir:          d.JoinDir,
+		localServerURL:   d.LocalServerURL,
+		limiter:          auth.NewLoginLimiter(10, 15*time.Minute),
+		discord:          discord.NewClient(),
+		secrets:          d.Secrets,
+		setupToken:       setupToken,
+		oauthStates:      make(map[string]oauthState),
+		crashes:          make(map[int64][]time.Time),
+		crashNotified:    make(map[int64]time.Time),
+		nodeGen:          make(map[int64]int),
+		nodeReported:     make(map[int64]bool),
+		imagePorts:       make(map[string]imagePorts),
+		agentUpdateTried: make(map[int64]time.Time),
 
 		newDNSProvider: dns.New,
 		lookupHost:     net.DefaultResolver.LookupHost,
@@ -161,6 +164,9 @@ func (s *Server) Handler(webFS fs.FS) http.Handler {
 	mux.HandleFunc("GET /api/caddy/ask", s.handleCaddyAsk)
 	mux.HandleFunc("GET /api/apps", s.requireUser(s.handleListApps))
 	mux.HandleFunc("GET /api/admin/nodes/choices", s.requireAdmin(s.handleNodeChoices))
+	mux.HandleFunc("POST /api/admin/nodes/{id}/update-agent", s.requireAdmin(s.handleUpdateAgent))
+	mux.HandleFunc("GET /api/admin/settings/agents", s.requireAdmin(s.handleGetAgentSettings))
+	mux.HandleFunc("PUT /api/admin/settings/agents", s.requireAdmin(s.handlePutAgentSettings))
 	mux.HandleFunc("POST /api/apps", s.requireUser(s.handleCreateApp))
 	mux.HandleFunc("GET /api/apps/{id}", s.requireUser(s.handleGetApp))
 	mux.HandleFunc("PUT /api/apps/{id}", s.requireUser(s.handleUpdateApp))

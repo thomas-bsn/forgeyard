@@ -80,6 +80,7 @@ jobs:
           images: ghcr.io/${{ github.repository_owner }}/${{ matrix.image }}
           tags: |
             type=raw,value=latest,enable={{is_default_branch}}
+            type=sha,format=long,prefix=sha-,enable={{is_default_branch}}
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
             type=ref,event=pr
@@ -87,6 +88,7 @@ jobs:
         with:
           context: .
           target: ${{ matrix.target }}
+          build-args: FORGEYARD_COMMIT=${{ github.sha }}
           platforms: linux/amd64,linux/arm64
           push: ${{ github.event_name != 'pull_request' }}
           tags: ${{ steps.meta.outputs.tags }}

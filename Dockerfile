@@ -14,13 +14,27 @@ RUN npm run build
 # --- Binaries ---
 FROM --platform=$BUILDPLATFORM golang:1.27-alpine AS build
 ARG TARGETOS TARGETARCH
+# The commit the binaries are built from: given by CI, else read from the checkout's .git (only HEAD and
+# refs are sent to the build, see .dockerignore). Agents update themselves to the server's commit.
+ARG FORGEYARD_COMMIT
 WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
 COPY --from=web /src/web/dist ./web/dist
-RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath -ldflags="-s -w" -o /out/forgeyard ./cmd/server \
- && CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath -ldflags="-s -w" -o /out/forgeyard-agent ./cmd/agent
+RUN commit="$FORGEYARD_COMMIT"; \
+ if [ -z "$commit" ] && [ -f .git/HEAD ]; then \
+   head=$(cat .git/HEAD); \
+   case "$head" in \
+     "ref: "*) ref=${head#ref: }; \
+       if [ -f ".git/$ref" ]; then commit=$(cat ".git/$ref"); \
+       elif [ -f .git/packed-refs ]; then commit=$(grep " $ref\$" .git/packed-refs | cut -d' ' -f1); fi ;; \
+     *) commit=$head ;; \
+   esac; \
+ fi; \
+ flags="-s -w -X github.com/thomas-bsn/forgeyard/internal/version.Commit=$commit"; \
+ CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath -ldflags="$flags" -o /out/forgeyard ./cmd/server \
+ && CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath -ldflags="$flags" -o /out/forgeyard-agent ./cmd/agent
 
 # --- Agent image ---
 FROM alpine:3.21 AS agent

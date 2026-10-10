@@ -1,11 +1,14 @@
 .PHONY: web build run dev-web test clean generate
 
+# The commit the binaries are built from, which agents compare with the server's.
+LDFLAGS := -X github.com/thomas-bsn/forgeyard/internal/version.Commit=$(shell git rev-parse HEAD 2>/dev/null)
+
 web:
 	cd web && npm ci && npm run build
 
 build: web
-	go build -o bin/forgeyard-server ./cmd/server
-	go build -o bin/forgeyard-agent ./cmd/agent
+	go build -ldflags "$(LDFLAGS)" -o bin/forgeyard-server ./cmd/server
+	go build -ldflags "$(LDFLAGS)" -o bin/forgeyard-agent ./cmd/agent
 
 run: build
 	./bin/forgeyard-server

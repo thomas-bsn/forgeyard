@@ -1,4 +1,7 @@
 .git
+!.git/HEAD
+!.git/refs
+!.git/packed-refs
 bin
 data
 data.bak*

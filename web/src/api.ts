@@ -121,7 +121,11 @@ export type Node = {
   memoryBytes: number
   diskBytes: number
   dockerVersion: string
-  agentVersion: string
+  agentVersion: string // the commit it was built from, empty for a development build
+  agentOutdated?: boolean
+  selfUpdate?: boolean
+  updating?: boolean
+  updateError?: string
   lastSeenAt?: number
   isLocal: boolean
   publicIp: string
@@ -388,6 +392,9 @@ export const api = {
   notifySettings: () => request<NotifySettings>('GET', '/api/admin/settings/notifications'),
   saveNotifySettings: (body: { webhook?: string; clear?: boolean; supportWebhook?: string; clearSupport?: boolean; events: NotifySettings['events'] }) =>
     request<NotifySettings>('PUT', '/api/admin/settings/notifications', body),
+  updateAgent: (nodeId: number) => request<Node>('POST', `/api/admin/nodes/${nodeId}/update-agent`, {}),
+  agentSettings: () => request<{ autoUpdate: boolean; serverVersion: string }>('GET', '/api/admin/settings/agents'),
+  saveAgentSettings: (autoUpdate: boolean) => request<{ autoUpdate: boolean; serverVersion: string }>('PUT', '/api/admin/settings/agents', { autoUpdate }),
   testNotify: () => request<void>('POST', '/api/admin/settings/notifications/test', {}),
   testSupportNotify: () => request<void>('POST', '/api/admin/settings/notifications/test-support', {}),
   tickets: () => request<Ticket[]>('GET', '/api/support/tickets'),
