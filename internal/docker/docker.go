@@ -217,6 +217,75 @@ func (c *Client) Inspect(ctx context.Context, name string) (Container, error) {
 	return ct, c.get(ctx, "/containers/"+url.PathEscape(name)+"/json", &ct)
 }
 
+// Stats is a one-shot sample of a running container's resource use.
+type Stats struct {
+	CPUStats struct {
+		CPUUsage struct {
+			TotalUsage uint64 `json:"total_usage"`
+		} `json:"cpu_usage"`
+		SystemUsage uint64 `json:"system_cpu_usage"`
+		OnlineCPUs  int    `json:"online_cpus"`
+	} `json:"cpu_stats"`
+	MemoryStats struct {
+		Usage uint64            `json:"usage"`
+		Stats map[string]uint64 `json:"stats"`
+	} `json:"memory_stats"`
+}
+
+// MemoryUsed is the memory used without the page cache, as `docker stats` shows it.
+func (s Stats) MemoryUsed() uint64 {
+	cache := s.MemoryStats.Stats["inactive_file"] // cgroup v2
+	if cache == 0 {
+		cache = s.MemoryStats.Stats["total_inactive_file"] // cgroup v1
+	}
+	if cache > s.MemoryStats.Usage {
+		return 0
+	}
+	return s.MemoryStats.Usage - cache
+}
+
+// Stats samples a container's resource use without waiting for a second sample: CPU use is a counter, so
+// callers compare two samples.
+func (c *Client) Stats(ctx context.Context, name string) (Stats, error) {
+	var st Stats
+	return st, c.get(ctx, "/containers/"+url.PathEscape(name)+"/stats?stream=false&one-shot=true", &st)
+}
+
+// Summary is a container as GET /containers/json lists it.
+type Summary struct {
+	ID      string            `json:"Id"`
+	Names   []string          `json:"Names"`
+	Image   string            `json:"Image"`
+	State   string            `json:"State"`
+	Status  string            `json:"Status"`
+	Created int64             `json:"Created"`
+	Labels  map[string]string `json:"Labels"`
+	Ports   []struct {
+		PrivatePort int    `json:"PrivatePort"`
+		PublicPort  int    `json:"PublicPort"`
+		Type        string `json:"Type"`
+	} `json:"Ports"`
+}
+
+// Name is the container's name without the leading slash.
+func (s Summary) Name() string {
+	if len(s.Names) == 0 {
+		return s.ID
+	}
+	return strings.TrimPrefix(s.Names[0], "/")
+}
+
+// ListAll returns every container, running or not.
+func (c *Client) ListAll(ctx context.Context) ([]Summary, error) {
+	var list []Summary
+	return list, c.get(ctx, "/containers/json?all=1", &list)
+}
+
+// Restart restarts a container.
+func (c *Client) Restart(ctx context.Context, name string) error {
+	return c.call(ctx, http.MethodPost, "/containers/"+url.PathEscape(name)+"/restart?t=10", nil, nil)
+}
+
 // ListByLabel returns the names of all containers, running or not, carrying the label key.
 func (c *Client) ListByLabel(ctx context.Context, key string) ([]string, error) {
 	filters, _ := json.Marshal(map[string][]string{"label": {key}})

@@ -37,6 +37,14 @@ type App struct {
 	UpdatedAt  int64
 }
 
+type AppEvent struct {
+	ID      int64
+	AppID   int64
+	At      int64
+	Kind    string
+	Message string
+}
+
 type LoginLink struct {
 	TokenHash string
 	UserID    int64
@@ -79,13 +87,14 @@ type Setting struct {
 }
 
 type User struct {
-	ID           int64
-	Username     sql.NullString
-	PasswordHash sql.NullString
-	DiscordID    sql.NullString
-	DisplayName  string
-	Role         string
-	Disabled     int64
-	CreatedAt    int64
-	Email        sql.NullString
+	ID            int64
+	Username      sql.NullString
+	PasswordHash  sql.NullString
+	DiscordID     sql.NullString
+	DisplayName   string
+	Role          string
+	Disabled      int64
+	CreatedAt     int64
+	Email         sql.NullString
+	AppsSuspended int64
 }

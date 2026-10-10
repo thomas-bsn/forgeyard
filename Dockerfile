@@ -28,6 +28,8 @@ COPY --from=build /out/forgeyard-agent /usr/local/bin/
 # The agent drives the host's Docker through its socket, which takes root anyway.
 # Its identity (key and certificate) lives in /state: mount it as a volume.
 ENV FORGEYARD_AGENT_STATE=/state
+# Marks Forgeyard's own containers, which the agent never lists nor controls as external containers.
+LABEL forgeyard.internal=agent
 VOLUME /state
 ENTRYPOINT ["forgeyard-agent"]
 CMD ["run"]
@@ -39,6 +41,7 @@ RUN addgroup -S forgeyard && adduser -S -G forgeyard forgeyard \
 COPY --from=build /out/forgeyard /out/forgeyard-agent /usr/local/bin/
 # Database, secret key and CA live in /data: mount it as a volume.
 VOLUME /data
+LABEL forgeyard.internal=server
 USER forgeyard
 # 8080: web UI and API. 8081: agents' gRPC port (mutual TLS).
 EXPOSE 8080 8081

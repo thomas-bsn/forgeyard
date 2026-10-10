@@ -45,6 +45,7 @@ type Reconciler struct {
 	desired   *agentpb.DesiredState // nil until the control plane sent one: nothing is removed before
 	progress  map[int64]string      // app → "pulling" or "creating" while it happens
 	lastError map[int64]string      // app → why its last deployment failed
+	cpuSeen   map[int64]cpuSample   // app → previous CPU counters, to compute use between two reports
 	trigger   chan struct{}
 }
 
@@ -52,7 +53,7 @@ type Reconciler struct {
 func NewReconciler(dc *docker.Client, logger *slog.Logger) *Reconciler {
 	return &Reconciler{
 		dc: dc, logger: logger, trigger: make(chan struct{}, 1),
-		progress: map[int64]string{}, lastError: map[int64]string{},
+		progress: map[int64]string{}, lastError: map[int64]string{}, cpuSeen: map[int64]cpuSample{},
 	}
 }
 
@@ -335,6 +336,29 @@ func (r *Reconciler) ensureTraefik(ctx context.Context, ingress *agentpb.Ingress
 	return r.dc.Start(ctx, traefikName)
 }
 
+type cpuSample struct {
+	total, system uint64
+}
+
+// sampleUsage fills the CPU and memory use of an app's running container. CPU use needs a previous
+// sample, so the first report after a (re)start has none.
+func (r *Reconciler) sampleUsage(ctx context.Context, appID int64, st *agentpb.AppStatus) {
+	stats, err := r.dc.Stats(ctx, containerName(appID))
+	if err != nil {
+		return
+	}
+	st.MemoryUsedBytes = stats.MemoryUsed()
+	cur := cpuSample{total: stats.CPUStats.CPUUsage.TotalUsage, system: stats.CPUStats.SystemUsage}
+	r.mu.Lock()
+	prev, ok := r.cpuSeen[appID]
+	r.cpuSeen[appID] = cur
+	r.mu.Unlock()
+	if ok && cur.total >= prev.total && cur.system > prev.system {
+		cpus := max(stats.CPUStats.OnlineCPUs, 1)
+		st.CpuPercent = float64(cur.total-prev.total) / float64(cur.system-prev.system) * float64(cpus) * 100
+	}
+}
+
 // Statuses reports the state of every desired app.
 func (r *Reconciler) Statuses(ctx context.Context) []*agentpb.AppStatus {
 	d := r.snapshot()
@@ -376,6 +400,7 @@ func (r *Reconciler) Statuses(ctx context.Context) []*agentpb.AppStatus {
 			switch ct.State.Status {
 			case "running":
 				st.State = "running"
+				r.sampleUsage(ctx, app.GetId(), st)
 			case "restarting":
 				st.State = "restarting"
 			case "created":
@@ -389,5 +414,12 @@ func (r *Reconciler) Statuses(ctx context.Context) []*agentpb.AppStatus {
 		}
 		out = append(out, st)
 	}
+	r.mu.Lock()
+	for id := range r.cpuSeen {
+		if !slices.ContainsFunc(d.GetApps(), func(a *agentpb.AppSpec) bool { return a.GetId() == id }) {
+			delete(r.cpuSeen, id)
+		}
+	}
+	r.mu.Unlock()
 	return out
 }

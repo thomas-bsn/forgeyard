@@ -49,8 +49,17 @@ func (q *Queries) DeleteSession(ctx context.Context, tokenHash string) error {
 	return err
 }
 
+const deleteUserSessions = `-- name: DeleteUserSessions :exec
+DELETE FROM sessions WHERE user_id = ?
+`
+
+func (q *Queries) DeleteUserSessions(ctx context.Context, userID int64) error {
+	_, err := q.db.ExecContext(ctx, deleteUserSessions, userID)
+	return err
+}
+
 const getSessionUser = `-- name: GetSessionUser :one
-SELECT users.id, users.username, users.password_hash, users.discord_id, users.display_name, users.role, users.disabled, users.created_at, users.email
+SELECT users.id, users.username, users.password_hash, users.discord_id, users.display_name, users.role, users.disabled, users.created_at, users.email, users.apps_suspended
 FROM sessions
 JOIN users ON users.id = sessions.user_id
 WHERE sessions.token_hash = ? AND sessions.expires_at > ? AND users.disabled = 0
@@ -74,6 +83,7 @@ func (q *Queries) GetSessionUser(ctx context.Context, arg GetSessionUserParams) 
 		&i.Disabled,
 		&i.CreatedAt,
 		&i.Email,
+		&i.AppsSuspended,
 	)
 	return i, err
 }

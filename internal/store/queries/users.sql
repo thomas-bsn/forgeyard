@@ -25,3 +25,20 @@ UPDATE users SET display_name = ?, email = ? WHERE id = ?;
 
 -- name: GetSuperadmin :one
 SELECT * FROM users WHERE role = 'superadmin' ORDER BY id LIMIT 1;
+
+-- name: ListUsers :many
+SELECT users.*, (SELECT COUNT(*) FROM apps WHERE apps.owner_id = users.id) AS app_count
+FROM users
+ORDER BY users.role = 'superadmin' DESC, users.display_name;
+
+-- name: SetUserRole :exec
+UPDATE users SET role = ? WHERE id = ?;
+
+-- name: SetUserDisabled :exec
+UPDATE users SET disabled = ? WHERE id = ?;
+
+-- name: SetUserAppsSuspended :exec
+UPDATE users SET apps_suspended = ? WHERE id = ?;
+
+-- name: DeleteUser :exec
+DELETE FROM users WHERE id = ?;

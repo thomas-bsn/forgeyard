@@ -16,6 +16,7 @@ message AgentMessage {
     Metrics metrics = 2;
     AppStatuses app_statuses = 3;
     LogLine log_line = 4;
+    ExternalContainers external_containers = 5;
   }
 }
 
@@ -25,6 +26,7 @@ message ServerMessage {
     DesiredState desired_state = 2;
     StartLogs start_logs = 3;
     StopLogs stop_logs = 4;
+    ContainerAction container_action = 5;
   }
 }
 
@@ -99,12 +101,41 @@ message AppStatus {
   int64 started_at = 6;
   int32 host_port = 7; // when the app has no hostname
   int32 restart_count = 8;
+  // Resource use of the running container: CPU in percent of one core, memory without the page cache.
+  double cpu_percent = 9;
+  uint64 memory_used_bytes = 10;
 }
 
 message StartLogs {
   string stream_id = 1;
   int64 app_id = 2;
   int32 tail = 3;
+  string container_id = 4; // an external container, when app_id is 0
+}
+
+// ExternalContainers lists the node's containers that Forgeyard did not create (started by hand, by
+// docker compose…), sent every few seconds. Forgeyard's own containers are left out.
+message ExternalContainers {
+  repeated ExternalContainer containers = 1;
+}
+
+message ExternalContainer {
+  string id = 1;
+  string name = 2;
+  string image = 3;
+  string state = 4;  // running, exited, restarting, paused, created…
+  string status = 5; // Docker's human-readable status, e.g. "Up 3 hours"
+  int64 created_at = 6;
+  repeated string ports = 7; // published ports, e.g. "8080->80/tcp"
+  double cpu_percent = 8;
+  uint64 memory_used_bytes = 9;
+  string compose_project = 10;
+}
+
+// ContainerAction starts, stops or restarts an external container.
+message ContainerAction {
+  string container_id = 1;
+  string action = 2; // start, stop, restart
 }
 
 message StopLogs {

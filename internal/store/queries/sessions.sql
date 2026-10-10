@@ -13,3 +13,6 @@ DELETE FROM sessions WHERE token_hash = ?;
 
 -- name: DeleteExpiredSessions :exec
 DELETE FROM sessions WHERE expires_at <= ?;
+
+-- name: DeleteUserSessions :exec
+DELETE FROM sessions WHERE user_id = ?;

@@ -27,7 +27,20 @@ const (
 	historyLen = 60
 	// touchEvery bounds how often last_seen_at is written while a node streams metrics.
 	touchEvery = time.Minute
+	// An app's resource use is kept every usageEvery for usageLen samples: one hour.
+	usageEvery = 15 * time.Second
+	usageLen   = 240
 )
+
+// UsageSample is an app's resource use at one moment.
+type UsageSample struct {
+	At              int64   `json:"t"`
+	CPUPercent      float64 `json:"cpu"`
+	MemoryUsedBytes uint64  `json:"mem"`
+}
+
+// StateChangeFunc is told when an app's reported state changes from a known previous state.
+type StateChangeFunc func(appID int64, from, to *agentpb.AppStatus)
 
 // Live is the in-memory state of a connected node.
 type Live struct {
@@ -61,18 +74,23 @@ type Hub struct {
 
 	// Desired computes the state sent to an agent when it connects and on Push. Set it before serving.
 	Desired DesiredStateFunc
+	// StateChanged, if set, is called when an app's state changes. Set it before serving.
+	StateChanged StateChangeFunc
 
 	mu         sync.Mutex
 	sessions   map[int64]*session
-	statuses   map[int64]AppStatus              // by app ID
-	logStreams map[string]chan *agentpb.LogLine // by stream ID
+	statuses   map[int64]AppStatus                    // by app ID
+	usage      map[int64][]UsageSample                // by app ID, oldest first
+	externals  map[int64][]*agentpb.ExternalContainer // by node ID, while connected
+	logStreams map[string]chan *agentpb.LogLine       // by stream ID
 }
 
 // NewHub returns an empty Hub.
 func NewHub(st *store.Store, logger *slog.Logger) *Hub {
 	return &Hub{
 		store: st, logger: logger, sessions: make(map[int64]*session),
-		statuses: make(map[int64]AppStatus), logStreams: make(map[string]chan *agentpb.LogLine),
+		statuses: make(map[int64]AppStatus), usage: make(map[int64][]UsageSample),
+		externals: make(map[int64][]*agentpb.ExternalContainer), logStreams: make(map[string]chan *agentpb.LogLine),
 	}
 }
 
@@ -84,11 +102,19 @@ func (h *Hub) AppStatus(appID int64) (AppStatus, bool) {
 	return s, ok
 }
 
+// AppUsage returns an app's resource use over the last hour, oldest first.
+func (h *Hub) AppUsage(appID int64) []UsageSample {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return append([]UsageSample(nil), h.usage[appID]...)
+}
+
 // ForgetApp drops the status of a deleted app.
 func (h *Hub) ForgetApp(appID int64) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	delete(h.statuses, appID)
+	delete(h.usage, appID)
 }
 
 func (h *Hub) send(nodeID int64, msg *agentpb.ServerMessage) bool {
@@ -124,19 +150,53 @@ func (h *Hub) Push(ctx context.Context, nodeID int64) error {
 	return nil
 }
 
+// Externals returns the external containers of every connected node, by node ID.
+func (h *Hub) Externals() map[int64][]*agentpb.ExternalContainer {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	out := make(map[int64][]*agentpb.ExternalContainer, len(h.externals))
+	for id, list := range h.externals {
+		out[id] = list
+	}
+	return out
+}
+
+// ExternalContainer returns one external container of a connected node.
+func (h *Hub) ExternalContainer(nodeID int64, containerID string) (*agentpb.ExternalContainer, bool) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	for _, c := range h.externals[nodeID] {
+		if c.GetId() == containerID {
+			return c, true
+		}
+	}
+	return nil, false
+}
+
+// ContainerAction asks a node to start, stop or restart one of its external containers.
+func (h *Hub) ContainerAction(nodeID int64, containerID, action string) error {
+	if !h.send(nodeID, &agentpb.ServerMessage{Msg: &agentpb.ServerMessage_ContainerAction{
+		ContainerAction: &agentpb.ContainerAction{ContainerId: containerID, Action: action},
+	}}) {
+		return ErrOffline
+	}
+	return nil
+}
+
 // ErrOffline means the node holding an app is not connected.
 var ErrOffline = errors.New("node offline")
 
 // Logs streams an app's container output from its node until ctx ends. The channel is closed when the
 // stream ends.
-func (h *Hub) Logs(ctx context.Context, nodeID, appID int64, tail int) (<-chan *agentpb.LogLine, error) {
+// containerID names an external container instead, when appID is 0.
+func (h *Hub) Logs(ctx context.Context, nodeID, appID int64, containerID string, tail int) (<-chan *agentpb.LogLine, error) {
 	id := randomID()
 	ch := make(chan *agentpb.LogLine, 256)
 	h.mu.Lock()
 	h.logStreams[id] = ch
 	h.mu.Unlock()
 	if !h.send(nodeID, &agentpb.ServerMessage{Msg: &agentpb.ServerMessage_StartLogs{
-		StartLogs: &agentpb.StartLogs{StreamId: id, AppId: appID, Tail: int32(tail)},
+		StartLogs: &agentpb.StartLogs{StreamId: id, AppId: appID, ContainerId: containerID, Tail: int32(tail)},
 	}}) {
 		h.closeLogStream(id)
 		return nil, ErrOffline
@@ -287,6 +347,10 @@ func (h *Hub) Connect(stream agentpb.AgentService_ConnectServer) error {
 					h.touch(node.ID)
 					lastTouch = time.Now()
 				}
+			case *agentpb.AgentMessage_ExternalContainers:
+				h.mu.Lock()
+				h.externals[node.ID] = m.ExternalContainers.GetContainers()
+				h.mu.Unlock()
 			case *agentpb.AgentMessage_AppStatuses:
 				h.setStatuses(node.ID, m.AppStatuses.GetApps())
 			case *agentpb.AgentMessage_LogLine:
@@ -344,15 +408,37 @@ func (h *Hub) unregister(nodeID int64, s *session) {
 	defer h.mu.Unlock()
 	if h.sessions[nodeID] == s {
 		delete(h.sessions, nodeID)
+		delete(h.externals, nodeID)
 	}
 }
 
 func (h *Hub) setStatuses(nodeID int64, list []*agentpb.AppStatus) {
+	type change struct{ from, to *agentpb.AppStatus }
+	var changes []change
 	h.mu.Lock()
-	defer h.mu.Unlock()
 	now := time.Now()
 	for _, st := range list {
-		h.statuses[st.GetAppId()] = AppStatus{NodeID: nodeID, Status: st, ReportedAt: now}
+		id := st.GetAppId()
+		if prev, ok := h.statuses[id]; ok && prev.Status.GetState() != st.GetState() {
+			changes = append(changes, change{prev.Status, st})
+		}
+		h.statuses[id] = AppStatus{NodeID: nodeID, Status: st, ReportedAt: now}
+		if st.GetState() == "running" {
+			samples := h.usage[id]
+			if n := len(samples); n == 0 || now.Unix()-samples[n-1].At >= int64(usageEvery/time.Second) {
+				samples = append(samples, UsageSample{At: now.Unix(), CPUPercent: st.GetCpuPercent(), MemoryUsedBytes: st.GetMemoryUsedBytes()})
+				if len(samples) > usageLen {
+					samples = samples[len(samples)-usageLen:]
+				}
+				h.usage[id] = samples
+			}
+		}
+	}
+	h.mu.Unlock()
+	if h.StateChanged != nil {
+		for _, c := range changes {
+			h.StateChanged(c.to.GetAppId(), c.from, c.to)
+		}
 	}
 }
 

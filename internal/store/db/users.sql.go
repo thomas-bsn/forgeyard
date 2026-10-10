@@ -24,7 +24,7 @@ func (q *Queries) CountUsers(ctx context.Context) (int64, error) {
 const createDiscordUser = `-- name: CreateDiscordUser :one
 INSERT INTO users (discord_id, display_name, email, role, created_at)
 VALUES (?, ?, ?, ?, ?)
-RETURNING id, username, password_hash, discord_id, display_name, role, disabled, created_at, email
+RETURNING id, username, password_hash, discord_id, display_name, role, disabled, created_at, email, apps_suspended
 `
 
 type CreateDiscordUserParams struct {
@@ -54,6 +54,7 @@ func (q *Queries) CreateDiscordUser(ctx context.Context, arg CreateDiscordUserPa
 		&i.Disabled,
 		&i.CreatedAt,
 		&i.Email,
+		&i.AppsSuspended,
 	)
 	return i, err
 }
@@ -61,7 +62,7 @@ func (q *Queries) CreateDiscordUser(ctx context.Context, arg CreateDiscordUserPa
 const createLocalUser = `-- name: CreateLocalUser :one
 INSERT INTO users (username, password_hash, display_name, role, created_at)
 VALUES (?, ?, ?, ?, ?)
-RETURNING id, username, password_hash, discord_id, display_name, role, disabled, created_at, email
+RETURNING id, username, password_hash, discord_id, display_name, role, disabled, created_at, email, apps_suspended
 `
 
 type CreateLocalUserParams struct {
@@ -91,12 +92,22 @@ func (q *Queries) CreateLocalUser(ctx context.Context, arg CreateLocalUserParams
 		&i.Disabled,
 		&i.CreatedAt,
 		&i.Email,
+		&i.AppsSuspended,
 	)
 	return i, err
 }
 
+const deleteUser = `-- name: DeleteUser :exec
+DELETE FROM users WHERE id = ?
+`
+
+func (q *Queries) DeleteUser(ctx context.Context, id int64) error {
+	_, err := q.db.ExecContext(ctx, deleteUser, id)
+	return err
+}
+
 const getSuperadmin = `-- name: GetSuperadmin :one
-SELECT id, username, password_hash, discord_id, display_name, role, disabled, created_at, email FROM users WHERE role = 'superadmin' ORDER BY id LIMIT 1
+SELECT id, username, password_hash, discord_id, display_name, role, disabled, created_at, email, apps_suspended FROM users WHERE role = 'superadmin' ORDER BY id LIMIT 1
 `
 
 func (q *Queries) GetSuperadmin(ctx context.Context) (User, error) {
@@ -112,12 +123,13 @@ func (q *Queries) GetSuperadmin(ctx context.Context) (User, error) {
 		&i.Disabled,
 		&i.CreatedAt,
 		&i.Email,
+		&i.AppsSuspended,
 	)
 	return i, err
 }
 
 const getUserByDiscordID = `-- name: GetUserByDiscordID :one
-SELECT id, username, password_hash, discord_id, display_name, role, disabled, created_at, email FROM users WHERE discord_id = ?
+SELECT id, username, password_hash, discord_id, display_name, role, disabled, created_at, email, apps_suspended FROM users WHERE discord_id = ?
 `
 
 func (q *Queries) GetUserByDiscordID(ctx context.Context, discordID sql.NullString) (User, error) {
@@ -133,12 +145,13 @@ func (q *Queries) GetUserByDiscordID(ctx context.Context, discordID sql.NullStri
 		&i.Disabled,
 		&i.CreatedAt,
 		&i.Email,
+		&i.AppsSuspended,
 	)
 	return i, err
 }
 
 const getUserByID = `-- name: GetUserByID :one
-SELECT id, username, password_hash, discord_id, display_name, role, disabled, created_at, email FROM users WHERE id = ?
+SELECT id, username, password_hash, discord_id, display_name, role, disabled, created_at, email, apps_suspended FROM users WHERE id = ?
 `
 
 func (q *Queries) GetUserByID(ctx context.Context, id int64) (User, error) {
@@ -154,12 +167,13 @@ func (q *Queries) GetUserByID(ctx context.Context, id int64) (User, error) {
 		&i.Disabled,
 		&i.CreatedAt,
 		&i.Email,
+		&i.AppsSuspended,
 	)
 	return i, err
 }
 
 const getUserByUsername = `-- name: GetUserByUsername :one
-SELECT id, username, password_hash, discord_id, display_name, role, disabled, created_at, email FROM users WHERE username = ?
+SELECT id, username, password_hash, discord_id, display_name, role, disabled, created_at, email, apps_suspended FROM users WHERE username = ?
 `
 
 func (q *Queries) GetUserByUsername(ctx context.Context, username sql.NullString) (User, error) {
@@ -175,8 +189,106 @@ func (q *Queries) GetUserByUsername(ctx context.Context, username sql.NullString
 		&i.Disabled,
 		&i.CreatedAt,
 		&i.Email,
+		&i.AppsSuspended,
 	)
 	return i, err
+}
+
+const listUsers = `-- name: ListUsers :many
+SELECT users.id, users.username, users.password_hash, users.discord_id, users.display_name, users.role, users.disabled, users.created_at, users.email, users.apps_suspended, (SELECT COUNT(*) FROM apps WHERE apps.owner_id = users.id) AS app_count
+FROM users
+ORDER BY users.role = 'superadmin' DESC, users.display_name
+`
+
+type ListUsersRow struct {
+	ID            int64
+	Username      sql.NullString
+	PasswordHash  sql.NullString
+	DiscordID     sql.NullString
+	DisplayName   string
+	Role          string
+	Disabled      int64
+	CreatedAt     int64
+	Email         sql.NullString
+	AppsSuspended int64
+	AppCount      int64
+}
+
+func (q *Queries) ListUsers(ctx context.Context) ([]ListUsersRow, error) {
+	rows, err := q.db.QueryContext(ctx, listUsers)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListUsersRow{}
+	for rows.Next() {
+		var i ListUsersRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Username,
+			&i.PasswordHash,
+			&i.DiscordID,
+			&i.DisplayName,
+			&i.Role,
+			&i.Disabled,
+			&i.CreatedAt,
+			&i.Email,
+			&i.AppsSuspended,
+			&i.AppCount,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const setUserAppsSuspended = `-- name: SetUserAppsSuspended :exec
+UPDATE users SET apps_suspended = ? WHERE id = ?
+`
+
+type SetUserAppsSuspendedParams struct {
+	AppsSuspended int64
+	ID            int64
+}
+
+func (q *Queries) SetUserAppsSuspended(ctx context.Context, arg SetUserAppsSuspendedParams) error {
+	_, err := q.db.ExecContext(ctx, setUserAppsSuspended, arg.AppsSuspended, arg.ID)
+	return err
+}
+
+const setUserDisabled = `-- name: SetUserDisabled :exec
+UPDATE users SET disabled = ? WHERE id = ?
+`
+
+type SetUserDisabledParams struct {
+	Disabled int64
+	ID       int64
+}
+
+func (q *Queries) SetUserDisabled(ctx context.Context, arg SetUserDisabledParams) error {
+	_, err := q.db.ExecContext(ctx, setUserDisabled, arg.Disabled, arg.ID)
+	return err
+}
+
+const setUserRole = `-- name: SetUserRole :exec
+UPDATE users SET role = ? WHERE id = ?
+`
+
+type SetUserRoleParams struct {
+	Role string
+	ID   int64
+}
+
+func (q *Queries) SetUserRole(ctx context.Context, arg SetUserRoleParams) error {
+	_, err := q.db.ExecContext(ctx, setUserRole, arg.Role, arg.ID)
+	return err
 }
 
 const updateDiscordProfile = `-- name: UpdateDiscordProfile :exec

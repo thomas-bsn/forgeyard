@@ -22,9 +22,10 @@ import (
 const Version = "0.2.0-dev"
 
 const (
-	metricsInterval = 5 * time.Second
-	statusInterval  = 3 * time.Second
-	maxBackoff      = 30 * time.Second
+	metricsInterval   = 5 * time.Second
+	statusInterval    = 3 * time.Second
+	externalsInterval = 10 * time.Second
+	maxBackoff        = 30 * time.Second
 )
 
 // ErrRemoved means the control plane no longer accepts this node; retrying is pointless.
@@ -115,11 +116,32 @@ func session(ctx context.Context, client agentpb.AgentServiceClient, dc *docker.
 		}
 	}
 
+	var ext *externals
+	if dc != nil {
+		ext = newExternals(dc)
+	}
+	sendExternals := func() {
+		if ext == nil {
+			return
+		}
+		list, err := ext.list(ctx)
+		if err != nil {
+			logger.Warn("listing external containers failed", "err", err)
+			return
+		}
+		send(&agentpb.AgentMessage{Msg: &agentpb.AgentMessage_ExternalContainers{
+			ExternalContainers: &agentpb.ExternalContainers{Containers: list},
+		}})
+	}
+
 	go func() {
 		metrics := time.NewTicker(metricsInterval)
 		statuses := time.NewTicker(statusInterval)
+		externalsTick := time.NewTicker(externalsInterval)
 		defer metrics.Stop()
 		defer statuses.Stop()
+		defer externalsTick.Stop()
+		sendExternals()
 		send(&agentpb.AgentMessage{Msg: &agentpb.AgentMessage_Metrics{Metrics: sampleMetrics(ctx, dc)}})
 		for {
 			select {
@@ -127,6 +149,8 @@ func session(ctx context.Context, client agentpb.AgentServiceClient, dc *docker.
 				return
 			case <-metrics.C:
 				send(&agentpb.AgentMessage{Msg: &agentpb.AgentMessage_Metrics{Metrics: sampleMetrics(ctx, dc)}})
+			case <-externalsTick.C:
+				sendExternals()
 			case <-statuses.C:
 				if rec != nil {
 					send(&agentpb.AgentMessage{Msg: &agentpb.AgentMessage_AppStatuses{
@@ -151,10 +175,19 @@ func session(ctx context.Context, client agentpb.AgentServiceClient, dc *docker.
 			}
 		case *agentpb.ServerMessage_StartLogs:
 			if dc != nil {
-				logs.start(ctx, dc, m.StartLogs, send)
+				logs.start(ctx, dc, ext, m.StartLogs, send)
 			}
 		case *agentpb.ServerMessage_StopLogs:
 			logs.stop(m.StopLogs.GetStreamId())
+		case *agentpb.ServerMessage_ContainerAction:
+			if ext != nil {
+				go func(a *agentpb.ContainerAction) {
+					if err := ext.act(ctx, a); err != nil {
+						logger.Warn("container action failed", "container", a.GetContainerId(), "action", a.GetAction(), "err", err)
+					}
+					sendExternals() // show the new state right away
+				}(m.ContainerAction)
+			}
 		}
 	}
 }
@@ -169,7 +202,7 @@ func newLogStreams() *logStreams {
 	return &logStreams{cancels: map[string]context.CancelFunc{}}
 }
 
-func (l *logStreams) start(ctx context.Context, dc *docker.Client, req *agentpb.StartLogs, send func(*agentpb.AgentMessage)) {
+func (l *logStreams) start(ctx context.Context, dc *docker.Client, ext *externals, req *agentpb.StartLogs, send func(*agentpb.AgentMessage)) {
 	ctx, cancel := context.WithCancel(ctx)
 	id := req.GetStreamId()
 	l.mu.Lock()
@@ -182,7 +215,17 @@ func (l *logStreams) start(ctx context.Context, dc *docker.Client, req *agentpb.
 				StreamId: id, Text: text, Stderr: stderr, End: end,
 			}}})
 		}
-		err := dc.Logs(ctx, containerName(req.GetAppId()), int(req.GetTail()), func(l docker.LogLine) {
+		name := containerName(req.GetAppId())
+		if req.GetAppId() == 0 {
+			// An external container: only those, never Forgeyard's own containers.
+			c, err := ext.external(ctx, req.GetContainerId())
+			if err != nil {
+				line("Conteneur introuvable sur ce node.", true, true)
+				return
+			}
+			name = c.ID
+		}
+		err := dc.Logs(ctx, name, int(req.GetTail()), func(l docker.LogLine) {
 			line(l.Text, l.Stderr, false)
 		})
 		if ctx.Err() != nil {

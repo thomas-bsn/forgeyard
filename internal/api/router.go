@@ -89,6 +89,7 @@ func NewServer(d Deps, setupToken string) *Server {
 		lookupHost:     net.DefaultResolver.LookupHost,
 	}
 	d.Nodes.Desired = s.desiredState
+	d.Nodes.StateChanged = s.onAppStateChange
 	return s
 }
 
@@ -121,6 +122,15 @@ func (s *Server) Handler(webFS fs.FS) http.Handler {
 	mux.HandleFunc("POST /api/apps/{id}/{action}", s.requireUser(s.handleAppAction))
 	mux.HandleFunc("DELETE /api/apps/{id}", s.requireUser(s.handleDeleteApp))
 	mux.HandleFunc("GET /api/apps/{id}/logs", s.requireUser(s.handleAppLogs))
+	mux.HandleFunc("GET /api/apps/{id}/events", s.requireUser(s.handleAppEvents))
+	mux.HandleFunc("GET /api/apps/{id}/usage", s.requireUser(s.handleAppUsage))
+	mux.HandleFunc("GET /api/admin/containers", s.requireAdmin(s.handleListContainers))
+	mux.HandleFunc("POST /api/admin/nodes/{node}/containers/{container}/{action}", s.requireSuperadmin(s.handleContainerAction))
+	mux.HandleFunc("GET /api/admin/nodes/{node}/containers/{container}/logs", s.requireSuperadmin(s.handleContainerLogs))
+	mux.HandleFunc("GET /api/admin/users", s.requireAdmin(s.handleListUsers))
+	mux.HandleFunc("PUT /api/admin/users/{id}", s.requireAdmin(s.handleUpdateUser))
+	mux.HandleFunc("DELETE /api/admin/users/{id}", s.requireAdmin(s.handleDeleteUser))
+	mux.HandleFunc("PUT /api/admin/settings/general", s.requireSuperadmin(s.handlePutGeneralSettings))
 	mux.HandleFunc("PUT /api/admin/nodes/{id}/ingress", s.requireAdmin(s.handleNodeIngress))
 	mux.HandleFunc("GET /api/admin/nodes", s.requireAdmin(s.handleListNodes))
 	mux.HandleFunc("POST /api/admin/nodes", s.requireAdmin(s.handleCreateNode))

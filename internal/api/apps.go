@@ -183,6 +183,9 @@ func (s *Server) pickNode(ctx context.Context) (db.Node, error) {
 
 var errNoNode = errors.New("no online node")
 
+// errSuspended is shown when an admin suspended the apps of the app's owner.
+const errSuspended = "les apps de ce compte sont suspendues par un admin"
+
 // dnsProvider returns the configured DNS provider, or nil when records are not managed by Forgeyard.
 func (s *Server) dnsProvider(c dnsConfig) (dns.Provider, error) {
 	if c.Mode != "provider" {
@@ -220,17 +223,20 @@ type appResponse struct {
 	RestartCount int32             `json:"restartCount,omitempty"`
 	StartedAt    int64             `json:"startedAt,omitempty"`
 	HostPort     int32             `json:"hostPort,omitempty"`
+	CPUPercent   float64           `json:"cpuPercent,omitempty"`
+	MemoryUsed   uint64            `json:"memoryUsedBytes,omitempty"`
+	Suspended    bool              `json:"suspended,omitempty"`
 	UpdatedAt    int64             `json:"updatedAt"`
 	Env          map[string]string `json:"env,omitempty"`
 }
 
 // toAppResponse describes an app. localHost is the host Forgeyard is reached at, used as the address of its
 // own machine when that node has no public IP set.
-func (s *Server) toAppResponse(a db.App, ownerName, nodeName string, c dnsConfig, node *db.Node, localHost string) appResponse {
+func (s *Server) toAppResponse(a db.App, ownerName string, ownerSuspended bool, nodeName string, c dnsConfig, node *db.Node, localHost string) appResponse {
 	resp := appResponse{
 		ID: a.ID, Name: a.Name, OwnerID: a.OwnerID, OwnerName: ownerName, NodeID: a.NodeID, NodeName: nodeName,
 		Image: a.Image, Port: a.Port, MemoryMB: a.MemoryMb, Running: a.Running != 0, UpdatedAt: a.UpdatedAt,
-		State: "pending",
+		State: "pending", Suspended: ownerSuspended,
 	}
 	if host := appHostname(c, a.Name); host != "" {
 		resp.URL = "https://" + host
@@ -245,6 +251,9 @@ func (s *Server) toAppResponse(a db.App, ownerName, nodeName string, c dnsConfig
 		resp.Error, resp.ExitCode, resp.OOMKilled = st.Status.GetError(), st.Status.GetExitCode(), st.Status.GetOomKilled()
 		resp.RestartCount, resp.StartedAt = st.Status.GetRestartCount(), st.Status.GetStartedAt()
 		resp.HostPort = st.Status.GetHostPort()
+		if resp.State == "running" {
+			resp.CPUPercent, resp.MemoryUsed = st.Status.GetCpuPercent(), st.Status.GetMemoryUsedBytes()
+		}
 		if resp.URL == "" && resp.HostPort > 0 && node != nil {
 			host := nodeIP(*node, c)
 			if host == "" && node.IsLocal != 0 {
@@ -374,7 +383,7 @@ func (s *Server) handleListApps(w http.ResponseWriter, r *http.Request) {
 		a := db.App{ID: row.ID, Name: row.Name, OwnerID: row.OwnerID, NodeID: row.NodeID, Image: row.Image,
 			Port: row.Port, EnvSealed: row.EnvSealed, Running: row.Running, MemoryMb: row.MemoryMb,
 			Generation: row.Generation, DnsName: row.DnsName, CreatedAt: row.CreatedAt, UpdatedAt: row.UpdatedAt}
-		out = append(out, s.toAppResponse(a, row.OwnerName, row.NodeName, c, byID[row.NodeID], s.publicHost(ctx, r)))
+		out = append(out, s.toAppResponse(a, row.OwnerName, row.OwnerSuspended != 0, row.NodeName, c, byID[row.NodeID], s.publicHost(ctx, r)))
 	}
 	writeJSON(w, http.StatusOK, out)
 }
@@ -415,7 +424,7 @@ func (s *Server) writeApp(w http.ResponseWriter, r *http.Request, status int, a 
 		s.internalError(w, r, err)
 		return
 	}
-	resp := s.toAppResponse(a, owner.DisplayName, node.Name, c, &node, s.publicHost(ctx, r))
+	resp := s.toAppResponse(a, owner.DisplayName, owner.AppsSuspended != 0, node.Name, c, &node, s.publicHost(ctx, r))
 	if withEnv {
 		if resp.Env, err = s.openEnv(a.EnvSealed); err != nil {
 			s.internalError(w, r, err)
@@ -439,6 +448,10 @@ func (s *Server) handleCreateApp(w http.ResponseWriter, r *http.Request) {
 	}
 	if msg := in.validate(true); msg != "" {
 		writeError(w, http.StatusBadRequest, msg)
+		return
+	}
+	if currentUser(r).AppsSuspended != 0 {
+		writeError(w, http.StatusForbidden, errSuspended)
 		return
 	}
 	c, err := s.loadDNSConfig(ctx)
@@ -506,8 +519,10 @@ func (s *Server) handleCreateApp(w http.ResponseWriter, r *http.Request) {
 			s.internalError(w, r, err)
 			return
 		}
+		s.appEvent(app.ID, eventInfo, "DNS créé : "+host)
 	}
 
+	s.appEvent(app.ID, eventInfo, "Créée par "+currentUser(r).DisplayName+" sur le node "+node.Name)
 	s.logger.Info("app created", "app", app.Name, "image", app.Image, "node", node.Name, "by", currentUser(r).DisplayName)
 	s.push(ctx, node.ID)
 	s.writeApp(w, r, http.StatusCreated, app, true)
@@ -546,6 +561,7 @@ func (s *Server) handleUpdateApp(w http.ResponseWriter, r *http.Request) {
 		s.internalError(w, r, err)
 		return
 	}
+	s.appEvent(a.ID, eventInfo, "Configuration modifiée par "+currentUser(r).DisplayName+" : "+a.Image)
 	s.logger.Info("app updated", "app", a.Name, "image", a.Image, "by", currentUser(r).DisplayName)
 	s.push(r.Context(), a.NodeID)
 	s.writeApp(w, r, http.StatusOK, a, true)
@@ -559,7 +575,19 @@ func (s *Server) handleAppAction(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	params := db.SetAppRunningParams{UpdatedAt: time.Now().Unix(), ID: a.ID}
-	switch r.PathValue("action") {
+	action := r.PathValue("action")
+	if action == "start" || action == "redeploy" {
+		owner, err := s.store.GetUserByID(r.Context(), a.OwnerID)
+		if err != nil {
+			s.internalError(w, r, err)
+			return
+		}
+		if owner.AppsSuspended != 0 {
+			writeError(w, http.StatusForbidden, errSuspended)
+			return
+		}
+	}
+	switch action {
 	case "start", "redeploy":
 		params.Running, params.Generation = 1, 1
 	case "stop":
@@ -573,17 +601,28 @@ func (s *Server) handleAppAction(w http.ResponseWriter, r *http.Request) {
 		s.internalError(w, r, err)
 		return
 	}
-	s.logger.Info("app "+r.PathValue("action"), "app", a.Name, "by", currentUser(r).DisplayName)
+	verb := map[string]string{"start": "Démarrée", "stop": "Arrêtée", "redeploy": "Redéployée"}[action]
+	s.appEvent(a.ID, eventInfo, verb+" par "+currentUser(r).DisplayName)
+	s.logger.Info("app "+action, "app", a.Name, "by", currentUser(r).DisplayName)
 	s.push(r.Context(), a.NodeID)
 	s.writeApp(w, r, http.StatusOK, a, false)
 }
 
 func (s *Server) handleDeleteApp(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
 	a, ok := s.appFromPath(w, r)
 	if !ok {
 		return
 	}
+	if err := s.removeApp(r.Context(), a); err != nil {
+		s.internalError(w, r, err)
+		return
+	}
+	s.logger.Info("app deleted", "app", a.Name, "by", currentUser(r).DisplayName)
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// removeApp deletes an app, the DNS record Forgeyard created for it, and then its container.
+func (s *Server) removeApp(ctx context.Context, a db.App) error {
 	if a.DnsName != "" {
 		c, err := s.loadDNSConfig(ctx)
 		if err == nil {
@@ -600,13 +639,11 @@ func (s *Server) handleDeleteApp(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if err := s.store.DeleteApp(ctx, a.ID); err != nil {
-		s.internalError(w, r, err)
-		return
+		return err
 	}
 	s.nodes.ForgetApp(a.ID)
-	s.logger.Info("app deleted", "app", a.Name, "by", currentUser(r).DisplayName)
 	s.push(ctx, a.NodeID)
-	w.WriteHeader(http.StatusNoContent)
+	return nil
 }
 
 // handleAppLogs streams an app's output as server-sent events, starting with the last lines.
@@ -615,13 +652,22 @@ func (s *Server) handleAppLogs(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	lines, err := s.nodes.Logs(r.Context(), a.NodeID, a.ID, "", logTail(r))
+	s.streamLogs(w, r, lines, err)
+}
+
+func logTail(r *http.Request) int {
 	tail, _ := strconv.Atoi(r.URL.Query().Get("tail"))
 	if tail <= 0 || tail > 2000 {
 		tail = 200
 	}
-	lines, err := s.nodes.Logs(r.Context(), a.NodeID, a.ID, tail)
+	return tail
+}
+
+// streamLogs relays a container's log lines as server-sent events.
+func (s *Server) streamLogs(w http.ResponseWriter, r *http.Request, lines <-chan *agentpb.LogLine, err error) {
 	if errors.Is(err, nodes.ErrOffline) {
-		writeError(w, http.StatusServiceUnavailable, "le node de cette app est hors ligne")
+		writeError(w, http.StatusServiceUnavailable, "le node de ce conteneur est hors ligne")
 		return
 	}
 	if err != nil {
