@@ -2,6 +2,7 @@
 package docker
 
 import (
+	"archive/tar"
 	"bufio"
 	"bytes"
 	"context"
@@ -90,21 +91,24 @@ type apiError struct {
 }
 
 func (c *Client) do(ctx context.Context, method, path string, body any) (*http.Response, error) {
-	var r io.Reader
-	if body != nil {
-		raw, err := json.Marshal(body)
-		if err != nil {
-			return nil, err
-		}
-		r = bytes.NewReader(raw)
+	if body == nil {
+		return c.doRaw(ctx, method, path, "", nil)
 	}
-	// The host part is ignored by the Unix dialer.
-	req, err := http.NewRequestWithContext(ctx, method, "http://docker"+path, r)
+	raw, err := json.Marshal(body)
 	if err != nil {
 		return nil, err
 	}
-	if body != nil {
-		req.Header.Set("Content-Type", "application/json")
+	return c.doRaw(ctx, method, path, "application/json", bytes.NewReader(raw))
+}
+
+func (c *Client) doRaw(ctx context.Context, method, path, contentType string, body io.Reader) (*http.Response, error) {
+	// The host part is ignored by the Unix dialer.
+	req, err := http.NewRequestWithContext(ctx, method, "http://docker"+path, body)
+	if err != nil {
+		return nil, err
+	}
+	if contentType != "" {
+		req.Header.Set("Content-Type", contentType)
 	}
 	resp, err := c.http.Do(req)
 	if err != nil {
@@ -180,6 +184,57 @@ func (c *Client) Pull(ctx context.Context, image string) error {
 		}
 		if msg.Error != "" {
 			return errors.New(msg.Error)
+		}
+	}
+}
+
+// Build builds an image from a Dockerfile alone, without other files: COPY and ADD of local files fail, the
+// Dockerfile fetches what it needs (RUN git clone, ADD of a URL…). The base images are pulled again so
+// that a rebuild picks up their updates. A failed build's error ends with the last lines of its output.
+func (c *Client) Build(ctx context.Context, tag, dockerfile string) error {
+	var buf bytes.Buffer
+	tw := tar.NewWriter(&buf)
+	if err := tw.WriteHeader(&tar.Header{Name: "Dockerfile", Mode: 0o644, Size: int64(len(dockerfile)), ModTime: time.Unix(0, 0)}); err != nil {
+		return err
+	}
+	if _, err := io.WriteString(tw, dockerfile); err != nil {
+		return err
+	}
+	if err := tw.Close(); err != nil {
+		return err
+	}
+	q := url.Values{"t": {tag}, "pull": {"1"}, "rm": {"1"}, "forcerm": {"1"}}
+	resp, err := c.doRaw(ctx, http.MethodPost, "/build?"+q.Encode(), "application/x-tar", &buf)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	// The body is a stream of JSON messages: output lines in "stream", failures in "error".
+	var tail []string
+	dec := json.NewDecoder(resp.Body)
+	for {
+		var msg struct {
+			Stream string `json:"stream"`
+			Error  string `json:"error"`
+		}
+		if err := dec.Decode(&msg); err == io.EOF {
+			return nil
+		} else if err != nil {
+			return err
+		}
+		for _, line := range strings.Split(msg.Stream, "\n") {
+			if line = strings.TrimSpace(line); line != "" {
+				tail = append(tail, line)
+			}
+		}
+		if len(tail) > 8 {
+			tail = tail[len(tail)-8:]
+		}
+		if msg.Error != "" {
+			if len(tail) == 0 {
+				return errors.New(msg.Error)
+			}
+			return fmt.Errorf("%s\n%s", msg.Error, strings.Join(tail, "\n"))
 		}
 	}
 }
@@ -381,6 +436,15 @@ func (c *Client) Stop(ctx context.Context, name string) error {
 // Remove force-removes a container and its anonymous volumes. A missing container is not an error.
 func (c *Client) Remove(ctx context.Context, name string) error {
 	err := c.call(ctx, http.MethodDelete, "/containers/"+url.PathEscape(name)+"?force=1&v=1", nil, nil)
+	if errors.Is(err, ErrNotFound) {
+		return nil
+	}
+	return err
+}
+
+// RemoveImage deletes an image tag; Docker refuses while a container still uses it.
+func (c *Client) RemoveImage(ctx context.Context, ref string) error {
+	err := c.call(ctx, http.MethodDelete, "/images/"+ref, nil, nil)
 	if errors.Is(err, ErrNotFound) {
 		return nil
 	}

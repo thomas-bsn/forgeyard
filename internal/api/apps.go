@@ -2,7 +2,9 @@ package api
 
 import (
 	"context"
+	"crypto/sha256"
 	"database/sql"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -31,12 +33,14 @@ var (
 
 // appInput is what users set when creating or editing an app.
 type appInput struct {
-	Name     string            `json:"name"`
-	Image    string            `json:"image"`
-	Port     int               `json:"port"`
-	Env      map[string]string `json:"env"`
-	MemoryMB int               `json:"memoryMb"`
-	NodeID   int64             `json:"nodeId"` // at creation: where it runs, 0 for the recommended node
+	Name  string `json:"name"`
+	Image string `json:"image"`
+	// Dockerfile, when set, is built on the node instead of pulling Image, which Forgeyard then names.
+	Dockerfile string            `json:"dockerfile"`
+	Port       int               `json:"port"`
+	Env        map[string]string `json:"env"`
+	MemoryMB   int               `json:"memoryMb"`
+	NodeID     int64             `json:"nodeId"` // at creation: where it runs, 0 for the recommended node
 }
 
 func (in *appInput) validate(creating bool) string {
@@ -45,7 +49,16 @@ func (in *appInput) validate(creating bool) string {
 	if creating && !appNamePattern.MatchString(in.Name) {
 		return "nom : 1 à 32 caractères parmi a-z, 0-9 et -, sans tiret au début ni à la fin (il devient le sous-domaine)"
 	}
-	if in.Image == "" || len(in.Image) > 255 || strings.ContainsAny(in.Image, " \t\n") {
+	in.Dockerfile = strings.TrimSpace(strings.ReplaceAll(in.Dockerfile, "\r\n", "\n"))
+	if in.Dockerfile != "" {
+		if len(in.Dockerfile) > 64<<10 {
+			return "Dockerfile trop long : 64 Ko au maximum"
+		}
+		if dockerfileBase(in.Dockerfile) == "" {
+			return "Dockerfile invalide : il doit partir d'une image, avec une ligne FROM"
+		}
+		in.Image = ""
+	} else if in.Image == "" || len(in.Image) > 255 || strings.ContainsAny(in.Image, " \t\n") {
 		return "image invalide : par exemple nginx:latest ou ghcr.io/moi/mon-app:main"
 	}
 	if in.Port < 1 || in.Port > 65535 {
@@ -69,6 +82,29 @@ func (in *appInput) validate(creating bool) string {
 		}
 	}
 	return ""
+}
+
+// dockerfileBase is the image a Dockerfile starts from, its first FROM, or "" without one.
+func dockerfileBase(dockerfile string) string {
+	for _, line := range strings.Split(dockerfile, "\n") {
+		f := strings.Fields(line)
+		if len(f) < 2 || !strings.EqualFold(f[0], "FROM") {
+			continue
+		}
+		f = f[1:]
+		for len(f) > 1 && strings.HasPrefix(f[0], "--") {
+			f = f[1:] // --platform=…
+		}
+		return f[0]
+	}
+	return ""
+}
+
+// builtImage is the tag of an app's image built from its Dockerfile: a new Dockerfile gives a new tag,
+// so the node rolls out the new version next to the running one.
+func builtImage(name, dockerfile string) string {
+	sum := sha256.Sum256([]byte(dockerfile))
+	return "forgeyard/" + name + ":" + hex.EncodeToString(sum[:6])
 }
 
 // reservedNames cannot be app names: they would clash with Forgeyard's own address or common hosts.
@@ -143,6 +179,7 @@ func (s *Server) desiredState(ctx context.Context, nodeID int64) (*agentpb.Desir
 			Id: a.ID, Name: a.Name, Image: a.Image, Port: int32(a.Port), Env: env,
 			Hostname: appHostname(c, a.Name), Running: a.Running != 0,
 			MemoryBytes: a.MemoryMb << 20, Generation: a.Generation, Leaving: a.MovingFrom == nodeID,
+			Dockerfile: a.Dockerfile,
 		})
 	}
 	if node.IsLocal != 0 {
@@ -348,6 +385,7 @@ type appResponse struct {
 	MovingFrom     int64             `json:"movingFrom,omitempty"` // the node it leaves, while it moves
 	UpdatedAt      int64             `json:"updatedAt"`
 	Env            map[string]string `json:"env,omitempty"`
+	Dockerfile     string            `json:"dockerfile,omitempty"` // with the env, for the app's owner
 }
 
 // toAppResponse describes an app. localHost is the host Forgeyard is reached at, used as the address of its
@@ -552,6 +590,7 @@ func (s *Server) writeApp(w http.ResponseWriter, r *http.Request, status int, a 
 			s.internalError(w, r, err)
 			return
 		}
+		resp.Dockerfile = a.Dockerfile
 	}
 	writeJSON(w, status, resp)
 }
@@ -622,9 +661,12 @@ func (s *Server) handleCreateApp(w http.ResponseWriter, r *http.Request) {
 		s.internalError(w, r, err)
 		return
 	}
+	if in.Dockerfile != "" {
+		in.Image = builtImage(in.Name, in.Dockerfile)
+	}
 	now := time.Now().Unix()
 	app, err := s.store.CreateApp(ctx, db.CreateAppParams{
-		Name: in.Name, OwnerID: currentUser(r).ID, NodeID: node.ID, Image: in.Image, Port: int64(in.Port),
+		Name: in.Name, OwnerID: currentUser(r).ID, NodeID: node.ID, Image: in.Image, Dockerfile: in.Dockerfile, Port: int64(in.Port),
 		EnvSealed: sealed, MemoryMb: int64(in.MemoryMB), CreatedAt: now, UpdatedAt: now,
 	})
 	if err != nil && strings.Contains(err.Error(), "UNIQUE") {
@@ -684,15 +726,22 @@ func (s *Server) handleUpdateApp(w http.ResponseWriter, r *http.Request) {
 		s.internalError(w, r, err)
 		return
 	}
+	if in.Dockerfile != "" {
+		in.Image = builtImage(a.Name, in.Dockerfile)
+	}
 	a, err = s.store.UpdateAppConfig(r.Context(), db.UpdateAppConfigParams{
-		Image: in.Image, Port: int64(in.Port), EnvSealed: sealed, MemoryMb: int64(in.MemoryMB),
+		Image: in.Image, Dockerfile: in.Dockerfile, Port: int64(in.Port), EnvSealed: sealed, MemoryMb: int64(in.MemoryMB),
 		UpdatedAt: time.Now().Unix(), ID: a.ID,
 	})
 	if err != nil {
 		s.internalError(w, r, err)
 		return
 	}
-	s.appEvent(a.ID, eventInfo, "Configuration modifiée par "+currentUser(r).DisplayName+" : "+a.Image)
+	source := a.Image
+	if a.Dockerfile != "" {
+		source = "Dockerfile"
+	}
+	s.appEvent(a.ID, eventInfo, "Configuration modifiée par "+currentUser(r).DisplayName+" : "+source)
 	s.logger.Info("app updated", "app", a.Name, "image", a.Image, "by", currentUser(r).DisplayName)
 	s.push(r.Context(), a.NodeID)
 	s.writeApp(w, r, http.StatusOK, a, true)

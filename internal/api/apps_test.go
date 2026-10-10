@@ -298,3 +298,47 @@ func (f *fakeAgent) drainUntil(t *testing.T, ok func(relays int, hosts, targets 
 	}
 	t.Fatal("expected relays never arrived")
 }
+
+func TestDockerfileApp(t *testing.T) {
+	ts, server := newTestServerWithHandle(t)
+	admin := newClient()
+	post(t, admin, ts.URL+"/api/setup", setupRequest{Token: testToken, InstanceName: "F", Username: "boss",
+		Password: "a-long-enough-password", PublicURL: "https://forgeyard.example.com"})
+	fa := connectFakeAgent(t, ts.URL, server, admin, "node-a")
+	fa.desired(t)
+
+	if code := postJSON(t, admin, ts.URL+"/api/apps", appInput{Name: "site", Dockerfile: "RUN echo no base", Port: 80}, nil); code != http.StatusBadRequest {
+		t.Fatalf("Dockerfile without FROM: %d", code)
+	}
+	dockerfile := "FROM --platform=linux/amd64 nginx:alpine AS base\r\nRUN echo hello > /usr/share/nginx/html/index.html\r\n"
+	var app appResponse
+	if code := postJSON(t, admin, ts.URL+"/api/apps", appInput{Name: "site", Image: "ignored", Dockerfile: dockerfile, Port: 80}, &app); code != http.StatusCreated {
+		t.Fatalf("create: %d", code)
+	}
+	if !strings.HasPrefix(app.Image, "forgeyard/site:") || !strings.Contains(app.Dockerfile, "RUN echo hello") || strings.Contains(app.Dockerfile, "\r") {
+		t.Fatalf("created app: %+v", app)
+	}
+	if app.Logo.AutoURL != imageLogoURL("nginx:alpine") {
+		t.Fatalf("logo from the base image: %q", app.Logo.AutoURL)
+	}
+	spec := fa.desired(t).GetApps()[0]
+	if spec.GetImage() != app.Image || spec.GetDockerfile() != app.Dockerfile {
+		t.Fatalf("spec: %v", spec)
+	}
+
+	// A new Dockerfile is a new tag; going back to an image drops the Dockerfile.
+	var edited appResponse
+	if code := putJSON(t, admin, ts.URL+"/api/apps/"+itoa(app.ID), appInput{Dockerfile: "FROM nginx:alpine\nRUN true", Port: 80}, &edited); code != http.StatusOK {
+		t.Fatalf("edit: %d", code)
+	}
+	if edited.Image == app.Image || !strings.HasPrefix(edited.Image, "forgeyard/site:") {
+		t.Fatalf("edited image: %q", edited.Image)
+	}
+	var plain appResponse
+	if code := putJSON(t, admin, ts.URL+"/api/apps/"+itoa(app.ID), appInput{Image: "nginx:1.27", Port: 80}, &plain); code != http.StatusOK {
+		t.Fatalf("back to an image: %d", code)
+	}
+	if plain.Image != "nginx:1.27" || plain.Dockerfile != "" {
+		t.Fatalf("back to an image: %+v", plain)
+	}
+}

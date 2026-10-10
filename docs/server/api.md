@@ -8,7 +8,7 @@ Toutes les écritures sont en JSON. Les routes sont déclarées dans `internal/a
 |---|---|
 | `GET /api/health` | Santé |
 | `GET /api/instance/icon` | Icône de l'instance (publique : la page de connexion l'affiche) |
-| `GET /api/instance` | Nom, setup requis, méthodes de connexion (et, pendant le setup : fournisseurs DNS, ports 80/443 de la machine) |
+| `GET /api/instance` | Nom, setup requis, méthodes de connexion, domaine des apps (et, pendant le setup : fournisseurs DNS, ports 80/443 de la machine) |
 | `POST /api/setup` | Termine le wizard avec un compte mot de passe (token de setup) |
 | `POST /api/setup/discord` | Termine le wizard avec Discord : renvoie l'adresse d'autorisation |
 | `POST /api/auth/login`, `POST /api/auth/logout` | Connexion par mot de passe, déconnexion |
@@ -35,7 +35,7 @@ Toutes les écritures sont en JSON. Les routes sont déclarées dans `internal/a
 | `PUT /api/apps/{id}/public` | Afficher ou masquer une app sur le profil de son propriétaire |
 | `PUT /api/me/notifications`, `POST /api/me/notifications/test` | Webhook personnel, message de test |
 | `GET /api/me/sessions`, `DELETE /api/me/sessions/{id\|others}` | Appareils connectés, en déconnecter un ou tous les autres |
-| `GET`, `POST /api/apps` | Lister, créer (`nodeId` facultatif, admins seulement) |
+| `GET`, `POST /api/apps` | Lister, créer (`image` ou `dockerfile` ; `nodeId` facultatif, admins seulement) |
 | `GET`, `PUT`, `DELETE /api/apps/{id}` | Voir, modifier, supprimer |
 | `POST /api/apps/{id}/{start\|stop\|redeploy}` | Actions |
 | `GET /api/apps/{id}/logs?tail=` | Logs en direct (SSE) |

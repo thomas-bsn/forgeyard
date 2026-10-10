@@ -11,6 +11,7 @@ const USAGE_POLL_MS = 15000
 const stateLabels: Record<AppState, { label: string; tone: 'up' | 'warn' | 'down' | '' }> = {
   pending: { label: 'En attente', tone: '' },
   pulling: { label: 'Téléchargement de l’image…', tone: 'warn' },
+  building: { label: 'Construction de l’image…', tone: 'warn' },
   creating: { label: 'Démarrage…', tone: 'warn' },
   deploying: { label: 'Mise à jour sans coupure…', tone: 'warn' },
   running: { label: 'En ligne', tone: 'up' },
@@ -569,6 +570,30 @@ function nodeChoiceLabel(c: NodeChoice): string {
   return `${c.name} · ${formatBytes(c.freeMemoryBytes)} libres · ${c.cpus} CPU · ${c.apps} app${c.apps > 1 ? 's' : ''}${c.recommended ? ' (recommandée)' : ''}`
 }
 
+type Source = 'image' | 'dockerfile'
+
+const sources: { key: Source | 'sandbox' | 'github'; label: string; soon?: boolean }[] = [
+  { key: 'image', label: 'Image Docker' },
+  { key: 'dockerfile', label: 'Dockerfile' },
+  { key: 'sandbox', label: 'Sandbox', soon: true },
+  { key: 'github', label: 'GitHub', soon: true },
+]
+
+const dockerfileExample = `FROM nginx:alpine
+RUN echo 'Bonjour !' > /usr/share/nginx/html/index.html`
+
+/** The image a Dockerfile starts from, its first FROM: its logo is the app's. */
+function dockerfileBase(dockerfile: string): string {
+  for (const line of dockerfile.split('\n')) {
+    let f = line.trim().split(/\s+/)
+    if (f.length < 2 || f[0].toUpperCase() !== 'FROM') continue
+    f = f.slice(1)
+    while (f.length > 1 && f[0].startsWith('--')) f = f.slice(1)
+    return f[0]
+  }
+  return ''
+}
+
 function AppFormModal({
   title,
   submitLabel,
@@ -586,29 +611,36 @@ function AppFormModal({
   onSubmit: (input: AppInput, logo?: string) => Promise<void>
   onClose: () => void
 }) {
+  const [source, setSource] = useState<Source>(initial?.dockerfile ? 'dockerfile' : 'image')
   const [name, setName] = useState(initial?.name ?? '')
-  const [image, setImage] = useState(initial?.image ?? '')
+  const [image, setImage] = useState(initial?.dockerfile ? '' : (initial?.image ?? ''))
+  const [dockerfile, setDockerfile] = useState(initial?.dockerfile ?? '')
   const [logo, setLogo] = useState('')
   const [choices, setChoices] = useState<NodeChoice[]>([])
   const [nodeId, setNodeId] = useState(0)
+  const [domain, setDomain] = useState('')
   useEffect(() => {
-    if (!admin || initial) return
+    if (initial) return
+    api.instance().then((i) => setDomain(i.appsDomain ?? ''), () => {})
+    if (!admin) return
     api.nodeChoices().then((c) => {
       setChoices(c)
       setNodeId(c.find((x) => x.recommended)?.id ?? 0)
     }, () => {})
   }, [admin, initial])
   // The logo preview follows the image once typing pauses, not at every key (each name is looked up).
-  const [settledImage, setSettledImage] = useState(image)
+  const logoImage = source === 'dockerfile' ? dockerfileBase(dockerfile) : image
+  const [settledImage, setSettledImage] = useState(logoImage)
   useEffect(() => {
-    const t = setTimeout(() => setSettledImage(image), 600)
+    const t = setTimeout(() => setSettledImage(logoImage), 600)
     return () => clearTimeout(t)
-  }, [image])
+  }, [logoImage])
   const [cropping, setCropping] = useState<File | null>(null)
   const logoFile = useRef<HTMLInputElement>(null)
   const [port, setPort] = useState(String(initial?.port ?? 80))
   const [memory, setMemory] = useState(String(initial?.memoryMb ?? 512))
   const [env, setEnv] = useState<{ key: string; value: string }[]>(Object.entries(initial?.env ?? {}).map(([key, value]) => ({ key, value })))
+  const [envOpen, setEnvOpen] = useState(env.length > 0)
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
 
@@ -620,7 +652,15 @@ function AppFormModal({
       const vars: Record<string, string> = {}
       for (const { key, value } of env) if (key.trim()) vars[key.trim()] = value
       await onSubmit(
-        { name: initial ? undefined : name, image, port: Number(port), memoryMb: Number(memory), env: vars, nodeId: nodeId || undefined },
+        {
+          name: initial ? undefined : name,
+          image: source === 'image' ? image : '',
+          dockerfile: source === 'dockerfile' ? dockerfile : '',
+          port: Number(port),
+          memoryMb: Number(memory),
+          env: vars,
+          nodeId: nodeId || undefined,
+        },
         logo || undefined,
       )
     } catch (err) {
@@ -629,69 +669,149 @@ function AppFormModal({
     }
   }
 
-  return (
-    <Modal
-      title={title}
-      onClose={onClose}
-      onSubmit={submit}
-      footer={
-        <>
-          <button type="button" className="btn" onClick={onClose} disabled={busy}>
-            Annuler
-          </button>
-          <button type="submit" className="btn btn-primary" disabled={busy}>
-            {busy ? 'Envoi…' : submitLabel}
-          </button>
-        </>
-      }
-    >
-      {!initial && (
+  const shownName = initial?.name ?? (name || 'mon-app')
+  const address = initial?.url?.replace(/^https?:\/\//, '') ?? (domain ? `${shownName}.${domain}` : '')
+  const node = initial ? initial.nodeName : choices.find((c) => c.id === nodeId)
+  const setCount = env.filter((v) => v.key.trim()).length
+
+  const aside = (
+    <>
+      <span className="aside-label">Aperçu</span>
+      <div className="app-preview">
+        {initial ? (
+          <AppLogo url={initial.logo.url} color={initial.logo.color} name={initial.name} size={64} />
+        ) : logo ? (
+          <img className="app-logo" src={logo} alt="" style={{ width: 64, height: 64 }} />
+        ) : (
+          <AppLogo url={hubLogoURL(settledImage)} name={shownName} size={64} />
+        )}
+        <strong>{shownName}</strong>
+        {address && <span className="app-preview-url">{address}</span>}
+        {!initial && (
+          <span className="row-actions">
+            <button type="button" className="btn btn-small" onClick={() => logoFile.current?.click()}>
+              {logo ? 'Changer le logo' : 'Mon logo'}
+            </button>
+            {logo && (
+              <button type="button" className="btn btn-small" onClick={() => setLogo('')}>
+                Automatique
+              </button>
+            )}
+          </span>
+        )}
+      </div>
+      {choices.length > 1 ? (
         <label className="field">
-          <span>Nom</span>
-          <input value={name} onChange={(e) => setName(e.target.value)} placeholder="mon-blog" pattern="[a-z0-9]([a-z0-9\-]{0,30}[a-z0-9])?" title="a-z, 0-9 et -, sans tiret au début ni à la fin" required autoFocus />
-          <small>Il devient aussi le sous-domaine de l’app.</small>
+          <span>Node</span>
+          <select value={nodeId} onChange={(e) => setNodeId(Number(e.target.value))}>
+            {choices.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.name}
+                {c.recommended ? ' (recommandé)' : ''}
+              </option>
+            ))}
+          </select>
+          {typeof node === 'object' && node && (
+            <small>
+              {formatBytes(node.freeMemoryBytes)} libres · {node.cpus} CPU · {node.apps} app{node.apps > 1 ? 's' : ''}
+            </small>
+          )}
+        </label>
+      ) : (
+        <p className="muted aside-note">{typeof node === 'string' ? `Node : ${node}` : 'Node : le plus puissant, choisi automatiquement.'}</p>
+      )}
+      {initial && <p className="muted aside-note">Enregistrer redéploie l’app sans coupure.</p>}
+      <span className="aside-spacer" />
+      {error && <p className="error">{error}</p>}
+      <button type="submit" className="btn btn-primary btn-block" disabled={busy}>
+        {busy ? 'Envoi…' : submitLabel}
+      </button>
+      <button type="button" className="btn btn-ghost btn-block" onClick={onClose} disabled={busy}>
+        Annuler
+      </button>
+    </>
+  )
+
+  return (
+    <Modal title={title} onClose={onClose} onSubmit={submit} aside={aside}>
+      <div className="source-pick" role="radiogroup" aria-label="D’où vient l’app">
+        {sources.map((s) => (
+          <button
+            key={s.key}
+            type="button"
+            role="radio"
+            aria-checked={source === s.key}
+            className={`source-chip ${source === s.key ? 'on' : ''}`}
+            disabled={s.soon || busy}
+            onClick={() => setSource(s.key as Source)}
+          >
+            {s.label}
+            {s.soon && <span className="soon">bientôt</span>}
+          </button>
+        ))}
+      </div>
+      {source === 'image' ? (
+        <label className="field">
+          <span>Image</span>
+          <input className="mono" value={image} onChange={(e) => setImage(e.target.value)} placeholder="nginx:alpine" required autoFocus={!!initial} />
+          <small>Une image publiée : Docker Hub, ghcr.io…</small>
+        </label>
+      ) : (
+        <label className="field">
+          <span>Dockerfile</span>
+          <textarea className="mono" rows={8} value={dockerfile} onChange={(e) => setDockerfile(e.target.value)} placeholder={dockerfileExample} spellCheck={false} required />
+          <small>Construit sur le node, sans autres fichiers : COPY ne trouve rien, récupère ton code avec RUN git clone ou ADD d’une URL.</small>
         </label>
       )}
-      <label className="field">
-        <span>Image Docker</span>
-        <input value={image} onChange={(e) => setImage(e.target.value)} placeholder="nginx:alpine" required autoFocus={!!initial} />
-      </label>
-      {!initial && (
-        <div className="field">
-          <span>Logo</span>
-          <div className="logo-pick">
-            {logo ? (
-              <img className="app-logo app-logo-preview" src={logo} alt="" />
-            ) : (
-              <AppLogo url={hubLogoURL(settledImage)} name={name || '?'} size={48} />
-            )}
-            <span className="logo-pick-text">
-              <small className="muted">{logo ? 'Votre image.' : 'Automatique : le logo de l’image sur Docker Hub, sinon l’initiale.'}</small>
-              <span className="row-actions">
-                <button type="button" className="btn btn-small" onClick={() => logoFile.current?.click()}>
-                  {logo ? 'Changer' : 'Mon image'}
-                </button>
-                {logo && (
-                  <button type="button" className="btn btn-small" onClick={() => setLogo('')}>
-                    Automatique
-                  </button>
-                )}
-              </span>
-            </span>
+      <div className="form-row form-row-app">
+        {!initial && (
+          <label className="field">
+            <span>Nom</span>
+            <input value={name} onChange={(e) => setName(e.target.value)} placeholder="mon-app" pattern="[a-z0-9]([a-z0-9\-]{0,30}[a-z0-9])?" title="a-z, 0-9 et -, sans tiret au début ni à la fin" required autoFocus />
+          </label>
+        )}
+        <label className="field">
+          <span>Port</span>
+          <input type="number" min={1} max={65535} value={port} onChange={(e) => setPort(e.target.value)} required title="Le port sur lequel l’app écoute dans son conteneur" />
+        </label>
+        <label className="field">
+          <span>Mémoire (Mo)</span>
+          <input type="number" min={64} max={16384} step={64} value={memory} onChange={(e) => setMemory(e.target.value)} required />
+        </label>
+      </div>
+      <details className="field" open={envOpen} onToggle={(e) => setEnvOpen(e.currentTarget.open)}>
+        <summary>
+          Variables d’environnement <span className="muted">{setCount ? `· ${setCount}` : '· aucune'}</span>
+        </summary>
+        <div className="env-list">
+          {env.map((v, i) => (
+            <div className="env-row" key={i}>
+              <input aria-label="Nom de la variable" value={v.key} onChange={(e) => setEnv(env.map((x, j) => (j === i ? { ...x, key: e.target.value } : x)))} placeholder="NOM" />
+              <input aria-label="Valeur" value={v.value} onChange={(e) => setEnv(env.map((x, j) => (j === i ? { ...x, value: e.target.value } : x)))} placeholder="valeur" />
+              <button type="button" className="btn btn-ghost" onClick={() => setEnv(env.filter((_, j) => j !== i))} aria-label="Retirer la variable">
+                ✕
+              </button>
+            </div>
+          ))}
+          <div>
+            <button type="button" className="btn btn-dashed btn-small" onClick={() => setEnv([...env, { key: '', value: '' }])}>
+              + Ajouter une variable
+            </button>
           </div>
-          <input
-            ref={logoFile}
-            type="file"
-            accept="image/png,image/jpeg,image/webp,image/gif"
-            hidden
-            onChange={(e) => {
-              const f = e.target.files?.[0]
-              e.target.value = ''
-              if (f) setCropping(f)
-            }}
-          />
+          <small>Chiffrées avant d’être enregistrées.</small>
         </div>
-      )}
+      </details>
+      <input
+        ref={logoFile}
+        type="file"
+        accept="image/png,image/jpeg,image/webp,image/gif"
+        hidden
+        onChange={(e) => {
+          const f = e.target.files?.[0]
+          e.target.value = ''
+          if (f) setCropping(f)
+        }}
+      />
       {cropping && (
         <ImageCropper
           file={cropping}
@@ -706,50 +826,6 @@ function AppFormModal({
           }}
         />
       )}
-      {choices.length > 1 && (
-        <label className="field">
-          <span>Machine</span>
-          <select value={nodeId} onChange={(e) => setNodeId(Number(e.target.value))}>
-            {choices.map((c) => (
-              <option key={c.id} value={c.id}>
-                {nodeChoiceLabel(c)}
-              </option>
-            ))}
-          </select>
-          <small>La recommandée est celle qui a le plus de mémoire libre. Les utilisateurs n’ont pas ce choix : leurs apps y vont d’office.</small>
-        </label>
-      )}
-      <div className="form-row">
-        <label className="field">
-          <span>Port de l’app</span>
-          <input type="number" min={1} max={65535} value={port} onChange={(e) => setPort(e.target.value)} required />
-          <small>Celui sur lequel l’app écoute dans son conteneur.</small>
-        </label>
-        <label className="field">
-          <span>Mémoire max. (Mo)</span>
-          <input type="number" min={64} max={16384} step={64} value={memory} onChange={(e) => setMemory(e.target.value)} required />
-        </label>
-      </div>
-      <div className="field">
-        <span>Variables d’environnement</span>
-        {env.map((v, i) => (
-          <div className="env-row" key={i}>
-            <input aria-label="Nom de la variable" value={v.key} onChange={(e) => setEnv(env.map((x, j) => (j === i ? { ...x, key: e.target.value } : x)))} placeholder="NOM" />
-            <input aria-label="Valeur" value={v.value} onChange={(e) => setEnv(env.map((x, j) => (j === i ? { ...x, value: e.target.value } : x)))} placeholder="valeur" />
-            <button type="button" className="btn btn-ghost" onClick={() => setEnv(env.filter((_, j) => j !== i))} aria-label="Retirer la variable">
-              ✕
-            </button>
-          </div>
-        ))}
-        <div>
-          <button type="button" className="btn btn-dashed" onClick={() => setEnv([...env, { key: '', value: '' }])}>
-            + Ajouter une variable
-          </button>
-        </div>
-        <small>Chiffrées avant d’être enregistrées.</small>
-      </div>
-      {initial && <p className="muted">Enregistrer recrée le conteneur : l’app est coupée quelques secondes.</p>}
-      {error && <p className="error">{error}</p>}
     </Modal>
   )
 }

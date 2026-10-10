@@ -1,6 +1,14 @@
 # Apps
 
-Une **app** = un conteneur Docker lancé depuis une image, avec ses variables d'environnement, sa limite mémoire et son adresse.
+Une **app** = un conteneur Docker lancé depuis une image (publiée, ou construite depuis un Dockerfile), avec ses variables d'environnement, sa limite mémoire et son adresse.
+
+## D'où vient l'app
+
+La fenêtre de création (et de configuration) a le formulaire à gauche et, à droite, l'aperçu de l'app (logo, adresse, node) qui suit la saisie, avec les boutons. On choisit la source en haut :
+
+- **Image Docker** : une image publiée (Docker Hub, ghcr.io…), téléchargée par le node.
+- **Dockerfile** : collé dans le formulaire (64 Ko max., avec une ligne `FROM`), le node construit l'image (état « Construction de l'image… ») avec `pull=1`, pour reprendre les mises à jour de l'image de base. Le Dockerfile est seul, sans autres fichiers : `COPY` ne trouve rien, le code se récupère avec `RUN git clone` ou `ADD` d'une URL. L'image est nommée `forgeyard/<nom>:<empreinte du Dockerfile>` : un nouveau Dockerfile donne une nouvelle image, déployée sans coupure, et l'agent supprime l'ancienne une fois remplacée (et celle d'une app supprimée). Une construction ratée affiche l'erreur et ses dernières lignes. Le logo automatique est celui de l'image du premier `FROM`.
+- **Sandbox** et **GitHub** : bientôt.
 
 Code : `internal/api/apps.go`, `web/src/Apps.tsx`.
 
@@ -19,7 +27,7 @@ Les conteneurs externes ont le logo automatique de leur image.
 | Champ | Règle |
 |---|---|
 | Nom | `a-z`, `0-9`, `-`, 32 caractères max., unique. Devient le sous-domaine. Non modifiable. Réservés : `www`, `mail`, `forgeyard` et le sous-domaine de Forgeyard lui-même. |
-| Image | ex. `nginx:alpine` (`:latest` ajouté si pas de tag) |
+| Image | ex. `nginx:alpine` (`:latest` ajouté si pas de tag) ; ou un Dockerfile |
 | Port | Le port **dans** le conteneur (ex. 3000) |
 | Variables | 100 max., stockées chiffrées |
 | Mémoire | 64 à 16384 Mo, 512 par défaut |
@@ -29,7 +37,7 @@ Les conteneurs externes ont le logo automatique de leur image.
 1. Validation, puis vérification que `nom.domaine` n'existe pas déjà dans le DNS (sinon 409 : ce nom sert déjà à un autre site).
 2. **Placement** : un admin choisit la machine dans le formulaire ; sinon (et toujours pour un utilisateur), c'est la **machine recommandée** : celle qui a le plus de mémoire libre, puis le plus de CPU, puis le moins d'apps. Aucun node en ligne : refus.
 3. Création de l'enregistrement DNS (si un fournisseur est configuré). En cas d'échec, l'app est annulée.
-4. Envoi de l'état voulu au node, qui télécharge l'image et lance le conteneur (voir [agent](../nodes/agent.md#réconciliation)).
+4. Envoi de l'état voulu au node, qui télécharge (ou construit) l'image et lance le conteneur (voir [agent](../nodes/agent.md#réconciliation)).
 
 ## Actions
 
@@ -38,7 +46,7 @@ Les conteneurs externes ont le logo automatique de leur image.
 | Modifier | Image, port, variables, mémoire. Nouvelle version déployée sans coupure (voir ci-dessous). |
 | Démarrer / Redéployer | Re-télécharge l'image et déploie une nouvelle version sans coupure |
 | Arrêter | Arrête le conteneur (il est gardé) |
-| Configuration | Fenêtre : image, port, variables, mémoire ; enregistrer recrée le conteneur |
+| Configuration | Même fenêtre que la création : source (image ou Dockerfile), port, variables, mémoire ; enregistrer déploie la nouvelle version sans coupure |
 | Supprimer | Supprime l'enregistrement DNS créé par Forgeyard, puis le conteneur. Si le fournisseur DNS ne répond pas, l'app est quand même supprimée et l'erreur est notée dans les logs du server. |
 
 L'onglet Apps a trois présentations, au choix du superadmin (Réglages › Général) :

@@ -63,6 +63,7 @@ export type Instance = {
   localWebPorts?: 'busy' | 'free'
   localIp?: string
   appsLayout: 'sidebar' | 'nodes' | 'launcher'
+  appsDomain?: string
   iconUrl?: string
   dnsProviders?: DNSProviderKind[]
   discordEnabled: boolean
@@ -122,6 +123,7 @@ export type AppState =
   | 'deploying'
   | 'running'
   | 'restarting'
+  | 'building'
   | 'stopped'
   | 'exited'
   | 'error'
@@ -155,6 +157,7 @@ export type App = {
   logo: { mode: 'auto' | 'custom' | 'initial'; url?: string; color?: string; autoUrl?: string }
   updatedAt: number
   env?: Record<string, string>
+  dockerfile?: string
 }
 
 export type AppEvent = { at: number; kind: 'info' | 'success' | 'warning' | 'error'; message: string }
@@ -197,6 +200,7 @@ export type Account = {
 export type AppInput = {
   name?: string
   image: string
+  dockerfile?: string
   port: number
   memoryMb: number
   env: Record<string, string>

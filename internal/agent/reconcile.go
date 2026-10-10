@@ -153,8 +153,11 @@ func (r *Reconciler) reconcile(ctx context.Context) {
 	for _, name := range existing {
 		if !wanted[name] {
 			r.logger.Info("removing app container", "container", name)
+			ct, inspectErr := r.dc.Inspect(ctx, name)
 			if err := r.dc.Remove(ctx, name); err != nil {
 				r.logger.Error("removing app container failed", "container", name, "err", err)
+			} else if inspectErr == nil {
+				r.dropBuiltImage(ctx, ct.Config.Image)
 			}
 		}
 	}
@@ -193,6 +196,9 @@ func (r *Reconciler) ensureApp(ctx context.Context, app *agentpb.AppSpec, ingres
 		if err := r.dc.Remove(ctx, name); err != nil {
 			return err
 		}
+		if ct.Config.Image != app.GetImage() {
+			r.dropBuiltImage(ctx, ct.Config.Image)
+		}
 		exists = false
 	}
 
@@ -200,10 +206,9 @@ func (r *Reconciler) ensureApp(ctx context.Context, app *agentpb.AppSpec, ingres
 		if !app.GetRunning() {
 			return nil // a stopped app needs no container
 		}
-		r.setProgress(app.GetId(), "pulling")
 		defer r.setProgress(app.GetId(), "")
-		if err := r.dc.Pull(ctx, app.GetImage()); err != nil {
-			return fmt.Errorf("téléchargement de l'image %s : %w", app.GetImage(), err)
+		if err := r.fetchImage(ctx, app); err != nil {
+			return err
 		}
 		r.setProgress(app.GetId(), "creating")
 		if err := r.dc.Create(ctx, name, appContainerConfig(app, hash, ingressMode)); err != nil {
@@ -222,6 +227,33 @@ func (r *Reconciler) ensureApp(ctx context.Context, app *agentpb.AppSpec, ingres
 		return r.dc.Start(ctx, name)
 	case !app.GetRunning() && (ct.State.Running || ct.State.Status == "restarting"):
 		return r.dc.Stop(ctx, name)
+	}
+	return nil
+}
+
+// dropBuiltImage deletes an image the node built from an app's Dockerfile once no container uses it:
+// each Dockerfile gets its own tag, which would otherwise pile up. Pulled images are left alone.
+func (r *Reconciler) dropBuiltImage(ctx context.Context, image string) {
+	if !strings.HasPrefix(image, "forgeyard/") {
+		return
+	}
+	if err := r.dc.RemoveImage(ctx, image); err != nil {
+		r.logger.Warn("removing a built image failed", "image", image, "err", err)
+	}
+}
+
+// fetchImage gets an app's image on the node: built from its Dockerfile, or pulled.
+func (r *Reconciler) fetchImage(ctx context.Context, app *agentpb.AppSpec) error {
+	if app.GetDockerfile() != "" {
+		r.setProgress(app.GetId(), "building")
+		if err := r.dc.Build(ctx, app.GetImage(), app.GetDockerfile()); err != nil {
+			return fmt.Errorf("construction de l'image : %w", err)
+		}
+		return nil
+	}
+	r.setProgress(app.GetId(), "pulling")
+	if err := r.dc.Pull(ctx, app.GetImage()); err != nil {
+		return fmt.Errorf("téléchargement de l'image %s : %w", app.GetImage(), err)
 	}
 	return nil
 }
@@ -550,11 +582,14 @@ func (r *Reconciler) rollOut(ctx context.Context, app *agentpb.AppSpec, hash, in
 		return errors.New("la nouvelle version n'a pas démarré : l'ancienne reste en ligne (redéployez pour réessayer)")
 	}
 	r.dc.Remove(ctx, next) // a leftover from an interrupted rollout
+	oldImage := ""
+	if ct, err := r.dc.Inspect(ctx, name); err == nil {
+		oldImage = ct.Config.Image
+	}
 
-	r.setProgress(app.GetId(), "pulling")
 	defer r.setProgress(app.GetId(), "")
-	if err := r.dc.Pull(ctx, app.GetImage()); err != nil {
-		return fmt.Errorf("téléchargement de l'image %s : %w", app.GetImage(), err)
+	if err := r.fetchImage(ctx, app); err != nil {
+		return err
 	}
 	r.setProgress(app.GetId(), "deploying")
 	if err := r.dc.Create(ctx, next, appContainerConfig(app, hash, ingressMode)); err != nil {
@@ -586,6 +621,9 @@ func (r *Reconciler) rollOut(ctx context.Context, app *agentpb.AppSpec, hash, in
 	}
 	if err := r.dc.Rename(ctx, next, name); err != nil {
 		return err
+	}
+	if oldImage != app.GetImage() {
+		r.dropBuiltImage(ctx, oldImage)
 	}
 	r.mu.Lock()
 	delete(r.failedOut, app.GetId())

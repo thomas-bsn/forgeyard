@@ -31,7 +31,7 @@
 - [ ] Demandes de domaines personnalisés et de ports publics, validation admin
 
 ## v0.3 : build et GitHub
-- [ ] Build depuis un Dockerfile
+- [x] Build depuis un Dockerfile collé (sans autres fichiers)
 - [ ] GitHub App (manifest flow), déploiement à chaque push
 - [ ] Railpack ou Nixpacks
 - [x] Déploiement sans coupure (l'ancienne version reste en ligne si la nouvelle ne démarre pas)

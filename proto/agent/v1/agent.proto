@@ -96,6 +96,8 @@ message AppSpec {
   // leaving: the app moves to another node and keeps running here until it is online there; its status is
   // not reported, the new node's is.
   bool leaving = 10;
+  // dockerfile: when set, the node builds the image from it, tagged image, instead of pulling image.
+  string dockerfile = 11;
 }
 
 message Ingress {
@@ -111,7 +113,7 @@ message AppStatuses {
 
 message AppStatus {
   int64 app_id = 1;
-  // pulling, creating, running, restarting, stopped, exited, error
+  // pulling, building, creating, deploying, running, restarting, stopped, exited, error
   string state = 2;
   int32 exit_code = 3;
   bool oom_killed = 4;

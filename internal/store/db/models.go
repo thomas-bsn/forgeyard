@@ -42,6 +42,7 @@ type App struct {
 	CrashSuspended int64
 	MovingFrom     int64
 	MovedAt        int64
+	Dockerfile     string
 }
 
 type AppEvent struct {

@@ -55,6 +55,8 @@ type instanceResponse struct {
 	LocalIP string `json:"localIp,omitempty"`
 	// AppsLayout is how the Apps tab shows apps, chosen by the superadmin.
 	AppsLayout string `json:"appsLayout"`
+	// AppsDomain is the domain apps get a subdomain of, when there is one.
+	AppsDomain string `json:"appsDomain,omitempty"`
 	// IconURL is the instance's own icon, if it has one.
 	IconURL string `json:"iconUrl,omitempty"`
 	// DNSProviders are listed during setup only, for the wizard's domain step.
@@ -87,7 +89,12 @@ func (s *Server) handleInstance(w http.ResponseWriter, r *http.Request) {
 		providers = dns.Kinds
 		webPorts, localIP = s.localProbe()
 	}
+	appsDomain := ""
+	if c, err := s.loadDNSConfig(r.Context()); err == nil && appHostname(c, "x") != "" {
+		appsDomain = c.Domain
+	}
 	writeJSON(w, http.StatusOK, instanceResponse{
+		AppsDomain:         appsDomain,
 		DNSProviders:       providers,
 		Name:               name,
 		SetupRequired:      s.setupRequired(),

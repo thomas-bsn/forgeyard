@@ -230,12 +230,17 @@ type appLogo struct {
 }
 
 func toAppLogo(a db.App) appLogo {
-	l := appLogo{Mode: a.LogoMode, Color: a.LogoColor, AutoURL: imageLogoURL(a.Image)}
+	// An app built from a Dockerfile takes the logo of the image it starts from.
+	image := a.Image
+	if base := dockerfileBase(a.Dockerfile); base != "" {
+		image = base
+	}
+	l := appLogo{Mode: a.LogoMode, Color: a.LogoColor, AutoURL: imageLogoURL(image)}
 	switch a.LogoMode {
 	case "custom":
 		l.URL = "/api/apps/" + strconv.FormatInt(a.ID, 10) + "/logo?v=" + strconv.FormatInt(a.LogoUpdatedAt, 10)
 	case "auto":
-		l.URL = imageLogoURL(a.Image)
+		l.URL = l.AutoURL
 	}
 	return l
 }
