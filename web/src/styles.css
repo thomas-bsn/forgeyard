@@ -2117,11 +2117,15 @@ button.row:hover {
 
 .profile-preview-body {
   display: flex;
-  align-items: flex-end;
+  align-items: flex-start;
   gap: 14px;
   flex-wrap: wrap;
-  margin-top: -38px;
-  padding: 0 12px 4px;
+  padding: 10px 12px 4px;
+}
+
+/* Only the picture overlaps the banner; the name stays below it. */
+.profile-preview-body > .avatar {
+  margin-top: -48px;
 }
 
 .profile-preview-body .avatar,
@@ -2133,7 +2137,6 @@ button.row:hover {
   flex: 1;
   min-width: 160px;
   display: grid;
-  padding-bottom: 4px;
 }
 
 .image-source {
@@ -2207,18 +2210,20 @@ a.link-btn {
 
 .member-head-body {
   display: flex;
-  align-items: flex-end;
+  align-items: flex-start;
   gap: 16px;
   flex-wrap: wrap;
-  margin-top: -52px;
-  padding: 0 14px;
+  padding: 12px 14px 0;
+}
+
+.member-head-body > .avatar {
+  margin-top: -64px;
 }
 
 .member-head-main {
   flex: 1;
   min-width: 180px;
   display: grid;
-  padding-bottom: 6px;
 }
 
 .member-head-main h1 {
