@@ -96,7 +96,8 @@ func (h *Hub) setExternals(nodeID int64, list []*agentpb.ExternalContainer) {
 	}
 }
 
-// StateChangeFunc is told when an app's reported state changes from a known previous state.
+// StateChangeFunc is told when an app's reported state or restart count changes from a known previous
+// report.
 type StateChangeFunc func(appID int64, from, to *agentpb.AppStatus)
 
 // Live is the in-memory state of a connected node.
@@ -135,6 +136,8 @@ type Hub struct {
 	StateChanged StateChangeFunc
 	// ExternalChanged, if set, is called when an external container's state changes. Set it before serving.
 	ExternalChanged ExternalChangeFunc
+	// NodeChanged, if set, is called when a node connects or disconnects. Set it before serving.
+	NodeChanged func(nodeID int64, online bool)
 
 	mu         sync.Mutex
 	sessions   map[int64]*session
@@ -351,7 +354,14 @@ func (h *Hub) Connect(stream agentpb.AgentService_ConnectServer) error {
 	ctx, cancel := context.WithCancel(stream.Context())
 	defer cancel()
 	sess := h.register(node.ID, cancel)
-	defer h.unregister(node.ID, sess)
+	defer func() {
+		if h.unregister(node.ID, sess) && h.NodeChanged != nil {
+			h.NodeChanged(node.ID, false)
+		}
+	}()
+	if h.NodeChanged != nil {
+		h.NodeChanged(node.ID, true)
+	}
 	h.logger.Info("node connected", "node", node.Name, "hostname", info.GetHostname())
 
 	// The stream's only sender.
@@ -461,13 +471,17 @@ func (h *Hub) register(nodeID int64, cancel context.CancelFunc) *session {
 	return s
 }
 
-func (h *Hub) unregister(nodeID int64, s *session) {
+// unregister forgets a node's session; it reports whether the node is now offline (a newer session of the
+// same node may have replaced it).
+func (h *Hub) unregister(nodeID int64, s *session) bool {
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	if h.sessions[nodeID] == s {
-		delete(h.sessions, nodeID)
-		delete(h.externals, nodeID)
+	if h.sessions[nodeID] != s {
+		return false
 	}
+	delete(h.sessions, nodeID)
+	delete(h.externals, nodeID)
+	return true
 }
 
 func (h *Hub) setStatuses(nodeID int64, list []*agentpb.AppStatus) {
@@ -477,7 +491,9 @@ func (h *Hub) setStatuses(nodeID int64, list []*agentpb.AppStatus) {
 	now := time.Now()
 	for _, st := range list {
 		id := st.GetAppId()
-		if prev, ok := h.statuses[id]; ok && prev.Status.GetState() != st.GetState() {
+		// A restart by Docker may happen between two reports, leaving the state unchanged: the restart
+		// count tells it.
+		if prev, ok := h.statuses[id]; ok && (prev.Status.GetState() != st.GetState() || prev.Status.GetRestartCount() != st.GetRestartCount()) {
 			changes = append(changes, change{prev.Status, st})
 		}
 		h.statuses[id] = AppStatus{NodeID: nodeID, Status: st, ReportedAt: now}

@@ -1,6 +1,6 @@
 import { useEffect, useState, type FormEvent } from 'react'
-import { api, errorMessage, type DiscordSettings, type Instance } from './api'
-import { CopyField, DiscordAppSteps, Switch } from './ui'
+import { api, errorMessage, type DiscordSettings, type Instance, type NotifySettings } from './api'
+import { CopyField, DiscordAppSteps, Switch, WebhookForm, WebhookSteps } from './ui'
 import DomainPanel from './Domain'
 import { IconPicker } from './Cropper'
 
@@ -80,13 +80,14 @@ function DiscordSettingsPanel() {
   )
 }
 
-type Section = 'general' | 'domain' | 'login' | 'discord'
+type Section = 'general' | 'domain' | 'login' | 'discord' | 'notifications'
 
 const sections: { id: Section; label: string; superadmin: boolean }[] = [
   { id: 'general', label: 'Général', superadmin: true },
   { id: 'domain', label: 'Domaine des apps', superadmin: true },
   { id: 'login', label: 'Connexion', superadmin: true },
   { id: 'discord', label: 'Discord', superadmin: false },
+  { id: 'notifications', label: 'Notifications', superadmin: false },
 ]
 
 const intros: Record<Section, string> = {
@@ -94,6 +95,7 @@ const intros: Record<Section, string> = {
   domain: 'Chaque app reçoit une adresse sous ce domaine, et Forgeyard peut créer son DNS.',
   login: 'Comment les comptes se connectent.',
   discord: 'L’application Discord qui permet de se connecter avec Discord.',
+  notifications: 'Les alertes envoyées aux admins dans un salon Discord.',
 }
 
 export default function Settings({ superadmin, section, onRenamed }: { superadmin: boolean; section?: string; onRenamed: () => void }) {
@@ -118,8 +120,65 @@ export default function Settings({ superadmin, section, onRenamed }: { superadmi
         {current.id === 'domain' && <DomainPanel />}
         {current.id === 'login' && <LoginSettingsPanel />}
         {current.id === 'discord' && <DiscordSettingsPanel />}
+        {current.id === 'notifications' && <NotifyPanel />}
       </div>
     </div>
+  )
+}
+
+const notifyKinds: { key: keyof NotifySettings['events']; title: string; text: string }[] = [
+  { key: 'requests', title: 'Demandes de compte', text: 'Quelqu’un se connecte avec Discord et attend votre validation.' },
+  { key: 'crashes', title: 'Apps suspendues', text: 'Une app plante 3 fois en 5 minutes : Forgeyard l’arrête.' },
+  { key: 'nodes', title: 'Nodes hors ligne', text: 'Un node ne répond plus depuis une minute, puis quand il revient.' },
+]
+
+/** Admins: the Discord channel that receives the instance's alerts. */
+function NotifyPanel() {
+  const [settings, setSettings] = useState<NotifySettings | null>(null)
+  const [error, setError] = useState('')
+
+  useEffect(() => {
+    api.notifySettings().then(setSettings, (err) => setError(errorMessage(err)))
+  }, [])
+
+  if (!settings) return error ? <p className="error">{error}</p> : null
+
+  async function setEvent(key: keyof NotifySettings['events'], value: boolean) {
+    setError('')
+    try {
+      setSettings(await api.saveNotifySettings({ events: { ...settings!.events, [key]: value } }))
+    } catch (err) {
+      setError(errorMessage(err))
+    }
+  }
+
+  return (
+    <>
+      <section className="panel">
+        <h2>Salon des admins</h2>
+        <WebhookSteps />
+        <WebhookForm
+          isSet={settings.webhookSet}
+          onSave={async (webhook) => setSettings(await api.saveNotifySettings({ webhook, events: settings.events }))}
+          onTest={() => api.testNotify()}
+          onClear={async () => setSettings(await api.saveNotifySettings({ clear: true, events: settings.events }))}
+        />
+      </section>
+      <section className="panel">
+        <h2>Ce qui est envoyé</h2>
+        {notifyKinds.map((k) => (
+          <div key={k.key} className="setting-row">
+            <div className="header-title">
+              <strong>{k.title}</strong>
+              <p className="muted">{k.text}</p>
+            </div>
+            <Switch checked={settings.events[k.key]} onChange={(v) => setEvent(k.key, v)} label={k.title} />
+          </div>
+        ))}
+        <p className="muted">Chaque membre peut aussi recevoir les alertes de ses propres apps : Mon profil › Notifications.</p>
+        {error && <p className="error">{error}</p>}
+      </section>
+    </>
   )
 }
 

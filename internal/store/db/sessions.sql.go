@@ -91,7 +91,7 @@ func (q *Queries) DeleteUserSessions(ctx context.Context, userID int64) error {
 }
 
 const getSessionUser = `-- name: GetSessionUser :one
-SELECT users.id, users.username, users.password_hash, users.discord_id, users.display_name, users.role, users.disabled, users.created_at, users.email, users.apps_suspended, users.discord_name, users.discord_avatar, users.name_from_discord, users.bio, users.avatar_updated_at, users.discord_banner, users.discord_accent, users.banner_updated_at, users.show_apps, users.show_email
+SELECT users.id, users.username, users.password_hash, users.discord_id, users.display_name, users.role, users.disabled, users.created_at, users.email, users.apps_suspended, users.discord_name, users.discord_avatar, users.name_from_discord, users.bio, users.avatar_updated_at, users.discord_banner, users.discord_accent, users.banner_updated_at, users.show_apps, users.show_email, users.notify_webhook
 FROM sessions
 JOIN users ON users.id = sessions.user_id
 WHERE sessions.token_hash = ? AND sessions.expires_at > ? AND users.disabled = 0
@@ -126,6 +126,7 @@ func (q *Queries) GetSessionUser(ctx context.Context, arg GetSessionUserParams) 
 		&i.BannerUpdatedAt,
 		&i.ShowApps,
 		&i.ShowEmail,
+		&i.NotifyWebhook,
 	)
 	return i, err
 }

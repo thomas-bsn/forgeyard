@@ -79,3 +79,9 @@ SELECT * FROM image_logos WHERE repo = ?;
 INSERT INTO image_logos (repo, found, content_type, data, fetched_at) VALUES (?, ?, ?, ?, ?)
 ON CONFLICT (repo) DO UPDATE SET found = excluded.found, content_type = excluded.content_type,
     data = excluded.data, fetched_at = excluded.fetched_at;
+
+-- name: SuspendCrashingApp :one
+UPDATE apps SET running = 0, crash_suspended = 1, updated_at = ? WHERE id = ? AND running = 1 RETURNING *;
+
+-- name: ClearCrashSuspension :exec
+UPDATE apps SET crash_suspended = 0 WHERE id = ?;

@@ -18,7 +18,13 @@ const stateLabels: Record<AppState, { label: string; tone: 'up' | 'warn' | 'down
   'node-offline': { label: 'Node hors ligne', tone: 'down' },
 }
 
+function appTone(a: App): 'up' | 'warn' | 'down' | '' {
+  if (a.crashSuspended && !a.running) return 'down'
+  return stateLabels[a.state]?.tone ?? ''
+}
+
 function stateText(a: App): string {
+  if (a.crashSuspended && !a.running) return 'Suspendue (crashs)'
   const base = stateLabels[a.state]?.label ?? a.state
   if (a.state === 'exited' || a.state === 'restarting') {
     if (a.oomKilled) return `${base} : manque de mémoire`
@@ -145,7 +151,7 @@ function toItems(apps: App[], containers: Container[]): Item[] {
   const group = (tone: string, running: boolean): StateFilter => (tone === 'down' ? 'problem' : running ? 'up' : 'stopped')
   return [
     ...apps.map((a) => {
-      const tone = stateLabels[a.state]?.tone ?? ''
+      const tone = appTone(a)
       return { key: `a${a.id}`, name: a.name, tone, group: group(tone, a.state === 'running' || tone === 'warn'), external: false, app: a }
     }),
     ...containers.map((c) => {
@@ -664,7 +670,7 @@ function AppDetail({ app, onChange, go }: { app: App; onChange: () => void; go: 
     }
   }
 
-  const tone = stateLabels[app.state]?.tone ?? ''
+  const tone = appTone(app)
 
   return (
     <div className="detail">
@@ -706,6 +712,15 @@ function AppDetail({ app, onChange, go }: { app: App; onChange: () => void; go: 
           </p>
         )}
 
+        {app.crashSuspended && !app.running && (
+          <div className="banner banner-down">
+            <span className="dot dot-down" />
+            <span>
+              Forgeyard l’a arrêtée après plusieurs crashs en quelques minutes. Regardez les logs et les événements, corrigez, puis
+              cliquez sur Démarrer.
+            </span>
+          </div>
+        )}
         {app.suspended && (
           <div className="banner banner-warn">
             <span className="dot dot-warn" />

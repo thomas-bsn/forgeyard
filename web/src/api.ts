@@ -13,6 +13,7 @@ export type User = {
   accentColor?: string
   showApps: boolean
   showEmail: boolean
+  notifyWebhookSet: boolean
   email: string
   bio: string
   discordName?: string
@@ -38,6 +39,11 @@ export type MemberProfile = Member & {
   showApps: boolean
   apps: { id: number; name: string; url?: string; state: AppState; logo: App['logo'] }[]
   activity: { at: number; kind: AppEvent['kind']; app: string; message: string }[]
+}
+
+export type NotifySettings = {
+  webhookSet: boolean
+  events: { requests: boolean; crashes: boolean; nodes: boolean }
 }
 
 export type Session = {
@@ -143,6 +149,7 @@ export type App = {
   memoryUsedBytes?: number
   suspended?: boolean
   public: boolean
+  crashSuspended?: boolean
   logo: { mode: 'auto' | 'custom' | 'initial'; url?: string; color?: string; autoUrl?: string }
   updatedAt: number
   env?: Record<string, string>
@@ -336,6 +343,12 @@ export const api = {
   deleteSession: (id: string) => request<void>('DELETE', `/api/me/sessions/${id}`, {}),
   uploadIcon: (image: string) => request<{ iconUrl: string }>('PUT', '/api/admin/settings/icon', { image }),
   deleteIcon: () => request<void>('DELETE', '/api/admin/settings/icon', {}),
+  notifySettings: () => request<NotifySettings>('GET', '/api/admin/settings/notifications'),
+  saveNotifySettings: (body: { webhook?: string; clear?: boolean; events: NotifySettings['events'] }) =>
+    request<NotifySettings>('PUT', '/api/admin/settings/notifications', body),
+  testNotify: () => request<void>('POST', '/api/admin/settings/notifications/test', {}),
+  saveMyWebhook: (webhook: string) => request<User>('PUT', '/api/me/notifications', { webhook }),
+  testMyWebhook: () => request<void>('POST', '/api/me/notifications/test', {}),
   saveGeneralSettings: (name: string, publicUrl: string, appsLayout: Instance['appsLayout']) =>
     request<{ name: string; publicUrl: string; appsLayout: Instance['appsLayout'] }>('PUT', '/api/admin/settings/general', { name, publicUrl, appsLayout }),
   nodes: () => request<Node[]>('GET', '/api/admin/nodes'),

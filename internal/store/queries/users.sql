@@ -98,3 +98,6 @@ UPDATE users SET apps_suspended = ? WHERE id = ?;
 
 -- name: DeleteUser :exec
 DELETE FROM users WHERE id = ?;
+
+-- name: SetUserNotifyWebhook :exec
+UPDATE users SET notify_webhook = ? WHERE id = ?;

@@ -58,6 +58,14 @@ Partout « Tous » montre tous les nodes, le node choisi est retenu par le navig
 - **Avec un domaine** : `https://<nom>.<domaine>`, routée par Traefik (voir [network](../network/README.md)).
 - **Sans domaine** : le port de l'app est publié sur un port libre au hasard du node, et l'adresse est `http://<IP du node>:<port>`. L'IP est celle du node, sinon celle des réglages du domaine, sinon (node local) l'hôte de l'adresse de Forgeyard.
 
+## Crashs
+
+Docker relance une app qui s'arrête toute seule (redémarrage `unless-stopped`). Forgeyard compte ces redémarrages, et les arrêts avec un code d'erreur ou par manque de mémoire :
+
+- à chaque crash, le propriétaire est prévenu sur son webhook Discord (au plus une fois toutes les 10 minutes par app) ;
+- **3 crashs en 5 minutes** : Forgeyard arrête l'app et la marque **« Suspendue (crashs) »**, avec un événement, et prévient le propriétaire et le salon des admins ;
+- Démarrer ou Redéployer la relance et remet le compteur à zéro.
+
 ## Observabilité et événements
 
 La page d'une app a trois vues :

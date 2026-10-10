@@ -19,11 +19,12 @@
 - [x] Ajout de machines (commande `docker run` ou binaire)
 - [x] Gestion des comptes : liste, changement de rôle, suspension des apps, désactivation, suppression
 - [ ] Création directe de comptes, transfert du superadmin
-- [ ] Notifications, clés SSH et jetons d'API (onglets « bientôt » du profil)
-- [ ] Webhook Discord de notification
+- [ ] Clés SSH et jetons d'API (onglets « bientôt » du profil)
+- [ ] Bot Discord : messages privés, photos et bannières à jour sans reconnexion
+- [x] Notifications Discord (webhook) : salon des admins et webhook personnel
 - [x] Métriques et graphiques par app, journal d'événements
 - [ ] Capacité et placement selon les ressources
-- [ ] Gestion des crashs et suspension
+- [x] Gestion des crashs et suspension (3 crashs en 5 minutes)
 - [x] Conteneurs externes : détection, logs, démarrer / arrêter / redémarrer
 - [ ] Conteneurs externes : adoption (en faire une vraie app Forgeyard)
 - [ ] Demandes de domaines personnalisés et de ports publics, validation admin
@@ -70,10 +71,7 @@
 - Node injoignable ou saturé : « Indisponible », plus aucun nouveau déploiement.
 
 ### Crashs
-1. Redémarrage automatique avec délai croissant (5 s, 10 s, 30 s…).
-2. Au-delà de 3 crashs en 5 minutes, l'app passe en **Suspendue** et n'est plus relancée.
-3. On garde les dernières lignes de logs, le code de sortie et l'indicateur OOM.
-4. L'admin est notifié ; bouton « Relancer » après diagnostic.
+Fait : voir [apps](apps/README.md#crashs). Reste : garder les dernières lignes de logs du crash avec l'événement.
 
 ### Conteneurs externes (admin)
 - Fait : détection, logs, observabilité, événements, démarrer / arrêter / redémarrer.

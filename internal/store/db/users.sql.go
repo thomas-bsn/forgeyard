@@ -24,7 +24,7 @@ func (q *Queries) CountUsers(ctx context.Context) (int64, error) {
 const createDiscordUser = `-- name: CreateDiscordUser :one
 INSERT INTO users (discord_id, display_name, email, role, created_at)
 VALUES (?, ?, ?, ?, ?)
-RETURNING id, username, password_hash, discord_id, display_name, role, disabled, created_at, email, apps_suspended, discord_name, discord_avatar, name_from_discord, bio, avatar_updated_at, discord_banner, discord_accent, banner_updated_at, show_apps, show_email
+RETURNING id, username, password_hash, discord_id, display_name, role, disabled, created_at, email, apps_suspended, discord_name, discord_avatar, name_from_discord, bio, avatar_updated_at, discord_banner, discord_accent, banner_updated_at, show_apps, show_email, notify_webhook
 `
 
 type CreateDiscordUserParams struct {
@@ -65,6 +65,7 @@ func (q *Queries) CreateDiscordUser(ctx context.Context, arg CreateDiscordUserPa
 		&i.BannerUpdatedAt,
 		&i.ShowApps,
 		&i.ShowEmail,
+		&i.NotifyWebhook,
 	)
 	return i, err
 }
@@ -72,7 +73,7 @@ func (q *Queries) CreateDiscordUser(ctx context.Context, arg CreateDiscordUserPa
 const createLocalUser = `-- name: CreateLocalUser :one
 INSERT INTO users (username, password_hash, display_name, role, created_at)
 VALUES (?, ?, ?, ?, ?)
-RETURNING id, username, password_hash, discord_id, display_name, role, disabled, created_at, email, apps_suspended, discord_name, discord_avatar, name_from_discord, bio, avatar_updated_at, discord_banner, discord_accent, banner_updated_at, show_apps, show_email
+RETURNING id, username, password_hash, discord_id, display_name, role, disabled, created_at, email, apps_suspended, discord_name, discord_avatar, name_from_discord, bio, avatar_updated_at, discord_banner, discord_accent, banner_updated_at, show_apps, show_email, notify_webhook
 `
 
 type CreateLocalUserParams struct {
@@ -113,6 +114,7 @@ func (q *Queries) CreateLocalUser(ctx context.Context, arg CreateLocalUserParams
 		&i.BannerUpdatedAt,
 		&i.ShowApps,
 		&i.ShowEmail,
+		&i.NotifyWebhook,
 	)
 	return i, err
 }
@@ -167,7 +169,7 @@ func (q *Queries) GetBanner(ctx context.Context, userID int64) (Banner, error) {
 }
 
 const getSuperadmin = `-- name: GetSuperadmin :one
-SELECT id, username, password_hash, discord_id, display_name, role, disabled, created_at, email, apps_suspended, discord_name, discord_avatar, name_from_discord, bio, avatar_updated_at, discord_banner, discord_accent, banner_updated_at, show_apps, show_email FROM users WHERE role = 'superadmin' ORDER BY id LIMIT 1
+SELECT id, username, password_hash, discord_id, display_name, role, disabled, created_at, email, apps_suspended, discord_name, discord_avatar, name_from_discord, bio, avatar_updated_at, discord_banner, discord_accent, banner_updated_at, show_apps, show_email, notify_webhook FROM users WHERE role = 'superadmin' ORDER BY id LIMIT 1
 `
 
 func (q *Queries) GetSuperadmin(ctx context.Context) (User, error) {
@@ -194,12 +196,13 @@ func (q *Queries) GetSuperadmin(ctx context.Context) (User, error) {
 		&i.BannerUpdatedAt,
 		&i.ShowApps,
 		&i.ShowEmail,
+		&i.NotifyWebhook,
 	)
 	return i, err
 }
 
 const getUserByDiscordID = `-- name: GetUserByDiscordID :one
-SELECT id, username, password_hash, discord_id, display_name, role, disabled, created_at, email, apps_suspended, discord_name, discord_avatar, name_from_discord, bio, avatar_updated_at, discord_banner, discord_accent, banner_updated_at, show_apps, show_email FROM users WHERE discord_id = ?
+SELECT id, username, password_hash, discord_id, display_name, role, disabled, created_at, email, apps_suspended, discord_name, discord_avatar, name_from_discord, bio, avatar_updated_at, discord_banner, discord_accent, banner_updated_at, show_apps, show_email, notify_webhook FROM users WHERE discord_id = ?
 `
 
 func (q *Queries) GetUserByDiscordID(ctx context.Context, discordID sql.NullString) (User, error) {
@@ -226,12 +229,13 @@ func (q *Queries) GetUserByDiscordID(ctx context.Context, discordID sql.NullStri
 		&i.BannerUpdatedAt,
 		&i.ShowApps,
 		&i.ShowEmail,
+		&i.NotifyWebhook,
 	)
 	return i, err
 }
 
 const getUserByID = `-- name: GetUserByID :one
-SELECT id, username, password_hash, discord_id, display_name, role, disabled, created_at, email, apps_suspended, discord_name, discord_avatar, name_from_discord, bio, avatar_updated_at, discord_banner, discord_accent, banner_updated_at, show_apps, show_email FROM users WHERE id = ?
+SELECT id, username, password_hash, discord_id, display_name, role, disabled, created_at, email, apps_suspended, discord_name, discord_avatar, name_from_discord, bio, avatar_updated_at, discord_banner, discord_accent, banner_updated_at, show_apps, show_email, notify_webhook FROM users WHERE id = ?
 `
 
 func (q *Queries) GetUserByID(ctx context.Context, id int64) (User, error) {
@@ -258,12 +262,13 @@ func (q *Queries) GetUserByID(ctx context.Context, id int64) (User, error) {
 		&i.BannerUpdatedAt,
 		&i.ShowApps,
 		&i.ShowEmail,
+		&i.NotifyWebhook,
 	)
 	return i, err
 }
 
 const getUserByUsername = `-- name: GetUserByUsername :one
-SELECT id, username, password_hash, discord_id, display_name, role, disabled, created_at, email, apps_suspended, discord_name, discord_avatar, name_from_discord, bio, avatar_updated_at, discord_banner, discord_accent, banner_updated_at, show_apps, show_email FROM users WHERE username = ?
+SELECT id, username, password_hash, discord_id, display_name, role, disabled, created_at, email, apps_suspended, discord_name, discord_avatar, name_from_discord, bio, avatar_updated_at, discord_banner, discord_accent, banner_updated_at, show_apps, show_email, notify_webhook FROM users WHERE username = ?
 `
 
 func (q *Queries) GetUserByUsername(ctx context.Context, username sql.NullString) (User, error) {
@@ -290,6 +295,7 @@ func (q *Queries) GetUserByUsername(ctx context.Context, username sql.NullString
 		&i.BannerUpdatedAt,
 		&i.ShowApps,
 		&i.ShowEmail,
+		&i.NotifyWebhook,
 	)
 	return i, err
 }
@@ -348,7 +354,7 @@ func (q *Queries) ListMemberActivity(ctx context.Context, arg ListMemberActivity
 }
 
 const listMembers = `-- name: ListMembers :many
-SELECT users.id, users.username, users.password_hash, users.discord_id, users.display_name, users.role, users.disabled, users.created_at, users.email, users.apps_suspended, users.discord_name, users.discord_avatar, users.name_from_discord, users.bio, users.avatar_updated_at, users.discord_banner, users.discord_accent, users.banner_updated_at, users.show_apps, users.show_email,
+SELECT users.id, users.username, users.password_hash, users.discord_id, users.display_name, users.role, users.disabled, users.created_at, users.email, users.apps_suspended, users.discord_name, users.discord_avatar, users.name_from_discord, users.bio, users.avatar_updated_at, users.discord_banner, users.discord_accent, users.banner_updated_at, users.show_apps, users.show_email, users.notify_webhook,
        (SELECT COUNT(*) FROM apps WHERE apps.owner_id = users.id AND apps.public = 1) AS public_apps
 FROM users
 WHERE users.disabled = 0
@@ -376,6 +382,7 @@ type ListMembersRow struct {
 	BannerUpdatedAt int64
 	ShowApps        int64
 	ShowEmail       int64
+	NotifyWebhook   string
 	PublicApps      int64
 }
 
@@ -409,6 +416,7 @@ func (q *Queries) ListMembers(ctx context.Context) ([]ListMembersRow, error) {
 			&i.BannerUpdatedAt,
 			&i.ShowApps,
 			&i.ShowEmail,
+			&i.NotifyWebhook,
 			&i.PublicApps,
 		); err != nil {
 			return nil, err
@@ -425,7 +433,7 @@ func (q *Queries) ListMembers(ctx context.Context) ([]ListMembersRow, error) {
 }
 
 const listUsers = `-- name: ListUsers :many
-SELECT users.id, users.username, users.password_hash, users.discord_id, users.display_name, users.role, users.disabled, users.created_at, users.email, users.apps_suspended, users.discord_name, users.discord_avatar, users.name_from_discord, users.bio, users.avatar_updated_at, users.discord_banner, users.discord_accent, users.banner_updated_at, users.show_apps, users.show_email, (SELECT COUNT(*) FROM apps WHERE apps.owner_id = users.id) AS app_count
+SELECT users.id, users.username, users.password_hash, users.discord_id, users.display_name, users.role, users.disabled, users.created_at, users.email, users.apps_suspended, users.discord_name, users.discord_avatar, users.name_from_discord, users.bio, users.avatar_updated_at, users.discord_banner, users.discord_accent, users.banner_updated_at, users.show_apps, users.show_email, users.notify_webhook, (SELECT COUNT(*) FROM apps WHERE apps.owner_id = users.id) AS app_count
 FROM users
 ORDER BY users.role = 'superadmin' DESC, users.display_name
 `
@@ -451,6 +459,7 @@ type ListUsersRow struct {
 	BannerUpdatedAt int64
 	ShowApps        int64
 	ShowEmail       int64
+	NotifyWebhook   string
 	AppCount        int64
 }
 
@@ -484,6 +493,7 @@ func (q *Queries) ListUsers(ctx context.Context) ([]ListUsersRow, error) {
 			&i.BannerUpdatedAt,
 			&i.ShowApps,
 			&i.ShowEmail,
+			&i.NotifyWebhook,
 			&i.AppCount,
 		); err != nil {
 			return nil, err
@@ -598,6 +608,20 @@ type SetUserDisabledParams struct {
 
 func (q *Queries) SetUserDisabled(ctx context.Context, arg SetUserDisabledParams) error {
 	_, err := q.db.ExecContext(ctx, setUserDisabled, arg.Disabled, arg.ID)
+	return err
+}
+
+const setUserNotifyWebhook = `-- name: SetUserNotifyWebhook :exec
+UPDATE users SET notify_webhook = ? WHERE id = ?
+`
+
+type SetUserNotifyWebhookParams struct {
+	NotifyWebhook string
+	ID            int64
+}
+
+func (q *Queries) SetUserNotifyWebhook(ctx context.Context, arg SetUserNotifyWebhookParams) error {
+	_, err := q.db.ExecContext(ctx, setUserNotifyWebhook, arg.NotifyWebhook, arg.ID)
 	return err
 }
 

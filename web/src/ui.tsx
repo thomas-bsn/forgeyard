@@ -350,6 +350,90 @@ export function upFor(unix: number): string {
   return `${Math.floor(s / 86400)} jours`
 }
 
+/** How to get a Discord webhook address, shared by instance and personal notifications. */
+export function WebhookSteps() {
+  return (
+    <ol className="steps-help">
+      <li>Sur Discord, ouvrez les paramètres du salon qui recevra les alertes (un salon privé fait très bien l’affaire).</li>
+      <li>
+        <b>Intégrations</b> › <b>Webhooks</b> › <b>Nouveau webhook</b>, puis <b>Copier l’URL du webhook</b>.
+      </li>
+      <li>Collez-la ici : elle est chiffrée et n’est plus jamais réaffichée.</li>
+    </ol>
+  )
+}
+
+/** An address field for a Discord webhook, with saving, a test message and removal. */
+export function WebhookForm({
+  isSet,
+  onSave,
+  onTest,
+  onClear,
+}: {
+  isSet: boolean
+  onSave: (webhook: string) => Promise<unknown>
+  onTest: () => Promise<unknown>
+  onClear: () => Promise<unknown>
+}) {
+  const [webhook, setWebhook] = useState('')
+  const [notice, setNotice] = useState('')
+  const [error, setError] = useState('')
+  const [busy, setBusy] = useState(false)
+
+  async function run(action: () => Promise<unknown>, done: string) {
+    setBusy(true)
+    setError('')
+    setNotice('')
+    try {
+      await action()
+      setNotice(done)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div className="field">
+      <span>Webhook Discord</span>
+      <div className="webhook-row">
+        <input
+          value={webhook}
+          onChange={(e) => setWebhook(e.target.value)}
+          placeholder={isSet ? '•••••••• (enregistré)' : 'https://discord.com/api/webhooks/…'}
+          autoComplete="off"
+        />
+        <button
+          type="button"
+          className="btn btn-primary"
+          disabled={busy || !webhook.trim()}
+          onClick={() =>
+            run(async () => {
+              await onSave(webhook.trim())
+              setWebhook('')
+            }, 'Webhook enregistré.')
+          }
+        >
+          Enregistrer
+        </button>
+      </div>
+      {isSet && (
+        <span className="row-actions">
+          <button type="button" className="btn btn-small" disabled={busy} onClick={() => run(onTest, 'Message de test envoyé : regardez votre salon Discord.')}>
+            Envoyer un test
+          </button>
+          <button type="button" className="btn btn-small btn-danger" disabled={busy} onClick={() => run(onClear, 'Webhook retiré : plus aucune alerte.')}>
+            Retirer
+          </button>
+        </span>
+      )}
+      {notice && <small className="text-up">{notice}</small>}
+      {error && <p className="error">{error}</p>}
+    </div>
+  )
+}
+
 /** An on/off switch. */
 export function Switch({ checked, onChange, label, disabled }: { checked: boolean; onChange: (v: boolean) => void; label: string; disabled?: boolean }) {
   return (

@@ -65,6 +65,11 @@ type Server struct {
 	mu          sync.Mutex
 	setupToken  string                // empty once setup is completed
 	oauthStates map[string]oauthState // pending Discord sign-ins, by state value
+
+	crashes       map[int64][]time.Time // recent crashes, by app ID
+	crashNotified map[int64]time.Time   // when the owner last heard of a crash, by app ID
+	nodeGen       map[int64]int         // bumped at each connection change, to cancel a pending offline alert
+	nodeReported  map[int64]bool        // nodes reported offline to the admins
 }
 
 // NewServer returns a Server. setupToken must be non-empty while the setup wizard has not been completed.
@@ -85,6 +90,10 @@ func NewServer(d Deps, setupToken string) *Server {
 		secrets:        d.Secrets,
 		setupToken:     setupToken,
 		oauthStates:    make(map[string]oauthState),
+		crashes:        make(map[int64][]time.Time),
+		crashNotified:  make(map[int64]time.Time),
+		nodeGen:        make(map[int64]int),
+		nodeReported:   make(map[int64]bool),
 
 		newDNSProvider: dns.New,
 		lookupHost:     net.DefaultResolver.LookupHost,
@@ -93,6 +102,7 @@ func NewServer(d Deps, setupToken string) *Server {
 	d.Nodes.Desired = s.desiredState
 	d.Nodes.StateChanged = s.onAppStateChange
 	d.Nodes.ExternalChanged = s.onExternalChange
+	d.Nodes.NodeChanged = s.onNodeChange
 	return s
 }
 
@@ -151,6 +161,11 @@ func (s *Server) Handler(webFS fs.FS) http.Handler {
 	mux.HandleFunc("GET /api/admin/nodes/{node}/containers/{container}/logs", s.requireSuperadmin(s.handleContainerLogs))
 	mux.HandleFunc("GET /api/admin/nodes/{node}/containers/{container}/usage", s.requireAdmin(s.handleContainerUsage))
 	mux.HandleFunc("GET /api/admin/nodes/{node}/containers/{container}/events", s.requireAdmin(s.handleContainerEvents))
+	mux.HandleFunc("GET /api/admin/settings/notifications", s.requireAdmin(s.handleGetNotifySettings))
+	mux.HandleFunc("PUT /api/admin/settings/notifications", s.requireAdmin(s.handlePutNotifySettings))
+	mux.HandleFunc("POST /api/admin/settings/notifications/test", s.requireAdmin(s.handleTestAdminNotify))
+	mux.HandleFunc("PUT /api/me/notifications", s.requireUser(s.handlePutMyWebhook))
+	mux.HandleFunc("POST /api/me/notifications/test", s.requireUser(s.handleTestMyWebhook))
 	mux.HandleFunc("GET /api/admin/users", s.requireAdmin(s.handleListUsers))
 	mux.HandleFunc("PUT /api/admin/users/{id}", s.requireAdmin(s.handleUpdateUser))
 	mux.HandleFunc("DELETE /api/admin/users/{id}", s.requireAdmin(s.handleDeleteUser))

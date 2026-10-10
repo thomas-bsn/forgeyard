@@ -38,7 +38,16 @@ Si le superadmin a choisi Discord, la connexion par mot de passe est **coupée**
 2. Un admin l'accepte en choisissant le rôle (`user` ou `admin`), ou la refuse avec un motif facultatif.
 3. Acceptée : le compte est créé, la personne se connecte normalement. Refusée : elle voit « refusée » à chaque tentative.
 
-Pas encore fait : notifications (webhook Discord, email). Voir la [roadmap](../roadmap.md).
+Les admins sont prévenus des nouvelles demandes sur Discord (voir Notifications ci-dessous). L'email (demande acceptée ou refusée) viendra plus tard : voir la [roadmap](../roadmap.md).
+
+## Notifications
+
+Par webhook Discord, chiffré en base comme les autres secrets :
+
+- **Salon des admins** (Réglages › Notifications) : nouvelles demandes de compte, apps suspendues après des crashs, node hors ligne depuis une minute puis de retour ; chaque type s'active à part. Un bouton envoie un message de test.
+- **Webhook personnel** (Mon profil › Notifications) : les crashs et suspensions de ses propres apps.
+
+Seules les adresses `https://discord.com/api/webhooks/…` (et discordapp.com, ptb., canary.) sont acceptées. Les messages portent le nom de l'instance et un lien vers la page concernée.
 
 ## Gérer les comptes
 

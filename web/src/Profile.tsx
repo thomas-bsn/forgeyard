@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { api, errorMessage, type Session, type User } from './api'
-import { Avatar, Switch } from './ui'
+import { Avatar, Switch, WebhookForm, WebhookSteps } from './ui'
 import { ImageCropper } from './Cropper'
 
 type Section = 'profile' | 'security' | 'notifications' | 'ssh' | 'tokens'
@@ -8,7 +8,7 @@ type Section = 'profile' | 'security' | 'notifications' | 'ssh' | 'tokens'
 const sections: { id: Section; label: string; soon?: boolean }[] = [
   { id: 'profile', label: 'Profil' },
   { id: 'security', label: 'Sécurité' },
-  { id: 'notifications', label: 'Notifications', soon: true },
+  { id: 'notifications', label: 'Notifications' },
   { id: 'ssh', label: 'Clés SSH', soon: true },
   { id: 'tokens', label: 'Jetons d’API', soon: true },
 ]
@@ -42,12 +42,26 @@ export default function Profile({ user, section, onChange }: { user: User; secti
         {current.id === 'profile' && <ProfilePanel user={user} onChange={onChange} />}
         {current.id === 'security' && <SecurityPanel user={user} />}
         {current.id === 'notifications' && (
-          <ComingSoon
-            items={[
-              'Un email ou un message Discord quand une de vos apps plante, redémarre en boucle ou est suspendue.',
-              'Le choix de ce qui vous prévient, app par app.',
-            ]}
-          />
+          <section className="panel">
+            <h2>Alertes de mes apps sur Discord</h2>
+            <p className="muted">
+              Vous recevez un message quand une de vos apps plante (au plus un toutes les 10 minutes par app) et quand Forgeyard la
+              suspend après 3 crashs en 5 minutes. L’email viendra plus tard.
+            </p>
+            <WebhookSteps />
+            <WebhookForm
+              isSet={user.notifyWebhookSet}
+              onSave={async (webhook) => {
+                await api.saveMyWebhook(webhook)
+                onChange()
+              }}
+              onTest={() => api.testMyWebhook()}
+              onClear={async () => {
+                await api.saveMyWebhook('')
+                onChange()
+              }}
+            />
+          </section>
         )}
         {current.id === 'ssh' && (
           <ComingSoon

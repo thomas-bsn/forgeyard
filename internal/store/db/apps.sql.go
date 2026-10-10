@@ -20,6 +20,15 @@ func (q *Queries) AppExistsByName(ctx context.Context, name string) (int64, erro
 	return column_1, err
 }
 
+const clearCrashSuspension = `-- name: ClearCrashSuspension :exec
+UPDATE apps SET crash_suspended = 0 WHERE id = ?
+`
+
+func (q *Queries) ClearCrashSuspension(ctx context.Context, id int64) error {
+	_, err := q.db.ExecContext(ctx, clearCrashSuspension, id)
+	return err
+}
+
 const countAppsByNode = `-- name: CountAppsByNode :many
 SELECT node_id, COUNT(*) AS count FROM apps GROUP BY node_id
 `
@@ -55,7 +64,7 @@ func (q *Queries) CountAppsByNode(ctx context.Context) ([]CountAppsByNodeRow, er
 const createApp = `-- name: CreateApp :one
 INSERT INTO apps (name, owner_id, node_id, image, port, env_sealed, memory_mb, created_at, updated_at)
 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-RETURNING id, name, owner_id, node_id, image, port, env_sealed, running, memory_mb, generation, dns_name, created_at, updated_at, public, logo_mode, logo_color, logo_updated_at
+RETURNING id, name, owner_id, node_id, image, port, env_sealed, running, memory_mb, generation, dns_name, created_at, updated_at, public, logo_mode, logo_color, logo_updated_at, crash_suspended
 `
 
 type CreateAppParams struct {
@@ -101,6 +110,7 @@ func (q *Queries) CreateApp(ctx context.Context, arg CreateAppParams) (App, erro
 		&i.LogoMode,
 		&i.LogoColor,
 		&i.LogoUpdatedAt,
+		&i.CrashSuspended,
 	)
 	return i, err
 }
@@ -124,7 +134,7 @@ func (q *Queries) DeleteAppLogoImage(ctx context.Context, appID int64) error {
 }
 
 const getApp = `-- name: GetApp :one
-SELECT id, name, owner_id, node_id, image, port, env_sealed, running, memory_mb, generation, dns_name, created_at, updated_at, public, logo_mode, logo_color, logo_updated_at FROM apps WHERE id = ?
+SELECT id, name, owner_id, node_id, image, port, env_sealed, running, memory_mb, generation, dns_name, created_at, updated_at, public, logo_mode, logo_color, logo_updated_at, crash_suspended FROM apps WHERE id = ?
 `
 
 func (q *Queries) GetApp(ctx context.Context, id int64) (App, error) {
@@ -148,6 +158,7 @@ func (q *Queries) GetApp(ctx context.Context, id int64) (App, error) {
 		&i.LogoMode,
 		&i.LogoColor,
 		&i.LogoUpdatedAt,
+		&i.CrashSuspended,
 	)
 	return i, err
 }
@@ -181,7 +192,7 @@ func (q *Queries) GetImageLogo(ctx context.Context, repo string) (ImageLogo, err
 }
 
 const listApps = `-- name: ListApps :many
-SELECT apps.id, apps.name, apps.owner_id, apps.node_id, apps.image, apps.port, apps.env_sealed, apps.running, apps.memory_mb, apps.generation, apps.dns_name, apps.created_at, apps.updated_at, apps.public, apps.logo_mode, apps.logo_color, apps.logo_updated_at, users.display_name AS owner_name, users.apps_suspended AS owner_suspended, nodes.name AS node_name
+SELECT apps.id, apps.name, apps.owner_id, apps.node_id, apps.image, apps.port, apps.env_sealed, apps.running, apps.memory_mb, apps.generation, apps.dns_name, apps.created_at, apps.updated_at, apps.public, apps.logo_mode, apps.logo_color, apps.logo_updated_at, apps.crash_suspended, users.display_name AS owner_name, users.apps_suspended AS owner_suspended, nodes.name AS node_name
 FROM apps
 JOIN users ON users.id = apps.owner_id
 JOIN nodes ON nodes.id = apps.node_id
@@ -206,6 +217,7 @@ type ListAppsRow struct {
 	LogoMode       string
 	LogoColor      string
 	LogoUpdatedAt  int64
+	CrashSuspended int64
 	OwnerName      string
 	OwnerSuspended int64
 	NodeName       string
@@ -238,6 +250,7 @@ func (q *Queries) ListApps(ctx context.Context) ([]ListAppsRow, error) {
 			&i.LogoMode,
 			&i.LogoColor,
 			&i.LogoUpdatedAt,
+			&i.CrashSuspended,
 			&i.OwnerName,
 			&i.OwnerSuspended,
 			&i.NodeName,
@@ -256,7 +269,7 @@ func (q *Queries) ListApps(ctx context.Context) ([]ListAppsRow, error) {
 }
 
 const listAppsByNode = `-- name: ListAppsByNode :many
-SELECT id, name, owner_id, node_id, image, port, env_sealed, running, memory_mb, generation, dns_name, created_at, updated_at, public, logo_mode, logo_color, logo_updated_at FROM apps WHERE node_id = ? ORDER BY id
+SELECT id, name, owner_id, node_id, image, port, env_sealed, running, memory_mb, generation, dns_name, created_at, updated_at, public, logo_mode, logo_color, logo_updated_at, crash_suspended FROM apps WHERE node_id = ? ORDER BY id
 `
 
 func (q *Queries) ListAppsByNode(ctx context.Context, nodeID int64) ([]App, error) {
@@ -286,6 +299,7 @@ func (q *Queries) ListAppsByNode(ctx context.Context, nodeID int64) ([]App, erro
 			&i.LogoMode,
 			&i.LogoColor,
 			&i.LogoUpdatedAt,
+			&i.CrashSuspended,
 		); err != nil {
 			return nil, err
 		}
@@ -301,7 +315,7 @@ func (q *Queries) ListAppsByNode(ctx context.Context, nodeID int64) ([]App, erro
 }
 
 const listAppsByOwner = `-- name: ListAppsByOwner :many
-SELECT apps.id, apps.name, apps.owner_id, apps.node_id, apps.image, apps.port, apps.env_sealed, apps.running, apps.memory_mb, apps.generation, apps.dns_name, apps.created_at, apps.updated_at, apps.public, apps.logo_mode, apps.logo_color, apps.logo_updated_at, users.display_name AS owner_name, users.apps_suspended AS owner_suspended, nodes.name AS node_name
+SELECT apps.id, apps.name, apps.owner_id, apps.node_id, apps.image, apps.port, apps.env_sealed, apps.running, apps.memory_mb, apps.generation, apps.dns_name, apps.created_at, apps.updated_at, apps.public, apps.logo_mode, apps.logo_color, apps.logo_updated_at, apps.crash_suspended, users.display_name AS owner_name, users.apps_suspended AS owner_suspended, nodes.name AS node_name
 FROM apps
 JOIN users ON users.id = apps.owner_id
 JOIN nodes ON nodes.id = apps.node_id
@@ -327,6 +341,7 @@ type ListAppsByOwnerRow struct {
 	LogoMode       string
 	LogoColor      string
 	LogoUpdatedAt  int64
+	CrashSuspended int64
 	OwnerName      string
 	OwnerSuspended int64
 	NodeName       string
@@ -359,6 +374,7 @@ func (q *Queries) ListAppsByOwner(ctx context.Context, ownerID int64) ([]ListApp
 			&i.LogoMode,
 			&i.LogoColor,
 			&i.LogoUpdatedAt,
+			&i.CrashSuspended,
 			&i.OwnerName,
 			&i.OwnerSuspended,
 			&i.NodeName,
@@ -377,7 +393,7 @@ func (q *Queries) ListAppsByOwner(ctx context.Context, ownerID int64) ([]ListApp
 }
 
 const listAppsByOwnerID = `-- name: ListAppsByOwnerID :many
-SELECT id, name, owner_id, node_id, image, port, env_sealed, running, memory_mb, generation, dns_name, created_at, updated_at, public, logo_mode, logo_color, logo_updated_at FROM apps WHERE owner_id = ? ORDER BY id
+SELECT id, name, owner_id, node_id, image, port, env_sealed, running, memory_mb, generation, dns_name, created_at, updated_at, public, logo_mode, logo_color, logo_updated_at, crash_suspended FROM apps WHERE owner_id = ? ORDER BY id
 `
 
 func (q *Queries) ListAppsByOwnerID(ctx context.Context, ownerID int64) ([]App, error) {
@@ -407,6 +423,7 @@ func (q *Queries) ListAppsByOwnerID(ctx context.Context, ownerID int64) ([]App, 
 			&i.LogoMode,
 			&i.LogoColor,
 			&i.LogoUpdatedAt,
+			&i.CrashSuspended,
 		); err != nil {
 			return nil, err
 		}
@@ -422,7 +439,7 @@ func (q *Queries) ListAppsByOwnerID(ctx context.Context, ownerID int64) ([]App, 
 }
 
 const listPublicAppsByOwner = `-- name: ListPublicAppsByOwner :many
-SELECT id, name, owner_id, node_id, image, port, env_sealed, running, memory_mb, generation, dns_name, created_at, updated_at, public, logo_mode, logo_color, logo_updated_at FROM apps WHERE owner_id = ? AND public = 1 ORDER BY name
+SELECT id, name, owner_id, node_id, image, port, env_sealed, running, memory_mb, generation, dns_name, created_at, updated_at, public, logo_mode, logo_color, logo_updated_at, crash_suspended FROM apps WHERE owner_id = ? AND public = 1 ORDER BY name
 `
 
 func (q *Queries) ListPublicAppsByOwner(ctx context.Context, ownerID int64) ([]App, error) {
@@ -452,6 +469,7 @@ func (q *Queries) ListPublicAppsByOwner(ctx context.Context, ownerID int64) ([]A
 			&i.LogoMode,
 			&i.LogoColor,
 			&i.LogoUpdatedAt,
+			&i.CrashSuspended,
 		); err != nil {
 			return nil, err
 		}
@@ -557,7 +575,7 @@ func (q *Queries) SetAppPublic(ctx context.Context, arg SetAppPublicParams) erro
 }
 
 const setAppRunning = `-- name: SetAppRunning :one
-UPDATE apps SET running = ?, generation = generation + ?, updated_at = ? WHERE id = ? RETURNING id, name, owner_id, node_id, image, port, env_sealed, running, memory_mb, generation, dns_name, created_at, updated_at, public, logo_mode, logo_color, logo_updated_at
+UPDATE apps SET running = ?, generation = generation + ?, updated_at = ? WHERE id = ? RETURNING id, name, owner_id, node_id, image, port, env_sealed, running, memory_mb, generation, dns_name, created_at, updated_at, public, logo_mode, logo_color, logo_updated_at, crash_suspended
 `
 
 type SetAppRunningParams struct {
@@ -593,6 +611,7 @@ func (q *Queries) SetAppRunning(ctx context.Context, arg SetAppRunningParams) (A
 		&i.LogoMode,
 		&i.LogoColor,
 		&i.LogoUpdatedAt,
+		&i.CrashSuspended,
 	)
 	return i, err
 }
@@ -611,10 +630,45 @@ func (q *Queries) StopAppsByOwner(ctx context.Context, arg StopAppsByOwnerParams
 	return err
 }
 
+const suspendCrashingApp = `-- name: SuspendCrashingApp :one
+UPDATE apps SET running = 0, crash_suspended = 1, updated_at = ? WHERE id = ? AND running = 1 RETURNING id, name, owner_id, node_id, image, port, env_sealed, running, memory_mb, generation, dns_name, created_at, updated_at, public, logo_mode, logo_color, logo_updated_at, crash_suspended
+`
+
+type SuspendCrashingAppParams struct {
+	UpdatedAt int64
+	ID        int64
+}
+
+func (q *Queries) SuspendCrashingApp(ctx context.Context, arg SuspendCrashingAppParams) (App, error) {
+	row := q.db.QueryRowContext(ctx, suspendCrashingApp, arg.UpdatedAt, arg.ID)
+	var i App
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.OwnerID,
+		&i.NodeID,
+		&i.Image,
+		&i.Port,
+		&i.EnvSealed,
+		&i.Running,
+		&i.MemoryMb,
+		&i.Generation,
+		&i.DnsName,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.Public,
+		&i.LogoMode,
+		&i.LogoColor,
+		&i.LogoUpdatedAt,
+		&i.CrashSuspended,
+	)
+	return i, err
+}
+
 const updateAppConfig = `-- name: UpdateAppConfig :one
 UPDATE apps SET image = ?, port = ?, env_sealed = ?, memory_mb = ?, generation = generation + 1, updated_at = ?
 WHERE id = ?
-RETURNING id, name, owner_id, node_id, image, port, env_sealed, running, memory_mb, generation, dns_name, created_at, updated_at, public, logo_mode, logo_color, logo_updated_at
+RETURNING id, name, owner_id, node_id, image, port, env_sealed, running, memory_mb, generation, dns_name, created_at, updated_at, public, logo_mode, logo_color, logo_updated_at, crash_suspended
 `
 
 type UpdateAppConfigParams struct {
@@ -654,6 +708,7 @@ func (q *Queries) UpdateAppConfig(ctx context.Context, arg UpdateAppConfigParams
 		&i.LogoMode,
 		&i.LogoColor,
 		&i.LogoUpdatedAt,
+		&i.CrashSuspended,
 	)
 	return i, err
 }

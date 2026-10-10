@@ -2944,3 +2944,13 @@ a.link-btn {
 .icon-picker-text .muted {
   font-size: 0.85rem;
 }
+
+.webhook-row {
+  display: flex;
+  gap: 8px;
+}
+
+.webhook-row input {
+  flex: 1;
+  min-width: 0;
+}

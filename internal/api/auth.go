@@ -25,6 +25,7 @@ type userResponse struct {
 	AccentColor     string `json:"accentColor,omitempty"`
 	ShowApps        bool   `json:"showApps"`
 	ShowEmail       bool   `json:"showEmail"`
+	NotifyWebhook   bool   `json:"notifyWebhookSet"`
 	Email           string `json:"email"`
 	Bio             string `json:"bio"`
 	DiscordName     string `json:"discordName,omitempty"`
@@ -37,7 +38,7 @@ func toUserResponse(u db.User) userResponse {
 		ID: u.ID, Username: u.Username.String, DisplayName: u.DisplayName, Role: u.Role, Method: signInMethod(u),
 		AvatarURL: avatarURL(u), CustomAvatar: u.AvatarUpdatedAt > 0, Email: u.Email.String, Bio: u.Bio,
 		BannerURL: bannerURL(u), CustomBanner: u.BannerUpdatedAt > 0, AccentColor: accentColor(u),
-		ShowApps: u.ShowApps != 0, ShowEmail: u.ShowEmail != 0,
+		ShowApps: u.ShowApps != 0, ShowEmail: u.ShowEmail != 0, NotifyWebhook: u.NotifyWebhook != "",
 		DiscordName: u.DiscordName, NameFromDiscord: u.DiscordID.Valid && u.NameFromDiscord != 0, CreatedAt: u.CreatedAt,
 	}
 }

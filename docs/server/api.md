@@ -33,6 +33,7 @@ Toutes les écritures sont en JSON. Les routes sont déclarées dans `internal/a
 | `PUT /api/apps/{id}/logo`, `GET /api/apps/{id}/logo` | Choisir le logo d'une app (auto, image, initiale) ; logo envoyé |
 | `GET /api/logos?repo=` | Logo d'une image Docker Hub (mis en cache) |
 | `PUT /api/apps/{id}/public` | Afficher ou masquer une app sur le profil de son propriétaire |
+| `PUT /api/me/notifications`, `POST /api/me/notifications/test` | Webhook personnel, message de test |
 | `GET /api/me/sessions`, `DELETE /api/me/sessions/{id\|others}` | Appareils connectés, en déconnecter un ou tous les autres |
 | `GET`, `POST /api/apps` | Lister, créer |
 | `GET`, `PUT`, `DELETE /api/apps/{id}` | Voir, modifier, supprimer |
@@ -54,6 +55,7 @@ Les routes d'app vérifient que l'utilisateur est le propriétaire ou un admin.
 | `POST /api/admin/nodes/{id}/join-command` | Nouvelle commande (node en attente) |
 | `PUT /api/admin/nodes/{id}/ingress` | IP publique et mode réseau |
 | `DELETE /api/admin/nodes/{id}` | Retirer (refusé s'il a des apps) |
+| `GET`, `PUT /api/admin/settings/notifications`, `POST …/test` | Webhook du salon des admins, types d'alertes, message de test |
 | `GET /api/admin/containers` | Conteneurs externes de tous les nodes en ligne |
 | `GET /api/admin/nodes/{node}/containers/{id}/usage` | CPU et mémoire d'un conteneur externe, dernière heure |
 | `GET /api/admin/nodes/{node}/containers/{id}/events` | Derniers événements d'un conteneur externe |

@@ -36,6 +36,12 @@ func (s *Server) appEvent(appID int64, kind, message string) {
 // onAppStateChange turns the state changes agents report into events: when an app comes up, crashes or
 // restarts in a loop.
 func (s *Server) onAppStateChange(appID int64, from, to *agentpb.AppStatus) {
+	if n, why := crashOf(from, to); n > 0 {
+		go s.crashed(appID, n, why)
+	}
+	if from.GetState() == to.GetState() {
+		return // only the restart count changed
+	}
 	switch to.GetState() {
 	case "running":
 		s.appEvent(appID, eventSuccess, "En ligne")

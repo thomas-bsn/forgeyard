@@ -205,31 +205,32 @@ func (s *Server) setAppRecord(ctx context.Context, c dnsConfig, p dns.Provider, 
 }
 
 type appResponse struct {
-	ID           int64             `json:"id"`
-	Name         string            `json:"name"`
-	OwnerID      int64             `json:"ownerId"`
-	OwnerName    string            `json:"ownerName"`
-	NodeID       int64             `json:"nodeId"`
-	NodeName     string            `json:"nodeName"`
-	Image        string            `json:"image"`
-	Port         int64             `json:"port"`
-	MemoryMB     int64             `json:"memoryMb"`
-	Running      bool              `json:"running"`
-	URL          string            `json:"url,omitempty"`
-	State        string            `json:"state"`
-	Error        string            `json:"error,omitempty"`
-	ExitCode     int32             `json:"exitCode,omitempty"`
-	OOMKilled    bool              `json:"oomKilled,omitempty"`
-	RestartCount int32             `json:"restartCount,omitempty"`
-	StartedAt    int64             `json:"startedAt,omitempty"`
-	HostPort     int32             `json:"hostPort,omitempty"`
-	CPUPercent   float64           `json:"cpuPercent,omitempty"`
-	MemoryUsed   uint64            `json:"memoryUsedBytes,omitempty"`
-	Suspended    bool              `json:"suspended,omitempty"`
-	Public       bool              `json:"public"`
-	Logo         appLogo           `json:"logo"`
-	UpdatedAt    int64             `json:"updatedAt"`
-	Env          map[string]string `json:"env,omitempty"`
+	ID             int64             `json:"id"`
+	Name           string            `json:"name"`
+	OwnerID        int64             `json:"ownerId"`
+	OwnerName      string            `json:"ownerName"`
+	NodeID         int64             `json:"nodeId"`
+	NodeName       string            `json:"nodeName"`
+	Image          string            `json:"image"`
+	Port           int64             `json:"port"`
+	MemoryMB       int64             `json:"memoryMb"`
+	Running        bool              `json:"running"`
+	URL            string            `json:"url,omitempty"`
+	State          string            `json:"state"`
+	Error          string            `json:"error,omitempty"`
+	ExitCode       int32             `json:"exitCode,omitempty"`
+	OOMKilled      bool              `json:"oomKilled,omitempty"`
+	RestartCount   int32             `json:"restartCount,omitempty"`
+	StartedAt      int64             `json:"startedAt,omitempty"`
+	HostPort       int32             `json:"hostPort,omitempty"`
+	CPUPercent     float64           `json:"cpuPercent,omitempty"`
+	MemoryUsed     uint64            `json:"memoryUsedBytes,omitempty"`
+	Suspended      bool              `json:"suspended,omitempty"`
+	Public         bool              `json:"public"`
+	Logo           appLogo           `json:"logo"`
+	CrashSuspended bool              `json:"crashSuspended,omitempty"`
+	UpdatedAt      int64             `json:"updatedAt"`
+	Env            map[string]string `json:"env,omitempty"`
 }
 
 // toAppResponse describes an app. localHost is the host Forgeyard is reached at, used as the address of its
@@ -238,7 +239,7 @@ func (s *Server) toAppResponse(a db.App, ownerName string, ownerSuspended bool, 
 	resp := appResponse{
 		ID: a.ID, Name: a.Name, OwnerID: a.OwnerID, OwnerName: ownerName, NodeID: a.NodeID, NodeName: nodeName,
 		Image: a.Image, Port: a.Port, MemoryMB: a.MemoryMb, Running: a.Running != 0, UpdatedAt: a.UpdatedAt,
-		State: "pending", Suspended: ownerSuspended, Public: a.Public != 0, Logo: toAppLogo(a),
+		State: "pending", Suspended: ownerSuspended, Public: a.Public != 0, Logo: toAppLogo(a), CrashSuspended: a.CrashSuspended != 0,
 	}
 	if host := appHostname(c, a.Name); host != "" {
 		resp.URL = "https://" + host
@@ -385,7 +386,7 @@ func (s *Server) handleListApps(w http.ResponseWriter, r *http.Request) {
 		a := db.App{ID: row.ID, Name: row.Name, OwnerID: row.OwnerID, NodeID: row.NodeID, Image: row.Image,
 			Port: row.Port, EnvSealed: row.EnvSealed, Running: row.Running, MemoryMb: row.MemoryMb,
 			Generation: row.Generation, DnsName: row.DnsName, CreatedAt: row.CreatedAt, UpdatedAt: row.UpdatedAt, Public: row.Public,
-			LogoMode: row.LogoMode, LogoColor: row.LogoColor, LogoUpdatedAt: row.LogoUpdatedAt}
+			LogoMode: row.LogoMode, LogoColor: row.LogoColor, LogoUpdatedAt: row.LogoUpdatedAt, CrashSuspended: row.CrashSuspended}
 		out = append(out, s.toAppResponse(a, row.OwnerName, row.OwnerSuspended != 0, row.NodeName, c, byID[row.NodeID], s.publicHost(ctx, r)))
 	}
 	writeJSON(w, http.StatusOK, out)
@@ -603,6 +604,17 @@ func (s *Server) handleAppAction(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		s.internalError(w, r, err)
 		return
+	}
+	if params.Running == 1 {
+		// Starting again gives a crash-suspended app a fresh count.
+		if err := s.store.ClearCrashSuspension(r.Context(), a.ID); err != nil {
+			s.internalError(w, r, err)
+			return
+		}
+		a.CrashSuspended = 0
+		s.mu.Lock()
+		delete(s.crashes, a.ID)
+		s.mu.Unlock()
 	}
 	verb := map[string]string{"start": "Démarrée", "stop": "Arrêtée", "redeploy": "Redéployée"}[action]
 	s.appEvent(a.ID, eventInfo, verb+" par "+currentUser(r).DisplayName)

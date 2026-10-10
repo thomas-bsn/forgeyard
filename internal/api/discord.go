@@ -383,6 +383,10 @@ func (s *Server) recordAccountRequest(ctx context.Context, dUser discord.User) (
 		return "", err
 	}
 	s.logger.Info("new account request", "discord_user", dUser.Username)
+	s.notifyAdmins("requests", notification{
+		Title: "Nouvelle demande de compte", Text: dUser.DisplayName() + " (@" + dUser.Username + ") veut rejoindre l'instance.",
+		Path: "#/members", Color: colorInfo,
+	})
 	return "pending", nil
 }
 

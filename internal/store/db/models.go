@@ -22,23 +22,24 @@ type AccountRequest struct {
 }
 
 type App struct {
-	ID            int64
-	Name          string
-	OwnerID       int64
-	NodeID        int64
-	Image         string
-	Port          int64
-	EnvSealed     string
-	Running       int64
-	MemoryMb      int64
-	Generation    int64
-	DnsName       string
-	CreatedAt     int64
-	UpdatedAt     int64
-	Public        int64
-	LogoMode      string
-	LogoColor     string
-	LogoUpdatedAt int64
+	ID             int64
+	Name           string
+	OwnerID        int64
+	NodeID         int64
+	Image          string
+	Port           int64
+	EnvSealed      string
+	Running        int64
+	MemoryMb       int64
+	Generation     int64
+	DnsName        string
+	CreatedAt      int64
+	UpdatedAt      int64
+	Public         int64
+	LogoMode       string
+	LogoColor      string
+	LogoUpdatedAt  int64
+	CrashSuspended int64
 }
 
 type AppEvent struct {
@@ -157,4 +158,5 @@ type User struct {
 	BannerUpdatedAt int64
 	ShowApps        int64
 	ShowEmail       int64
+	NotifyWebhook   string
 }
