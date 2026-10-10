@@ -74,7 +74,7 @@ func (s *Server) toNodeResponse(n db.Node) nodeResponse {
 	resp.State = "online"
 	resp.AgentOutdated, resp.SelfUpdate = agentOutdated(live), live.SelfUpdate
 	resp.Updating = !live.UpdatingSince.IsZero() && time.Since(live.UpdatingSince) < 10*time.Minute
-	resp.UpdateError = live.UpdateError
+	resp.UpdateError = updateErrorText(live.UpdateError)
 	if len(live.Metrics) > 0 {
 		m := live.Metrics[len(live.Metrics)-1]
 		resp.Metrics = &nodeMetrics{

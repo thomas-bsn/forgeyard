@@ -14,13 +14,22 @@ import (
 
 // Agents follow the server's version: an agent built from another commit is asked to replace itself with
 // the agent image of the server's commit (published by CI as :sha-<commit>), when it connects and again
-// every agentUpdateRetry while it differs. Agents that cannot replace themselves (Docker Compose, a
+// every agentUpdateRetry while it differs (right after an update of the server, CI may still be
+// publishing the image). Agents that cannot replace themselves (Docker Compose, a
 // binary run by hand) are left alone. Admins can also update an agent from the Nodes page.
 
 const (
 	settingAgentAutoUpdate = "agent_auto_update" // "0" turns it off; on by default
-	agentUpdateRetry       = 15 * time.Minute
+	agentUpdateRetry       = 5 * time.Minute // about how long CI takes to publish a commit's images
 )
+
+// updateErrorText says why an update failed, in words: an image not found yet is CI still at work.
+func updateErrorText(err string) string {
+	if strings.Contains(err, "not found") && strings.Contains(err, ":sha-") {
+		return "la CI publie encore l'image de cette version : nouvel essai automatique dans quelques minutes"
+	}
+	return err
+}
 
 // agentImageFor is the agent image matching the server's commit, or the configured image (:latest) for
 // a server built without one.

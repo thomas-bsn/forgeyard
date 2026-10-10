@@ -73,3 +73,13 @@ func TestAgentUpdates(t *testing.T) {
 		t.Fatalf("update of an agent that cannot replace itself: %d", code)
 	}
 }
+
+func TestUpdateErrorText(t *testing.T) {
+	raw := `téléchargement de ghcr.io/me/forgeyard-agent:sha-abc : not found: failed to resolve reference "ghcr.io/me/forgeyard-agent:sha-abc"`
+	if got := updateErrorText(raw); got == raw {
+		t.Fatalf("not reworded: %s", got)
+	}
+	if other := "cet agent est géré par Docker Compose"; updateErrorText(other) != other {
+		t.Fatal("other errors must stay as they are")
+	}
+}
