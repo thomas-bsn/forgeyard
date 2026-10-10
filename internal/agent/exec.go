@@ -34,10 +34,15 @@ func findShell(ctx context.Context, dc *docker.Client, container string) ([]stri
 type execSessions struct {
 	mu       sync.Mutex
 	sessions map[string]*docker.Exec
+	// pending holds what is typed while a session starts, written once its shell is there.
+	pending map[string][][]byte
 }
 
+// maxPending bounds what a starting session keeps of its input.
+const maxPending = 64 << 10
+
 func newExecSessions() *execSessions {
-	return &execSessions{sessions: map[string]*docker.Exec{}}
+	return &execSessions{sessions: map[string]*docker.Exec{}, pending: map[string][][]byte{}}
 }
 
 // start opens a terminal and streams its output until the shell ends or the control plane closes it.
@@ -47,7 +52,15 @@ func (x *execSessions) start(ctx context.Context, dc *docker.Client, ext *extern
 		m.SessionId = id
 		send(&agentpb.AgentMessage{Msg: &agentpb.AgentMessage_ExecOutput{ExecOutput: m}})
 	}
+	x.mu.Lock()
+	x.pending[id] = nil
+	x.mu.Unlock()
 	go func() {
+		defer func() {
+			x.mu.Lock()
+			delete(x.pending, id)
+			x.mu.Unlock()
+		}()
 		name := containerName(req.GetAppId())
 		if req.GetAppId() == 0 {
 			// An external container: only those, never Forgeyard's own containers.
@@ -65,6 +78,9 @@ func (x *execSessions) start(ctx context.Context, dc *docker.Client, ext *extern
 			out(&agentpb.ExecOutput{Closed: true, Error: err.Error()})
 			return
 		}
+		if c := req.GetCommand(); c != "" {
+			shell = []string{shell[0], "-lc", c}
+		}
 		e, err := dc.StartExec(sctx, name, shell, req.GetCols(), req.GetRows())
 		cancel()
 		if err != nil {
@@ -73,7 +89,12 @@ func (x *execSessions) start(ctx context.Context, dc *docker.Client, ext *extern
 		}
 		x.mu.Lock()
 		x.sessions[id] = e
+		early := x.pending[id]
+		delete(x.pending, id)
 		x.mu.Unlock()
+		for _, data := range early {
+			e.Write(data)
+		}
 		defer func() {
 			x.mu.Lock()
 			delete(x.sessions, id)
@@ -103,7 +124,19 @@ func (x *execSessions) get(id string) *docker.Exec {
 }
 
 func (x *execSessions) input(m *agentpb.ExecInput) {
-	if e := x.get(m.GetSessionId()); e != nil {
+	x.mu.Lock()
+	e := x.sessions[m.GetSessionId()]
+	if early, starting := x.pending[m.GetSessionId()]; e == nil && starting {
+		size := len(m.GetData())
+		for _, d := range early {
+			size += len(d)
+		}
+		if size <= maxPending {
+			x.pending[m.GetSessionId()] = append(early, m.GetData())
+		}
+	}
+	x.mu.Unlock()
+	if e != nil {
 		e.Write(m.GetData())
 	}
 }

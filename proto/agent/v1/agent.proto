@@ -112,6 +112,9 @@ message AppSpec {
   bool leaving = 10;
   // dockerfile: when set, the node builds the image from it, tagged image, instead of pulling image.
   string dockerfile = 11;
+  // sandbox: a Linux box reached over SSH: kept running by a idle command, without a web route nor a
+  // published port, its /root on a volume of the node.
+  bool sandbox = 12;
 }
 
 message Ingress {
@@ -193,6 +196,7 @@ message ExecStart {
   string container_id = 3; // an external container, when app_id is 0
   uint32 cols = 4;
   uint32 rows = 5;
+  string command = 6; // run by the container's shell instead of an interactive shell (ssh app command)
 }
 
 message ExecInput {

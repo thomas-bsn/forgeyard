@@ -37,6 +37,12 @@ TLS 1.3 mutuel avec la CA privée de Forgeyard, empreinte de la CA vérifiée av
 
 - **Requêtes vers des registres** : pour remplir le port d'une app, le server lit la config de l'image sur son registre. Le nom vient de l'utilisateur, alors ce client refuse les adresses non publiques (loopback, réseaux privés, link-local), y compris après une redirection ou pour le serveur de jetons.
 
+## Passerelle SSH
+
+- Authentification par clé publique uniquement, vers les apps dont on est propriétaire (ou toutes pour un admin) ; comptes désactivés refusés. La clé présentée doit être exactement celle enregistrée (empreinte SHA256 puis comparaison complète).
+- Une connexion qui ne s'authentifie pas compte comme un échec pour son IP (même limite que la connexion web : 10 en 15 minutes), une seule fois même si le client essaie plusieurs clés. La poignée de main doit aboutir en 30 secondes.
+- Seuls les canaux de session sont ouverts : pas de redirection de ports, pas de sous-systèmes (SFTP). Chaque connexion est notée dans les événements de l'app, et la dernière utilisation de chaque clé est affichée.
+
 ## Conteneurs des apps
 
 Pas de mode privilégié, `no-new-privileges`, limite mémoire sans swap, pas de montage de l'hôte ni de réseau de l'hôte (l'utilisateur ne choisit que l'image, le port, les variables et la mémoire).

@@ -34,13 +34,14 @@ Toutes les écritures sont en JSON. Les routes sont déclarées dans `internal/a
 | `GET /api/logos?repo=` | Logo d'une image Docker Hub (mis en cache) |
 | `PUT /api/apps/{id}/public` | Afficher ou masquer une app sur le profil de son propriétaire |
 | `PUT /api/me/notifications`, `POST /api/me/notifications/test` | Webhook personnel, message de test |
+| `GET`, `POST /api/me/ssh-keys`, `DELETE /api/me/ssh-keys/{id}` | Clés SSH de la passerelle |
 | `GET /api/me/sessions`, `DELETE /api/me/sessions/{id\|others}` | Appareils connectés, en déconnecter un ou tous les autres |
 | `GET /api/images/ports?image=` | Ports TCP qu'une image publique déclare, lus sur son registre |
 | `GET`, `POST /api/support/tickets` | Demandes d'aide (les siennes, toutes pour un admin) ; en créer une |
 | `GET /api/support/tickets/{id}` | Une demande et son fil |
 | `POST /api/support/tickets/{id}/messages` | Répondre (rouvre une demande fermée) |
 | `PUT /api/support/tickets/{id}/status` | Ouvrir ou fermer |
-| `GET`, `POST /api/apps` | Lister, créer (`image` ou `dockerfile` ; `nodeId` facultatif, admins seulement) |
+| `GET`, `POST /api/apps` | Lister, créer (`kind` : `web` ou `sandbox` ; `image` ou `dockerfile` ; `nodeId` facultatif, admins seulement) |
 | `GET`, `PUT`, `DELETE /api/apps/{id}` | Voir, modifier, supprimer |
 | `POST /api/apps/{id}/{start\|stop\|redeploy}` | Actions |
 | `GET /api/apps/{id}/logs?tail=` | Logs en direct (SSE) |

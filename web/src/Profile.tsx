@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react'
-import { api, errorMessage, type Session, type User } from './api'
-import { Avatar, Switch, WebhookForm, WebhookSteps } from './ui'
+import { api, errorMessage, type Session, type SSHKey, type User } from './api'
+import { Avatar, CopyField, since, Switch, WebhookForm, WebhookSteps } from './ui'
 import { ImageCropper } from './Cropper'
 
 type Section = 'profile' | 'security' | 'notifications' | 'ssh' | 'tokens'
@@ -9,7 +9,7 @@ const sections: { id: Section; label: string; soon?: boolean }[] = [
   { id: 'profile', label: 'Profil' },
   { id: 'security', label: 'Sécurité' },
   { id: 'notifications', label: 'Notifications' },
-  { id: 'ssh', label: 'Clés SSH', soon: true },
+  { id: 'ssh', label: 'Clés SSH' },
   { id: 'tokens', label: 'Jetons d’API', soon: true },
 ]
 
@@ -17,7 +17,7 @@ const intros: Record<Section, string> = {
   profile: 'Ce que les autres voient de vous dans Forgeyard.',
   security: 'Votre mot de passe et les appareils connectés à votre compte.',
   notifications: 'Être prévenu quand une de vos apps a un problème.',
-  ssh: 'Ouvrir un terminal dans vos conteneurs avec vos clés SSH.',
+  ssh: 'Se connecter en SSH à vos apps et à vos sandboxes : ssh monapp@… -p 2222.',
   tokens: 'Piloter Forgeyard depuis un script, une CI ou un outil en ligne de commande.',
 }
 
@@ -63,15 +63,7 @@ export default function Profile({ user, section, onChange }: { user: User; secti
             />
           </section>
         )}
-        {current.id === 'ssh' && (
-          <ComingSoon
-            items={[
-              'Ajouter vos clés SSH publiques (ed25519, RSA).',
-              'Ouvrir un shell dans vos conteneurs : ssh monapp@forgeyard.mondomaine.com, sans serveur SSH dans le conteneur.',
-              'Le même terminal directement dans le navigateur.',
-            ]}
-          />
-        )}
+        {current.id === 'ssh' && <SSHKeys />}
         {current.id === 'tokens' && (
           <ComingSoon
             items={[
@@ -527,5 +519,107 @@ function PasswordPanel() {
         </button>
       </div>
     </form>
+  )
+}
+
+/** The public keys the SSH gateway lets in, for the apps one owns. */
+function SSHKeys() {
+  const [keys, setKeys] = useState<SSHKey[] | null>(null)
+  const [publicKey, setPublicKey] = useState('')
+  const [name, setName] = useState('')
+  const [error, setError] = useState('')
+  const [busy, setBusy] = useState(false)
+
+  useEffect(() => {
+    api.sshKeys().then(setKeys, (err) => setError(errorMessage(err)))
+  }, [])
+
+  async function add(e: FormEvent) {
+    e.preventDefault()
+    setBusy(true)
+    setError('')
+    try {
+      const k = await api.addSSHKey(publicKey, name)
+      setKeys([...(keys ?? []), k])
+      setPublicKey('')
+      setName('')
+    } catch (err) {
+      setError(errorMessage(err))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function remove(k: SSHKey) {
+    if (!window.confirm(`Retirer la clé « ${k.name} » ? Elle ne pourra plus se connecter.`)) return
+    try {
+      await api.deleteSSHKey(k.id)
+      setKeys((keys ?? []).filter((x) => x.id !== k.id))
+    } catch (err) {
+      setError(errorMessage(err))
+    }
+  }
+
+  return (
+    <>
+      <section className="panel">
+        <h2>Mes clés</h2>
+        {keys && keys.length === 0 && <p className="muted">Aucune clé : ajoutez-en une ci-dessous pour vous connecter en SSH.</p>}
+        {keys && keys.length > 0 && (
+          <ul className="key-list">
+            {keys.map((k) => (
+              <li key={k.id} className="key-item">
+                <span className="key-text">
+                  <strong>{k.name}</strong>
+                  <span className="mono muted">
+                    {k.type} · {k.fingerprint}
+                  </span>
+                  <span className="muted key-meta">
+                    Ajoutée {since(k.createdAt)} · {k.lastUsedAt ? `utilisée ${since(k.lastUsedAt)}` : 'jamais utilisée'}
+                  </span>
+                </span>
+                <button type="button" className="btn btn-small" onClick={() => remove(k)}>
+                  Retirer
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+      <section className="panel">
+        <h2>Ajouter une clé</h2>
+        <ol className="steps-help">
+          <li>
+            Sur votre ordinateur, affichez votre clé publique : <CopyField value="cat ~/.ssh/id_ed25519.pub" />
+          </li>
+          <li>
+            Pas de clé ? Créez-en une : <CopyField value="ssh-keygen -t ed25519" />
+          </li>
+          <li>Collez la ligne entière ci-dessous (elle commence par ssh-ed25519).</li>
+        </ol>
+        <form className="form" onSubmit={add}>
+          <label className="field">
+            <span>Clé publique</span>
+            <textarea className="mono" rows={3} value={publicKey} onChange={(e) => setPublicKey(e.target.value)} placeholder="ssh-ed25519 AAAAC3Nza… moi@portable" required spellCheck={false} />
+          </label>
+          <label className="field">
+            <span>
+              Nom <span className="muted">(facultatif)</span>
+            </span>
+            <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Portable perso" maxLength={60} />
+          </label>
+          {error && <p className="error">{error}</p>}
+          <div>
+            <button type="submit" className="btn btn-primary" disabled={busy || !publicKey.trim()}>
+              Ajouter
+            </button>
+          </div>
+        </form>
+        <p className="muted">
+          Ensuite, la page de chaque app donne sa commande : <span className="mono">ssh monapp@… -p 2222</span>. Seules vos apps acceptent vos
+          clés (toutes, pour un admin).
+        </p>
+      </section>
+    </>
   )
 }

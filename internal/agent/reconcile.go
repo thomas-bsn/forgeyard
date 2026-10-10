@@ -28,6 +28,7 @@ const (
 	labelApp      = "forgeyard.app"
 	labelSpec     = "forgeyard.spec"
 	labelIngress  = "forgeyard.ingress"
+	labelSandbox  = "forgeyard.sandbox"
 	resyncEvery   = 30 * time.Second
 	certResolver  = "letsencrypt"
 	dockerSocket  = "/var/run/docker.sock"
@@ -37,6 +38,14 @@ const (
 func containerName(appID int64) string {
 	return "forgeyard-app-" + strconv.FormatInt(appID, 10)
 }
+
+// sandboxVolume keeps a sandbox's /root across redeployments; it goes with the app.
+func sandboxVolume(appID string) string {
+	return "forgeyard-sandbox-" + appID
+}
+
+// sandboxIdle keeps a sandbox's container running, and stops at once on docker stop.
+var sandboxIdle = []string{"sh", "-c", "trap 'exit 0' TERM INT; while :; do sleep 3600 & wait $!; done"}
 
 // Reconciler makes the node's Docker match the desired state sent by the control plane.
 type Reconciler struct {
@@ -158,6 +167,11 @@ func (r *Reconciler) reconcile(ctx context.Context) {
 				r.logger.Error("removing app container failed", "container", name, "err", err)
 			} else if inspectErr == nil {
 				r.dropBuiltImage(ctx, ct.Config.Image)
+				if ct.Config.Labels[labelSandbox] != "" && !strings.HasSuffix(name, "-next") {
+					if err := r.dc.RemoveVolume(ctx, sandboxVolume(ct.Config.Labels[labelApp])); err != nil {
+						r.logger.Warn("removing a sandbox's volume failed", "app", ct.Config.Labels[labelApp], "err", err)
+					}
+				}
 			}
 		}
 	}
@@ -176,7 +190,8 @@ func appHash(app *agentpb.AppSpec, ingressMode string) string {
 	}
 	slices.Sort(env)
 	return specHash(app.GetImage(), strconv.Itoa(int(app.GetPort())), strings.Join(env, "\n"), app.GetHostname(),
-		strconv.FormatInt(app.GetMemoryBytes(), 10), strconv.FormatInt(app.GetGeneration(), 10), ingressMode)
+		strconv.FormatInt(app.GetMemoryBytes(), 10), strconv.FormatInt(app.GetGeneration(), 10), ingressMode,
+		strconv.FormatBool(app.GetSandbox()))
 }
 
 func (r *Reconciler) ensureApp(ctx context.Context, app *agentpb.AppSpec, ingressMode string) error {
@@ -281,6 +296,21 @@ func appContainerConfig(app *agentpb.AppSpec, hash, ingressMode string) map[stri
 		"Privileged":  false,
 		"SecurityOpt": []string{"no-new-privileges:true"},
 		"LogConfig":   map[string]any{"Type": "json-file", "Config": map[string]string{"max-size": "10m", "max-file": "3"}},
+	}
+	if app.GetSandbox() {
+		id := strconv.FormatInt(app.GetId(), 10)
+		labels[labelSandbox] = "true"
+		hostConfig["Mounts"] = []map[string]any{{"Type": "volume", "Source": sandboxVolume(id), "Target": "/root"}}
+		return map[string]any{
+			"Image":      app.GetImage(),
+			"Hostname":   app.GetName(),
+			"Entrypoint": []string{""}, // resets the image's own: the idle command runs instead
+			"Cmd":        sandboxIdle,
+			"WorkingDir": "/root",
+			"Env":        env,
+			"Labels":     labels,
+			"HostConfig": hostConfig,
+		}
 	}
 	if host := app.GetHostname(); host != "" {
 		// Each version gets its own router, of a higher priority than the one before: Traefik sends every

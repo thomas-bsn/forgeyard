@@ -31,9 +31,17 @@ var (
 	envKeyPattern  = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
 )
 
+const (
+	kindWeb     = "web"
+	kindSandbox = "sandbox" // a Linux box reached over SSH, without a web address
+
+	defaultSandboxImage = "debian:bookworm"
+)
+
 // appInput is what users set when creating or editing an app.
 type appInput struct {
 	Name  string `json:"name"`
+	Kind  string `json:"kind"` // at creation: web (default) or sandbox
 	Image string `json:"image"`
 	// Dockerfile, when set, is built on the node instead of pulling Image, which Forgeyard then names.
 	Dockerfile string            `json:"dockerfile"`
@@ -46,6 +54,20 @@ type appInput struct {
 func (in *appInput) validate(creating bool) string {
 	in.Name = strings.ToLower(strings.TrimSpace(in.Name))
 	in.Image = strings.TrimSpace(in.Image)
+	switch in.Kind {
+	case "":
+		in.Kind = kindWeb
+	case kindWeb, kindSandbox:
+	default:
+		return "type d'app inconnu : web ou sandbox"
+	}
+	if in.Kind == kindSandbox {
+		// A sandbox serves nothing: it has no port, and starts from a plain Linux image by default.
+		in.Port = 0
+		if in.Image == "" && strings.TrimSpace(in.Dockerfile) == "" {
+			in.Image = defaultSandboxImage
+		}
+	}
 	if creating && !appNamePattern.MatchString(in.Name) {
 		return "nom : 1 à 32 caractères parmi a-z, 0-9 et -, sans tiret au début ni à la fin (il devient le sous-domaine)"
 	}
@@ -61,7 +83,7 @@ func (in *appInput) validate(creating bool) string {
 	} else if in.Image == "" || len(in.Image) > 255 || strings.ContainsAny(in.Image, " \t\n") {
 		return "image invalide : par exemple nginx:latest ou ghcr.io/moi/mon-app:main"
 	}
-	if in.Port < 1 || in.Port > 65535 {
+	if in.Kind == kindWeb && (in.Port < 1 || in.Port > 65535) {
 		return "port invalide : le port sur lequel l'app écoute dans son conteneur, par exemple 80 ou 3000"
 	}
 	if in.MemoryMB == 0 {
@@ -118,6 +140,14 @@ func (s *Server) reservedNames(ctx context.Context, r *http.Request, c dnsConfig
 		}
 	}
 	return reserved
+}
+
+// webHost is the domain an app is served at: none for a sandbox, reached over SSH.
+func webHost(c dnsConfig, a db.App) string {
+	if a.Kind == kindSandbox {
+		return ""
+	}
+	return appHostname(c, a.Name)
 }
 
 func appHostname(c dnsConfig, name string) string {
@@ -177,9 +207,9 @@ func (s *Server) desiredState(ctx context.Context, nodeID int64) (*agentpb.Desir
 		}
 		d.Apps = append(d.Apps, &agentpb.AppSpec{
 			Id: a.ID, Name: a.Name, Image: a.Image, Port: int32(a.Port), Env: env,
-			Hostname: appHostname(c, a.Name), Running: a.Running != 0,
+			Hostname: webHost(c, a), Running: a.Running != 0,
 			MemoryBytes: a.MemoryMb << 20, Generation: a.Generation, Leaving: a.MovingFrom == nodeID,
-			Dockerfile: a.Dockerfile,
+			Dockerfile: a.Dockerfile, Sandbox: a.Kind == kindSandbox,
 		})
 	}
 	if node.IsLocal != 0 {
@@ -214,7 +244,7 @@ func (s *Server) relays(ctx context.Context, front db.Node, c dnsConfig) ([]*age
 		}
 		target := "http://" + net.JoinHostPort(n.LocalIp, strconv.FormatInt(n.IngressHttpPort, 10))
 		for _, a := range apps {
-			if host := appHostname(c, a.Name); host != "" {
+			if host := webHost(c, a); host != "" {
 				out = append(out, &agentpb.Relay{Hostname: host, Target: target})
 			}
 		}
@@ -387,6 +417,8 @@ type appResponse struct {
 	UpdatedAt      int64             `json:"updatedAt"`
 	Env            map[string]string `json:"env,omitempty"`
 	Dockerfile     string            `json:"dockerfile,omitempty"` // with the env, for the app's owner
+	Kind           string            `json:"kind"`                 // web or sandbox
+	SSH            string            `json:"ssh,omitempty"`        // the command reaching it through the SSH gateway
 }
 
 // toAppResponse describes an app. localHost is the host Forgeyard is reached at, used as the address of its
@@ -397,9 +429,10 @@ func (s *Server) toAppResponse(a db.App, ownerName string, ownerSuspended bool, 
 		Image: a.Image, Port: a.Port, MemoryMB: a.MemoryMb, Running: a.Running != 0, UpdatedAt: a.UpdatedAt,
 		State: "pending", Suspended: ownerSuspended, Public: a.Public != 0, Logo: toAppLogo(a), CrashSuspended: a.CrashSuspended != 0, MovingFrom: a.MovingFrom,
 	}
-	if host := appHostname(c, a.Name); host != "" {
+	if host := webHost(c, a); host != "" {
 		resp.URL = "https://" + host
 	}
+	resp.Kind, resp.SSH = a.Kind, s.sshCommand(c, a.Name, localHost)
 	if _, online := s.nodes.Live(a.NodeID); !online {
 		resp.State = "node-offline"
 	}
@@ -462,7 +495,7 @@ func (s *Server) syncApps(ctx context.Context) error {
 			return err
 		}
 		for _, a := range apps {
-			host := appHostname(c, a.Name)
+			host := webHost(c, a)
 			if provider != nil && host != "" {
 				// A record Forgeyard did not create belongs to another site: leave it alone.
 				if host != a.DnsName {
@@ -622,7 +655,7 @@ func (s *Server) handleCreateApp(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// A name already in the DNS zone belongs to another site: its record must not be overwritten.
-	if p, err := s.dnsProvider(c); err == nil && p != nil {
+	if p, err := s.dnsProvider(c); err == nil && p != nil && in.Kind == kindWeb {
 		dctx, cancel := context.WithTimeout(ctx, 20*time.Second)
 		taken, err := dns.Exists(dctx, p, c.Zone, appHostname(c, in.Name))
 		cancel()
@@ -663,7 +696,7 @@ func (s *Server) handleCreateApp(w http.ResponseWriter, r *http.Request) {
 	}
 	now := time.Now().Unix()
 	app, err := s.store.CreateApp(ctx, db.CreateAppParams{
-		Name: in.Name, OwnerID: currentUser(r).ID, NodeID: node.ID, Image: in.Image, Dockerfile: in.Dockerfile, Port: int64(in.Port),
+		Name: in.Name, OwnerID: currentUser(r).ID, NodeID: node.ID, Kind: in.Kind, Image: in.Image, Dockerfile: in.Dockerfile, Port: int64(in.Port),
 		EnvSealed: sealed, MemoryMb: int64(in.MemoryMB), CreatedAt: now, UpdatedAt: now,
 	})
 	if err != nil && strings.Contains(err.Error(), "UNIQUE") {
@@ -676,10 +709,11 @@ func (s *Server) handleCreateApp(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// The DNS record comes before the deployment, so the domain resolves by the time the container is up.
-	if p, err := s.dnsProvider(c); err != nil {
+	// A sandbox has no domain.
+	if p, err := s.dnsProvider(c); err != nil && in.Kind == kindWeb {
 		s.failCreate(w, r, app, "DNS : "+err.Error())
 		return
-	} else if p != nil {
+	} else if p != nil && in.Kind == kindWeb {
 		host := appHostname(c, app.Name)
 		if err := s.setAppRecord(ctx, c, p, host, nodeIP(node, c)); err != nil {
 			s.failCreate(w, r, app, "création de l'enregistrement DNS "+host+" : "+err.Error())
@@ -714,6 +748,7 @@ func (s *Server) handleUpdateApp(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSON(w, r, &in) {
 		return
 	}
+	in.Kind = a.Kind // set at creation
 	if msg := in.validate(false); msg != "" {
 		writeError(w, http.StatusBadRequest, msg)
 		return

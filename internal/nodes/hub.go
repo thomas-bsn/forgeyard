@@ -595,15 +595,16 @@ type ExecSession struct {
 	Output <-chan *agentpb.ExecOutput
 }
 
-// Exec opens a terminal in an app's container, or in an external container when appID is 0.
-func (h *Hub) Exec(nodeID, appID int64, containerID string, cols, rows uint32) (*ExecSession, error) {
+// Exec opens a terminal in an app's container, or in an external container when appID is 0: a shell, or
+// command run by the shell when given.
+func (h *Hub) Exec(nodeID, appID int64, containerID, command string, cols, rows uint32) (*ExecSession, error) {
 	id := randomID()
 	st := &execStream{ch: make(chan *agentpb.ExecOutput, 1024)}
 	h.mu.Lock()
 	h.execs[id] = st
 	h.mu.Unlock()
 	if !h.send(nodeID, &agentpb.ServerMessage{Msg: &agentpb.ServerMessage_ExecStart{ExecStart: &agentpb.ExecStart{
-		SessionId: id, AppId: appID, ContainerId: containerID, Cols: cols, Rows: rows,
+		SessionId: id, AppId: appID, ContainerId: containerID, Cols: cols, Rows: rows, Command: command,
 	}}}) {
 		h.endExec(id)
 		return nil, ErrOffline

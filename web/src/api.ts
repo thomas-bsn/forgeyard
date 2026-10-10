@@ -47,6 +47,8 @@ export type NotifySettings = {
   events: { requests: boolean; support: boolean; crashes: boolean; nodes: boolean }
 }
 
+export type SSHKey = { id: number; name: string; type: string; fingerprint: string; createdAt: number; lastUsedAt?: number }
+
 export type TicketKind = 'general' | 'app' | 'infra'
 
 export type Ticket = {
@@ -181,6 +183,8 @@ export type App = {
   crashSuspended?: boolean
   movingFrom?: number
   listeningPorts?: number[] // what it really listens on, while running
+  kind: 'web' | 'sandbox'
+  ssh?: string // the command reaching it through the SSH gateway
   logo: { mode: 'auto' | 'custom' | 'initial'; url?: string; color?: string; autoUrl?: string }
   updatedAt: number
   env?: Record<string, string>
@@ -226,6 +230,7 @@ export type Account = {
 
 export type AppInput = {
   name?: string
+  kind?: 'web' | 'sandbox' // at creation
   image: string
   dockerfile?: string
   port: number
@@ -398,6 +403,9 @@ export const api = {
   saveAgentSettings: (autoUpdate: boolean) => request<{ autoUpdate: boolean; serverVersion: string }>('PUT', '/api/admin/settings/agents', { autoUpdate }),
   testNotify: () => request<void>('POST', '/api/admin/settings/notifications/test', {}),
   testSupportNotify: () => request<void>('POST', '/api/admin/settings/notifications/test-support', {}),
+  sshKeys: () => request<SSHKey[]>('GET', '/api/me/ssh-keys'),
+  addSSHKey: (publicKey: string, name: string) => request<SSHKey>('POST', '/api/me/ssh-keys', { publicKey, name }),
+  deleteSSHKey: (id: number) => request<void>('DELETE', `/api/me/ssh-keys/${id}`, {}),
   tickets: () => request<Ticket[]>('GET', '/api/support/tickets'),
   ticket: (id: number) => request<TicketDetail>('GET', `/api/support/tickets/${id}`),
   createTicket: (body: { kind: TicketKind; appId?: number; subject: string; body: string }) => request<TicketDetail>('POST', '/api/support/tickets', body),

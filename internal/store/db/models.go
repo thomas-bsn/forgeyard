@@ -43,6 +43,7 @@ type App struct {
 	MovingFrom     int64
 	MovedAt        int64
 	Dockerfile     string
+	Kind           string
 }
 
 type AppEvent struct {
@@ -138,6 +139,16 @@ type Session struct {
 type Setting struct {
 	Key   string
 	Value string
+}
+
+type SshKey struct {
+	ID          int64
+	UserID      int64
+	Name        string
+	PublicKey   string
+	Fingerprint string
+	CreatedAt   int64
+	LastUsedAt  int64
 }
 
 type SupportMessage struct {

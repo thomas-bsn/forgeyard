@@ -1,6 +1,6 @@
 -- name: CreateApp :one
-INSERT INTO apps (name, owner_id, node_id, image, dockerfile, port, env_sealed, memory_mb, created_at, updated_at)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+INSERT INTO apps (name, owner_id, node_id, kind, image, dockerfile, port, env_sealed, memory_mb, created_at, updated_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 RETURNING *;
 
 -- name: GetApp :one
@@ -45,7 +45,7 @@ DELETE FROM apps WHERE id = ?;
 UPDATE nodes SET public_ip = ?, ingress_mode = ?, ingress_http_port = ? WHERE id = ? RETURNING *;
 
 -- name: AppExistsByName :one
-SELECT EXISTS (SELECT 1 FROM apps WHERE name = ?);
+SELECT EXISTS (SELECT 1 FROM apps WHERE name = ? AND kind = 'web');
 
 -- name: ListAppsByOwnerID :many
 SELECT * FROM apps WHERE owner_id = ? ORDER BY id;
@@ -95,3 +95,6 @@ UPDATE apps SET moving_from = ?, node_id = ?, moved_at = ?, updated_at = ? WHERE
 
 -- name: FinishMove :one
 UPDATE apps SET moving_from = 0 WHERE id = ? AND moving_from != 0 RETURNING *;
+
+-- name: GetAppByName :one
+SELECT * FROM apps WHERE name = ?;

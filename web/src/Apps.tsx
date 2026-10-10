@@ -1,6 +1,6 @@
 import { lazy, Suspense, useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react'
 import { api, errorMessage, type App, type AppEvent, type AppInput, type AppState, type AppUsage, type Container, type Node, type NodeChoice } from './api'
-import { AppLogo, AreaChart, formatBytes, LOGO_COLORS, Modal, since, Switch, upFor } from './ui'
+import { AppLogo, AreaChart, CopyField, formatBytes, LOGO_COLORS, Modal, since, Switch, upFor } from './ui'
 import { ImageCropper } from './Cropper'
 // xterm.js is large: it loads only when a terminal opens.
 const Terminal = lazy(() => import('./Terminal'))
@@ -607,7 +607,10 @@ function WithMenu({ item, admin, onChange, place, children }: { item: Item; admi
 
 /** View B: logo, name, owner, state and address. */
 function AppCard({ item: i, admin }: { item: Item; admin: boolean }) {
-  const address = i.app?.url?.replace(/^https?:\/\//, '') ?? (i.container?.ports.length ? i.container.ports.join(' · ') : '')
+  const address =
+    i.app?.kind === 'sandbox'
+      ? 'sandbox · accès SSH'
+      : (i.app?.url?.replace(/^https?:\/\//, '') ?? (i.container?.ports.length ? i.container.ports.join(' · ') : ''))
   return (
     <a href={itemHref(i)} className={`app-card ${i.tone === 'down' ? 'app-card-down' : ''} ${i.external ? 'app-card-external' : ''}`}>
       <span className="app-card-head">
@@ -674,7 +677,14 @@ function nodeChoiceLabel(c: NodeChoice): string {
   return `${c.name} · ${formatBytes(c.freeMemoryBytes)} libres · ${c.cpus} CPU · ${c.apps} app${c.apps > 1 ? 's' : ''}${c.recommended ? ' (recommandée)' : ''}`
 }
 
-type Source = 'image' | 'dockerfile'
+type Source = 'image' | 'dockerfile' | 'sandbox'
+
+// The systems a sandbox starts from in one click; any other image works too.
+const sandboxSystems = [
+  { image: 'debian:bookworm', label: 'Debian 12' },
+  { image: 'ubuntu:24.04', label: 'Ubuntu 24.04' },
+  { image: 'alpine:3.21', label: 'Alpine 3.21' },
+]
 
 const sourceIcons: Record<string, ReactNode> = {
   // A whale carrying containers.
@@ -706,7 +716,7 @@ const sourceIcons: Record<string, ReactNode> = {
 const sources: { key: Source | 'sandbox' | 'github'; label: string; soon?: boolean }[] = [
   { key: 'image', label: 'Image' },
   { key: 'dockerfile', label: 'Dockerfile' },
-  { key: 'sandbox', label: 'Sandbox', soon: true },
+  { key: 'sandbox', label: 'Sandbox' },
   { key: 'github', label: 'GitHub', soon: true },
 ]
 
@@ -757,7 +767,7 @@ function AppFormModal({
   onSubmit: (input: AppInput, logo?: string) => Promise<void>
   onClose: () => void
 }) {
-  const [source, setSource] = useState<Source>(initial?.dockerfile ? 'dockerfile' : 'image')
+  const [source, setSource] = useState<Source>(initial?.kind === 'sandbox' ? 'sandbox' : initial?.dockerfile ? 'dockerfile' : 'image')
   const [name, setName] = useState(initial?.name ?? '')
   const [image, setImage] = useState(initial?.dockerfile ? '' : (initial?.image ?? ''))
   const [dockerfile, setDockerfile] = useState(initial?.dockerfile ?? '')
@@ -776,6 +786,7 @@ function AppFormModal({
   }, [admin, initial])
   // The logo preview follows the image once typing pauses, not at every key (each name is looked up).
   const logoImage = source === 'dockerfile' ? dockerfileBase(dockerfile) : image
+  const sandbox = source === 'sandbox'
   const [settledImage, setSettledImage] = useState(logoImage)
   useEffect(() => {
     const t = setTimeout(() => setSettledImage(logoImage), 600)
@@ -788,7 +799,7 @@ function AppFormModal({
   const [portTouched, setPortTouched] = useState(!!initial)
   const [declared, setDeclared] = useState<{ image: string; ports: number[]; error?: string } | null>(null)
   useEffect(() => {
-    if (!settledImage.trim()) return
+    if (!settledImage.trim() || sandbox) return
     let live = true
     api.imagePorts(settledImage).then(
       (r) => live && setDeclared({ image: settledImage, ports: r.ports, error: r.error }),
@@ -797,7 +808,7 @@ function AppFormModal({
     return () => {
       live = false
     }
-  }, [settledImage])
+  }, [settledImage, sandbox])
   const exposed = source === 'dockerfile' ? dockerfileExposed(dockerfile) : []
   const fromImage = declared?.image === settledImage ? declared.ports : null
   const suggested = exposed.length ? exposed : (fromImage ?? [])
@@ -821,7 +832,8 @@ function AppFormModal({
       await onSubmit(
         {
           name: initial ? undefined : name,
-          image: source === 'image' ? image : '',
+          kind: initial ? undefined : sandbox ? 'sandbox' : 'web',
+          image: source === 'dockerfile' ? '' : image,
           dockerfile: source === 'dockerfile' ? dockerfile : '',
           port: Number(port),
           memoryMb: Number(memory),
@@ -837,7 +849,9 @@ function AppFormModal({
   }
 
   const shownName = initial?.name ?? (name || 'mon-app')
-  const address = initial?.url?.replace(/^https?:\/\//, '') ?? (domain ? `${shownName}.${domain}` : '')
+  const address = sandbox
+    ? (initial?.ssh ?? `ssh ${shownName}@… -p 2222`)
+    : (initial?.url?.replace(/^https?:\/\//, '') ?? (domain ? `${shownName}.${domain}` : ''))
   const node = initial ? initial.nodeName : choices.find((c) => c.id === nodeId)
   const setCount = env.filter((v) => v.key.trim()).length
 
@@ -913,7 +927,7 @@ function AppFormModal({
           </>
         )}
         <dt>Source</dt>
-        <dd>{source === 'dockerfile' ? 'construite' : 'téléchargée'}</dd>
+        <dd>{sandbox ? 'Linux, accès SSH' : source === 'dockerfile' ? 'construite' : 'téléchargée'}</dd>
       </dl>
       {overFree && (
         <p className="aside-note aside-warn">
@@ -943,8 +957,12 @@ function AppFormModal({
             role="radio"
             aria-checked={source === s.key}
             className={`source-chip ${source === s.key ? 'on' : ''}`}
-            disabled={s.soon || busy}
-            onClick={() => setSource(s.key as Source)}
+            // A sandbox stays one, an app stays one: the kind is set at creation.
+            disabled={s.soon || busy || (!!initial && (s.key === 'sandbox') !== (initial.kind === 'sandbox'))}
+            onClick={() => {
+              setSource(s.key as Source)
+              if (s.key === 'sandbox' && !image.trim()) setImage(sandboxSystems[0].image)
+            }}
           >
             {sourceIcons[s.key]}
             {s.label}
@@ -952,7 +970,24 @@ function AppFormModal({
           </button>
         ))}
       </div>
-      {source === 'image' ? (
+      {sandbox ? (
+        <div className="field">
+          <span>Système</span>
+          <div className="os-pick">
+            {sandboxSystems.map((o) => (
+              <button key={o.image} type="button" className={`os-chip ${image === o.image ? 'on' : ''}`} onClick={() => setImage(o.image)}>
+                <AppLogo url={hubLogoURL(o.image)} name={o.label} size={22} />
+                {o.label}
+              </button>
+            ))}
+          </div>
+          <input className="mono" aria-label="Image" value={image} onChange={(e) => setImage(e.target.value)} placeholder="debian:bookworm" required />
+          <small>
+            Une machine Linux qui tourne en continu, sans adresse web : on s’y connecte en SSH avec une clé de Mon profil › Clés SSH. Son /root est
+            gardé entre les redéploiements.
+          </small>
+        </div>
+      ) : source === 'image' ? (
         <label className="field">
           <span>Image</span>
           <input className="mono" value={image} onChange={(e) => setImage(e.target.value)} placeholder="nginx:alpine" required autoFocus={!!initial} />
@@ -972,35 +1007,37 @@ function AppFormModal({
             <input value={name} onChange={(e) => setName(e.target.value)} placeholder="mon-app" pattern="[a-z0-9]([a-z0-9\-]{0,30}[a-z0-9])?" title="a-z, 0-9 et -, sans tiret au début ni à la fin" required autoFocus />
           </label>
         )}
-        <label className="field">
-          <span>Port</span>
-          <input
-            type="number"
-            min={1}
-            max={65535}
-            value={port}
-            onChange={(e) => {
-              setPort(e.target.value)
-              setPortTouched(true)
-            }}
-            required
-            title="Le port sur lequel l’app écoute dans son conteneur"
-          />
-          {suggested.length > 0 && suggested.includes(Number(port)) ? (
-            <small>{exposed.length ? 'Du Dockerfile ✓' : 'Lu dans l’image ✓'}</small>
-          ) : suggested.length > 0 ? (
-            <small>
-              {exposed.length ? 'Le Dockerfile indique' : 'L’image indique'}{' '}
-              {suggested.map((p) => (
-                <button key={p} type="button" className="link-button" onClick={() => setPort(String(p))}>
-                  {p}
-                </button>
-              ))}
-            </small>
-          ) : (
-            fromImage && <small>{declared?.error ? `Port introuvable : ${declared.error}.` : 'L’image n’indique pas de port : voir sa doc.'}</small>
-          )}
-        </label>
+        {!sandbox && (
+          <label className="field">
+            <span>Port</span>
+            <input
+              type="number"
+              min={1}
+              max={65535}
+              value={port}
+              onChange={(e) => {
+                setPort(e.target.value)
+                setPortTouched(true)
+              }}
+              required
+              title="Le port sur lequel l’app écoute dans son conteneur"
+            />
+            {suggested.length > 0 && suggested.includes(Number(port)) ? (
+              <small>{exposed.length ? 'Du Dockerfile ✓' : 'Lu dans l’image ✓'}</small>
+            ) : suggested.length > 0 ? (
+              <small>
+                {exposed.length ? 'Le Dockerfile indique' : 'L’image indique'}{' '}
+                {suggested.map((p) => (
+                  <button key={p} type="button" className="link-button" onClick={() => setPort(String(p))}>
+                    {p}
+                  </button>
+                ))}
+              </small>
+            ) : (
+              fromImage && <small>{declared?.error ? `Port introuvable : ${declared.error}.` : 'L’image n’indique pas de port : voir sa doc.'}</small>
+            )}
+          </label>
+        )}
         <label className="field">
           <span>Mémoire (Mo)</span>
           <input type="number" min={64} max={16384} step={64} value={memory} onChange={(e) => setMemory(e.target.value)} required />
@@ -1112,7 +1149,15 @@ function AppDetail({ app, admin, nodes, onChange, go }: { app: App; admin: boole
           </div>
         </div>
 
-        {app.url ? (
+        {app.kind === 'sandbox' ? (
+          <div className="ssh-box">
+            <span className="muted">Se connecter en SSH</span>
+            {app.ssh ? <CopyField value={app.ssh} /> : <span>Passerelle SSH désactivée : utilisez l’onglet Terminal.</span>}
+            <small className="muted">
+              Avec une clé de <a href="#/profile/ssh">Mon profil › Clés SSH</a>. Ou l’onglet Terminal, ici même.
+            </small>
+          </div>
+        ) : app.url ? (
           <a className="btn btn-primary btn-block" href={app.url} target="_blank" rel="noopener noreferrer">
             Ouvrir {app.url.replace(/^https?:\/\//, '')}
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -1154,7 +1199,7 @@ function AppDetail({ app, admin, nodes, onChange, go }: { app: App; admin: boole
           </div>
         ) : null}
         {/* The app listens elsewhere than its setting says: visitors get Bad Gateway until the port is fixed. */}
-        {app.state === 'running' && app.listeningPorts?.length && !app.listeningPorts.includes(app.port) ? (
+        {app.kind !== 'sandbox' && app.state === 'running' && app.listeningPorts?.length && !app.listeningPorts.includes(app.port) ? (
           <div className="banner banner-warn">
             <span className="dot dot-warn" />
             <span>
@@ -1207,8 +1252,20 @@ function AppDetail({ app, admin, nodes, onChange, go }: { app: App; admin: boole
         <dl className="kv">
           <dt>Image</dt>
           <dd className="mono">{app.image}</dd>
-          <dt>Port</dt>
-          <dd>{app.port}</dd>
+          {app.kind !== 'sandbox' && (
+            <>
+              <dt>Port</dt>
+              <dd>{app.port}</dd>
+            </>
+          )}
+          {app.kind !== 'sandbox' && app.ssh && (
+            <>
+              <dt>SSH</dt>
+              <dd className="mono" title="Avec une clé de Mon profil › Clés SSH">
+                {app.ssh}
+              </dd>
+            </>
+          )}
           <dt>Mémoire</dt>
           <dd>{app.memoryMb} Mo max.</dd>
           <dt>Propriétaire</dt>

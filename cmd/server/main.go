@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strconv"
 	"syscall"
 	"time"
 
@@ -118,12 +119,26 @@ func run(addr, agentAddr, dataDir string, logger *slog.Logger) error {
 			"  Ouvrez l'interface web et saisissez ce token de setup :\n\n    %s\n\n", setupToken)
 	}
 
+	// The SSH gateway: FORGEYARD_SSH_ADDR is where it listens ("off" turns it off), FORGEYARD_SSH_PORT and
+	// FORGEYARD_SSH_HOST what ssh commands show, when the box forwards another port or a DNS-only name.
+	sshAddr := envOr("FORGEYARD_SSH_ADDR", ":2222")
+	var sshListener net.Listener
+	sshPort := 0
+	if sshAddr != "off" {
+		if sshListener, err = net.Listen("tcp", sshAddr); err != nil {
+			return fmt.Errorf("ssh gateway: %w", err)
+		}
+		_, p, _ := net.SplitHostPort(sshListener.Addr().String())
+		sshPort, _ = strconv.Atoi(envOr("FORGEYARD_SSH_PORT", p))
+	}
 	apiServer := api.NewServer(api.Deps{
 		Store: st, Logger: logger, Secrets: box, CA: ca, Nodes: hub, AgentPort: agentPort,
 		TrustedProxies: trustedProxies,
 		AgentImage:     envOr("FORGEYARD_AGENT_IMAGE", "ghcr.io/thomas-bsn/forgeyard-agent:latest"),
 		JoinDir:        os.Getenv("FORGEYARD_JOIN_DIR"),
 		LocalServerURL: envOr("FORGEYARD_LOCAL_SERVER_URL", "http://forgeyard:8080"),
+		SSHPort:        sshPort,
+		SSHHost:        os.Getenv("FORGEYARD_SSH_HOST"),
 	}, setupToken)
 	srv := &http.Server{
 		Addr:              addr,
@@ -149,6 +164,14 @@ func run(addr, agentAddr, dataDir string, logger *slog.Logger) error {
 
 	go cleanExpired(ctx, st, logger)
 	go apiServer.AgentUpdates(ctx)
+	if sshListener != nil {
+		hostKey, err := api.LoadSSHHostKey(filepath.Join(dataDir, "ssh_host_ed25519_key"))
+		if err != nil {
+			return fmt.Errorf("ssh host key: %w", err)
+		}
+		logger.Info("ssh gateway listening", "addr", sshListener.Addr().String())
+		go apiServer.ServeSSH(ctx, sshListener, hostKey)
+	}
 
 	errc := make(chan error, 2)
 	go func() {

@@ -12,7 +12,7 @@ docker logs forgeyard   # token de setup
 
 | Service | Rôle | Ports et volumes |
 |---|---|---|
-| `forgeyard` | le server | ports `8080` (web) et `8081` (agents) ; volumes `forgeyard-data:/data`, `forgeyard-join:/join` |
+| `forgeyard` | le server | ports `8080` (web), `8081` (agents) et `2222` (passerelle SSH) ; volumes `forgeyard-data:/data`, `forgeyard-join:/join` |
 | `agent` | l'agent de cette machine | socket Docker, `/:/host:ro` (pour mesurer le disque), `forgeyard-agent:/state`, `forgeyard-join:/join` |
 
 L'agent ne fait rien tant que la machine n'est pas activée comme node : il attend un fichier dans le volume partagé `/join` (voir [nodes/join](../nodes/join.md#la-machine-de-forgeyard-node-local)).
@@ -67,9 +67,12 @@ Ne modifiez ni `docker-compose.yml` ni le `Dockerfile` : copiez-les dans des fic
 | `FORGEYARD_SECRET_KEY` | fichier `data/secret.key` | Clé de chiffrement des secrets (32 octets en base64) |
 | `FORGEYARD_JOIN_DIR` | vide (`/join` dans Compose) | Dossier partagé avec l'agent local ; vide = pas de node local |
 | `FORGEYARD_LOCAL_SERVER_URL` | `http://forgeyard:8080` | Adresse du server vue par l'agent local |
-| `FORGEYARD_AGENT_IMAGE` | `ghcr.io/thomas-bsn/forgeyard-agent:latest` | Image affichée dans les commandes d'ajout de node |
+| `FORGEYARD_AGENT_IMAGE` | `ghcr.io/thomas-bsn/forgeyard-agent:latest` | Image affichée dans les commandes d'ajout de node ; sa version `:sha-<commit>` sert aux mises à jour des agents |
+| `FORGEYARD_SSH_ADDR` | `:2222` | Passerelle SSH vers les apps et sandboxes ; `off` la coupe |
+| `FORGEYARD_SSH_PORT` | le port d'écoute | Port affiché dans les commandes `ssh`, si la box redirige un autre port |
+| `FORGEYARD_SSH_HOST` | IP publique de l'instance | Hôte affiché dans les commandes `ssh` (un nom en DNS seul, pas derrière le proxy Cloudflare) |
 
-Contenu du dossier de données : `forgeyard.db` (SQLite), `secret.key`, `ca.key` et `ca.crt` (autorité de certification des agents). Sauvegardez-le en entier : sans `secret.key`, les secrets enregistrés sont illisibles.
+Contenu du dossier de données : `forgeyard.db` (SQLite), `secret.key`, `ca.key` et `ca.crt` (autorité de certification des agents), `ssh_host_ed25519_key` (clé d'hôte de la passerelle SSH). Sauvegardez-le en entier : sans `secret.key`, les secrets enregistrés sont illisibles.
 
 ## Images publiées
 

@@ -72,7 +72,7 @@ func (s *Server) serveTerminal(w http.ResponseWriter, r *http.Request, nodeID, a
 	defer conn.CloseNow()
 	conn.SetReadLimit(1 << 20)
 
-	sess, err := s.nodes.Exec(nodeID, appID, containerID, uint32(cols), uint32(rows))
+	sess, err := s.nodes.Exec(nodeID, appID, containerID, "", uint32(cols), uint32(rows))
 	if errors.Is(err, nodes.ErrOffline) {
 		s.terminalExit(r.Context(), conn, 0, "le node de ce conteneur est hors ligne")
 		return

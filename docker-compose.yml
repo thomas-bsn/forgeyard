@@ -7,6 +7,7 @@ services:
     ports:
       - "8080:8080" # web UI and API
       - "8081:8081" # agents
+      - "2222:2222" # SSH gateway: ssh <app>@<this machine> -p 2222
     volumes:
       - forgeyard-data:/data
       - forgeyard-join:/join

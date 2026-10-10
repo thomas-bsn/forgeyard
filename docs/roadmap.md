@@ -19,7 +19,8 @@
 - [x] Ajout de machines (commande `docker run` ou binaire)
 - [x] Gestion des comptes : liste, changement de rôle, suspension des apps, désactivation, suppression
 - [ ] Création directe de comptes, transfert du superadmin
-- [ ] Clés SSH et jetons d'API (onglets « bientôt » du profil)
+- [x] Clés SSH dans le profil
+- [ ] Jetons d'API (onglet « bientôt » du profil)
 - [ ] Bot Discord : messages privés, photos et bannières à jour sans reconnexion
 - [x] Notifications Discord (webhook) : salon des admins, salon support facultatif et webhook personnel
 - [x] Onglet Support : demandes d'aide aux admins (général, app, infra) avec fil de réponses
@@ -40,7 +41,10 @@
 
 ## v0.4 : confort
 - [x] Terminal web dans les conteneurs
-- [ ] Passerelle SSH (clés dans le profil)
+- [x] Passerelle SSH (port 2222) et apps Sandbox
+- [x] Agents mis à jour tout seuls vers la version du server
+- [x] Détection du port sur lequel une app écoute vraiment
+- [ ] SFTP / scp et redirection de ports par la passerelle SSH
 - [ ] Bases de données en un clic
 - [ ] Quotas utilisateurs
 - [ ] SMTP et emails

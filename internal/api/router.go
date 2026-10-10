@@ -40,6 +40,10 @@ type Deps struct {
 	JoinDir string
 	// LocalServerURL is how that agent reaches the server, e.g. http://forgeyard:8080.
 	LocalServerURL string
+	// SSHPort is the SSH gateway's public port (0 without a gateway), SSHHost the host shown in ssh
+	// commands (empty: the instance's public IP, else Forgeyard's own host).
+	SSHPort int
+	SSHHost string
 }
 
 // Server holds the dependencies of the HTTP handlers.
@@ -57,6 +61,8 @@ type Server struct {
 	agentImage     string
 	joinDir        string
 	localServerURL string
+	sshPort        int
+	sshHost        string
 
 	// Replaced in tests.
 	newDNSProvider func(name string, creds map[string]string) (dns.Provider, error)
@@ -90,6 +96,8 @@ func NewServer(d Deps, setupToken string) *Server {
 		agentImage:       d.AgentImage,
 		joinDir:          d.JoinDir,
 		localServerURL:   d.LocalServerURL,
+		sshPort:          d.SSHPort,
+		sshHost:          d.SSHHost,
 		limiter:          auth.NewLoginLimiter(10, 15*time.Minute),
 		discord:          discord.NewClient(),
 		secrets:          d.Secrets,
@@ -186,6 +194,9 @@ func (s *Server) Handler(webFS fs.FS) http.Handler {
 	mux.HandleFunc("PUT /api/admin/settings/notifications", s.requireAdmin(s.handlePutNotifySettings))
 	mux.HandleFunc("POST /api/admin/settings/notifications/test", s.requireAdmin(s.handleTestAdminNotify))
 	mux.HandleFunc("POST /api/admin/settings/notifications/test-support", s.requireAdmin(s.handleTestSupportNotify))
+	mux.HandleFunc("GET /api/me/ssh-keys", s.requireUser(s.handleListSSHKeys))
+	mux.HandleFunc("POST /api/me/ssh-keys", s.requireUser(s.handleAddSSHKey))
+	mux.HandleFunc("DELETE /api/me/ssh-keys/{id}", s.requireUser(s.handleDeleteSSHKey))
 	mux.HandleFunc("PUT /api/me/notifications", s.requireUser(s.handlePutMyWebhook))
 	mux.HandleFunc("POST /api/me/notifications/test", s.requireUser(s.handleTestMyWebhook))
 	mux.HandleFunc("GET /api/admin/users", s.requireAdmin(s.handleListUsers))

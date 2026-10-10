@@ -8,9 +8,26 @@ La fenêtre de création (et de configuration) a le formulaire à gauche et, à 
 
 - **Image Docker** : une image publiée (Docker Hub, ghcr.io…), téléchargée par le node.
 - **Dockerfile** : collé dans le formulaire (64 Ko max., avec une ligne `FROM`), le node construit l'image (état « Construction de l'image… ») avec `pull=1`, pour reprendre les mises à jour de l'image de base. Le Dockerfile est seul, sans autres fichiers : `COPY` ne trouve rien, le code se récupère avec `RUN git clone` ou `ADD` d'une URL. L'image est nommée `forgeyard/<nom>:<empreinte du Dockerfile>` : un nouveau Dockerfile donne une nouvelle image, déployée sans coupure, et l'agent supprime l'ancienne une fois remplacée (et celle d'une app supprimée). Une construction ratée affiche l'erreur et ses dernières lignes. Le logo automatique est celui de l'image du premier `FROM`.
-- **Sandbox** et **GitHub** : bientôt.
+- **Sandbox** : une machine Linux sans adresse web, à laquelle on se connecte en SSH (voir [Sandbox et SSH](#sandbox-et-ssh)).
+- **GitHub** : bientôt.
 
 Code : `internal/api/apps.go`, `web/src/Apps.tsx`.
+
+## Sandbox et SSH
+
+Une **sandbox** part d'une image Linux ordinaire (Debian 12 par défaut, Ubuntu 24.04, Alpine 3.21 en un clic, ou n'importe quelle image avec un `sh`) et tourne en continu : l'agent remplace sa commande par une boucle d'attente qui s'arrête aussitôt sur `docker stop`. Elle n'a ni port, ni sous-domaine, ni enregistrement DNS, ni route Traefik. Son `/root` est sur un volume du node (`forgeyard-sandbox-<id>`), gardé entre les redéploiements et supprimé avec l'app ; il ne suit pas un changement de node. Le type (app ou sandbox) se choisit à la création.
+
+On s'y connecte par la **passerelle SSH** de Forgeyard, qui sert aussi pour les apps :
+
+```bash
+ssh monapp@<ip de Forgeyard> -p 2222            # un shell
+ssh monapp@<ip de Forgeyard> -p 2222 uname -a   # une commande, avec son code de sortie
+```
+
+- La connexion se termine sur le server (port `2222`), qui l'envoie à l'agent du node par sa connexion habituelle, comme le terminal web : aucun serveur SSH dans le conteneur, un seul port à ouvrir sur la box (vers la machine de Forgeyard), et ça marche pour tous les nodes, même derrière un NAT.
+- Le nom d'utilisateur est le **nom de l'app**. Sont acceptées les clés de son propriétaire (et des admins), ajoutées dans Mon profil › Clés SSH (ed25519, ECDSA, RSA de 2048 bits ou plus ; une clé n'appartient qu'à un compte). La clé d'hôte (`ssh_host_ed25519_key`, dans le dossier de données) est créée au premier démarrage.
+- La page de l'app donne la commande, avec l'IP publique de l'instance (Réglages › Domaine) ou `FORGEYARD_SSH_HOST` : un domaine derrière le proxy Cloudflare ne laisse pas passer SSH.
+- Pas encore : SFTP/`scp`, la redirection de ports. Une commande passe par un terminal (sa sortie arrive avec des `\r\n`). Ce qui est tapé avant que le shell soit prêt est gardé (64 Ko).
 
 ## Logo
 
