@@ -69,6 +69,7 @@ type Server struct {
 	lookupHost     func(ctx context.Context, host string) ([]string, error)
 	httpClient     *http.Client // for Docker Hub logos
 	registryClient *http.Client // for the ports images expose
+	probeClient    *http.Client // requests an app's address, as a visitor would
 
 	mu          sync.Mutex
 	setupToken  string                // empty once setup is completed
@@ -114,6 +115,9 @@ func NewServer(d Deps, setupToken string) *Server {
 		lookupHost:     net.DefaultResolver.LookupHost,
 		httpClient:     &http.Client{Timeout: 10 * time.Second},
 		registryClient: registry.PublicClient(),
+		probeClient: &http.Client{Timeout: 10 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error {
+			return http.ErrUseLastResponse // the app's own answer, not where it sends
+		}},
 	}
 	d.Nodes.Desired = s.desiredState
 	d.Nodes.StateChanged = s.onAppStateChange
@@ -173,6 +177,7 @@ func (s *Server) Handler(webFS fs.FS) http.Handler {
 	mux.HandleFunc("GET /api/apps", s.requireUser(s.handleListApps))
 	mux.HandleFunc("GET /api/admin/nodes/choices", s.requireAdmin(s.handleNodeChoices))
 	mux.HandleFunc("POST /api/admin/nodes/{id}/update-agent", s.requireAdmin(s.handleUpdateAgent))
+	mux.HandleFunc("GET /api/admin/topology", s.requireAdmin(s.handleTopology))
 	mux.HandleFunc("GET /api/admin/settings/agents", s.requireAdmin(s.handleGetAgentSettings))
 	mux.HandleFunc("PUT /api/admin/settings/agents", s.requireAdmin(s.handlePutAgentSettings))
 	mux.HandleFunc("POST /api/apps", s.requireUser(s.handleCreateApp))
@@ -182,6 +187,8 @@ func (s *Server) Handler(webFS fs.FS) http.Handler {
 	mux.HandleFunc("DELETE /api/apps/{id}", s.requireUser(s.handleDeleteApp))
 	mux.HandleFunc("GET /api/apps/{id}/logs", s.requireUser(s.handleAppLogs))
 	mux.HandleFunc("GET /api/apps/{id}/events", s.requireUser(s.handleAppEvents))
+	mux.HandleFunc("GET /api/apps/{id}/network", s.requireUser(s.handleAppNetwork))
+	mux.HandleFunc("POST /api/apps/{id}/network/test", s.requireUser(s.handleAppProbe))
 	mux.HandleFunc("GET /api/apps/{id}/terminal", s.requireUser(s.handleAppTerminal))
 	mux.HandleFunc("GET /api/admin/nodes/{node}/containers/{container}/terminal", s.requireSuperadmin(s.handleContainerTerminal))
 	mux.HandleFunc("GET /api/apps/{id}/usage", s.requireUser(s.handleAppUsage))

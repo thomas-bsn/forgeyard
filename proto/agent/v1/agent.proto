@@ -19,7 +19,50 @@ message AgentMessage {
     ExternalContainers external_containers = 5;
     ExecOutput exec_output = 6;
     UpdateFailed update_failed = 7;
+    Topology topology = 8;
   }
+}
+
+// Topology is how the node's containers are wired: its Docker networks, who sits on them with which
+// address, and which ports they publish and listen on. Sent every few seconds, for the topology views.
+message Topology {
+  repeated DockerNetwork networks = 1;
+  repeated TopoContainer containers = 2;
+}
+
+message DockerNetwork {
+  string id = 1;
+  string name = 2;
+  string driver = 3; // bridge, host, overlay…
+  string subnet = 4;
+  bool internal = 5; // no way out of the node
+}
+
+message TopoContainer {
+  string id = 1;
+  string name = 2;
+  string image = 3;
+  string state = 4;
+  // role: app (a Forgeyard app, app_id set), traefik, server, agent or external.
+  string role = 5;
+  int64 app_id = 6;
+  repeated NetworkEndpoint endpoints = 7;
+  repeated PublishedPort published = 8;
+  repeated int32 listening = 9; // TCP ports it listens on (not loopback), while running
+  string compose_project = 10;
+}
+
+message NetworkEndpoint {
+  string network = 1;
+  string ipv4 = 2;
+  repeated string aliases = 3; // names the other containers of the network reach it by
+}
+
+message PublishedPort {
+  int32 container_port = 1;
+  int32 host_port = 2;
+  string protocol = 3;
+  string host_ip = 4;
 }
 
 // UpdateFailed tells why the agent could not update itself; it keeps running its current version.

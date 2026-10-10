@@ -3730,3 +3730,609 @@ a.link-btn {
   box-shadow: inset 0 0 0 1px var(--accent);
   background: color-mix(in srgb, var(--accent) 12%, var(--card));
 }
+
+/* --- An app's Réseau tab: the path of a request, checked step by step -------------------------------- */
+
+.network-tab {
+  display: grid;
+  gap: 16px;
+}
+
+.path-panel {
+  gap: 14px;
+}
+
+.path-panel-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px 12px;
+}
+
+.path-panel-head .muted {
+  font-size: 0.85rem;
+  overflow-wrap: anywhere;
+}
+
+.path-panel-head .btn {
+  margin-left: auto;
+}
+
+.request-path {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: stretch;
+  gap: 10px 0;
+}
+
+.path-cell {
+  display: flex;
+  align-items: stretch;
+  flex: 1 1 130px;
+  min-width: 0;
+}
+
+.path-link {
+  flex: 0 0 18px;
+  align-self: center;
+  height: 2px;
+  margin: 0 2px;
+  background: var(--border);
+  position: relative;
+}
+
+.path-link::after {
+  content: '';
+  position: absolute;
+  right: -2px;
+  top: -4px;
+  border: 5px solid transparent;
+  border-left-color: var(--border);
+}
+
+.path-link-error {
+  background: repeating-linear-gradient(90deg, var(--down) 0 4px, transparent 4px 7px);
+}
+
+.path-link-error::after {
+  border-left-color: var(--down);
+}
+
+.path-step {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+  align-content: start;
+  gap: 6px;
+  padding: 11px 12px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+}
+
+.path-step.path-error {
+  border-color: var(--down);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--down) 18%, transparent);
+}
+
+.path-step.path-warn {
+  border-color: var(--warn);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--warn) 18%, transparent);
+}
+
+.path-step-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.85rem;
+  line-height: 1.2;
+}
+
+.path-icon {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 8px;
+  background: var(--card-hover);
+  color: var(--muted);
+}
+
+.path-error .path-icon {
+  color: var(--down);
+  background: color-mix(in srgb, var(--down) 14%, transparent);
+}
+
+.path-detail {
+  font-size: 0.78rem;
+  overflow-wrap: anywhere;
+}
+
+.path-note {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.8rem;
+}
+
+.probe {
+  margin: 0;
+  font-size: 0.9rem;
+}
+
+.path-allgood {
+  margin: 0;
+}
+
+.issue {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  border: 1px solid color-mix(in srgb, var(--down) 40%, transparent);
+  background: color-mix(in srgb, var(--down) 10%, transparent);
+}
+
+.issue-warn {
+  border-color: color-mix(in srgb, var(--warn) 40%, transparent);
+  background: color-mix(in srgb, var(--warn) 10%, transparent);
+}
+
+.issue-text {
+  display: grid;
+  flex: 1 1 260px;
+  gap: 2px;
+  font-size: 0.9rem;
+}
+
+.network-facts {
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 24px;
+}
+
+.network-facts-col {
+  display: grid;
+  align-content: start;
+  gap: 8px;
+}
+
+.net-line {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  font-size: 0.85rem;
+}
+
+/* --- Nodes › Topologie --------------------------------------------------------------------------------- */
+
+.topo {
+  display: grid;
+  gap: 12px;
+}
+
+.topo-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.chip-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--card);
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+
+.chip-toggle:has(input:checked) {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, var(--card));
+}
+
+.topo-hint {
+  font-size: 0.8rem;
+}
+
+.topo-issues {
+  margin-left: auto;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--down);
+  background: color-mix(in srgb, var(--down) 12%, transparent);
+}
+
+.topo-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 300px;
+  gap: 16px;
+  align-items: start;
+}
+
+@media (max-width: 980px) {
+  .topo-body {
+    grid-template-columns: 1fr;
+  }
+}
+
+.topo-canvas {
+  position: relative;
+  display: grid;
+  grid-template-columns: 190px minmax(0, 1fr);
+  gap: 28px;
+  padding: 18px;
+}
+
+@media (max-width: 720px) {
+  .topo-canvas {
+    grid-template-columns: 1fr;
+  }
+}
+
+.topo-lines {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  overflow: visible;
+}
+
+.topo-line {
+  fill: none;
+  stroke-width: 2;
+  opacity: 0.85;
+}
+
+.topo-line-up {
+  stroke: var(--up);
+}
+
+.topo-line-warn {
+  stroke: var(--warn);
+}
+
+.topo-line-down {
+  stroke: var(--down);
+  stroke-dasharray: 5 4;
+}
+
+.topo-arrow-up {
+  fill: var(--up);
+}
+
+.topo-arrow-warn {
+  fill: var(--warn);
+}
+
+.topo-arrow-down {
+  fill: var(--down);
+}
+
+.topo-entry {
+  display: grid;
+  align-content: start;
+  gap: 10px;
+}
+
+.topo-col-label {
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.topo-card {
+  display: grid;
+  gap: 4px;
+  padding: 12px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  font-size: 0.85rem;
+  overflow-wrap: anywhere;
+}
+
+.topo-card svg {
+  color: var(--muted);
+}
+
+.topo-internet {
+  margin-bottom: 14px;
+}
+
+.topo-nodes {
+  display: grid;
+  gap: 16px;
+  min-width: 0;
+}
+
+.topo-node {
+  display: grid;
+  gap: 10px;
+  padding: 14px;
+  border-radius: 16px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+}
+
+.topo-node-off {
+  opacity: 0.6;
+}
+
+.topo-node-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px 10px;
+}
+
+.topo-node-head .muted {
+  font-size: 0.82rem;
+}
+
+.topo-zone {
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+  border-radius: 12px;
+  border: 1px dashed color-mix(in srgb, var(--accent) 45%, transparent);
+  background: color-mix(in srgb, var(--accent) 5%, transparent);
+}
+
+.topo-zone-host {
+  border-color: var(--border);
+  background: none;
+}
+
+.topo-zone-label {
+  font-size: 0.75rem;
+  color: var(--accent);
+}
+
+.topo-zone-host .topo-zone-label {
+  color: var(--muted);
+}
+
+.topo-chips {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+  gap: 8px;
+}
+
+.topo-chip {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+  padding: 9px 11px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--card);
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: opacity 0.15s;
+}
+
+.topo-chip:hover {
+  border-color: var(--accent);
+}
+
+.topo-chip.on {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 25%, transparent);
+}
+
+.topo-chip.dim {
+  opacity: 0.35;
+}
+
+.topo-chip-down {
+  border-color: color-mix(in srgb, var(--down) 60%, var(--border));
+}
+
+.topo-chip-traefik {
+  justify-self: start;
+  min-width: 180px;
+  border-color: color-mix(in srgb, var(--accent) 50%, var(--border));
+}
+
+.topo-chip-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  font-size: 0.85rem;
+}
+
+.topo-chip-head strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.topo-chip-line {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.72rem;
+  color: var(--muted);
+}
+
+.topo-chip-down .topo-chip-line {
+  color: var(--down);
+}
+
+.topo-role {
+  flex: none;
+  padding: 0 6px;
+  border-radius: 6px;
+  font-size: 0.68rem;
+  font-weight: 600;
+  color: var(--muted);
+  background: var(--card-hover);
+}
+
+.topo-bang {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  margin-left: auto;
+  border-radius: 50%;
+  font-size: 0.7rem;
+  font-weight: 800;
+  color: #fff;
+  background: var(--down);
+}
+
+.topo-inspector {
+  position: sticky;
+  top: 16px;
+  gap: 10px;
+  padding: 18px;
+}
+
+.topo-inspector-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.topo-inspector-sub {
+  margin-top: 6px;
+  font-size: 0.85rem;
+}
+
+.topo-image {
+  font-size: 0.78rem;
+  overflow-wrap: anywhere;
+}
+
+.topo-problem {
+  display: grid;
+  gap: 2px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  font-size: 0.82rem;
+  background: color-mix(in srgb, var(--down) 10%, transparent);
+}
+
+.path-list {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 0.82rem;
+}
+
+.path-list li {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.topo-legend {
+  margin: 0;
+  font-size: 0.8rem;
+}
+
+/* --- Nodes › Tableau --- */
+
+.topo-table-wrap {
+  padding: 0;
+  overflow-x: auto;
+}
+
+.topo-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+}
+
+.topo-table th {
+  padding: 10px 12px;
+  text-align: left;
+  font-size: 0.78rem;
+  color: var(--muted);
+  background: var(--bg);
+  white-space: nowrap;
+}
+
+.topo-table td {
+  padding: 9px 12px;
+  border-top: 1px solid var(--border);
+  vertical-align: top;
+}
+
+.topo-table td.mono {
+  font-size: 0.8rem;
+}
+
+.topo-table-node td {
+  padding-top: 14px;
+  font-weight: 700;
+  background: color-mix(in srgb, var(--bg) 60%, transparent);
+}
+
+.topo-row-issue {
+  background: color-mix(in srgb, var(--down) 7%, transparent);
+}
+
+.net-chip {
+  display: inline-flex;
+  gap: 6px;
+  padding: 2px 8px;
+  border-radius: 8px;
+  font-size: 0.75rem;
+  color: var(--muted);
+  background: var(--card-hover);
+}
+
+.net-chip b {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.chips-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.search-input {
+  min-width: 240px;
+  padding: 7px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--card);
+  color: var(--text);
+  font: inherit;
+  font-size: 0.9rem;
+}
+
+.topo-table .dot,
+.path-list .dot {
+  display: inline-block;
+  flex: none;
+  width: 8px;
+  height: 8px;
+  vertical-align: middle;
+}
+
+.path-list .dot:not([class*='dot-']) {
+  background: var(--border);
+}

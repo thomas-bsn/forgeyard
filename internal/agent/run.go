@@ -131,6 +131,17 @@ func session(ctx context.Context, client agentpb.AgentServiceClient, dc *docker.
 			ExternalContainers: &agentpb.ExternalContainers{Containers: list},
 		}})
 	}
+	sendTopology := func() {
+		if dc == nil {
+			return
+		}
+		t, err := topology(ctx, dc)
+		if err != nil {
+			logger.Warn("describing the node's networks failed", "err", err)
+			return
+		}
+		send(&agentpb.AgentMessage{Msg: &agentpb.AgentMessage_Topology{Topology: t}})
+	}
 
 	go func() {
 		metrics := time.NewTicker(metricsInterval)
@@ -140,6 +151,7 @@ func session(ctx context.Context, client agentpb.AgentServiceClient, dc *docker.
 		defer statuses.Stop()
 		defer externalsTick.Stop()
 		sendExternals()
+		sendTopology()
 		send(&agentpb.AgentMessage{Msg: &agentpb.AgentMessage_Metrics{Metrics: sampleMetrics(ctx, dc)}})
 		for {
 			select {
@@ -149,6 +161,7 @@ func session(ctx context.Context, client agentpb.AgentServiceClient, dc *docker.
 				send(&agentpb.AgentMessage{Msg: &agentpb.AgentMessage_Metrics{Metrics: sampleMetrics(ctx, dc)}})
 			case <-externalsTick.C:
 				sendExternals()
+				sendTopology()
 			case <-statuses.C:
 				if rec != nil {
 					send(&agentpb.AgentMessage{Msg: &agentpb.AgentMessage_AppStatuses{

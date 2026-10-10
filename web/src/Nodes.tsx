@@ -1,8 +1,28 @@
 import { useEffect, useState, type FormEvent, type ReactNode } from 'react'
 import { api, errorMessage, type App, type Container, type JoinCommand, type Node } from './api'
 import { CopyField, formatBytes, Modal, ProxySnippet, since, Switch } from './ui'
+import { TopologyMap, TopologyTable } from './Network'
 
 const POLL_MS = 5000
+
+type View = 'cards' | 'map' | 'table'
+
+const views: [View, string][] = [
+  ['cards', 'Cartes'],
+  ['map', 'Topologie'],
+  ['table', 'Tableau'],
+]
+
+// The chosen view is remembered by the browser.
+function storedView(): View {
+  try {
+    const v = localStorage.getItem('forgeyard.nodesView')
+    if (v === 'map' || v === 'table') return v
+  } catch {
+    // storage blocked: the cards
+  }
+  return 'cards'
+}
 
 export default function Nodes({ localSupported }: { localSupported: boolean }) {
   const [nodes, setNodes] = useState<Node[] | null>(null)
@@ -12,6 +32,15 @@ export default function Nodes({ localSupported }: { localSupported: boolean }) {
   const [adding, setAdding] = useState(false)
   const [join, setJoin] = useState<JoinCommand | null>(null)
   const [network, setNetwork] = useState<Node | null>(null)
+  const [view, setView] = useState<View>(storedView)
+  function pickView(v: View) {
+    setView(v)
+    try {
+      localStorage.setItem('forgeyard.nodesView', v)
+    } catch {
+      // not remembered
+    }
+  }
   const [agents, setAgents] = useState<{ autoUpdate: boolean; serverVersion: string } | null>(null)
   useEffect(() => {
     api.agentSettings().then(setAgents, () => {})
@@ -47,6 +76,13 @@ export default function Nodes({ localSupported }: { localSupported: boolean }) {
             {online} en ligne sur {joined}
           </span>
         </h1>
+        <div className="segmented" role="tablist" aria-label="Vue des nodes">
+          {views.map(([v, label]) => (
+            <button key={v} type="button" role="tab" aria-selected={view === v} className={view === v ? 'on' : ''} onClick={() => pickView(v)}>
+              {label}
+            </button>
+          ))}
+        </div>
         {agents && (
           <label className="toolbar-switch" title={`Les agents suivent la version du serveur (${shortVersion(agents.serverVersion)})`}>
             <span className="muted">Mise à jour auto des agents</span>
@@ -68,7 +104,9 @@ export default function Nodes({ localSupported }: { localSupported: boolean }) {
           <span>Un node est une machine qui fait tourner les apps. Ajoutez-en un pour commencer.</span>
         </div>
       )}
-      {nodes && nodes.length > 0 && (
+      {view === 'map' && nodes && nodes.length > 0 && <TopologyMap />}
+      {view === 'table' && nodes && nodes.length > 0 && <TopologyTable />}
+      {view === 'cards' && nodes && nodes.length > 0 && (
         <div className="node-grid">
           {nodes.map((n) => (
             <NodeCard

@@ -47,6 +47,71 @@ export type NotifySettings = {
   events: { requests: boolean; support: boolean; crashes: boolean; nodes: boolean }
 }
 
+export type PathStep = {
+  key: 'visitor' | 'dns' | 'entry' | 'relay' | 'traefik' | 'container' | 'gateway' | 'node'
+  title: string
+  detail: string
+  state: 'ok' | 'warn' | 'error' | 'info' | 'unknown'
+  note: string
+}
+
+export type Diagnosis = { level: 'error' | 'warn'; message: string; help?: string; fixPort?: number }
+
+export type TopoEndpoint = { network: string; subnet?: string; ip?: string; aliases?: string[] }
+export type TopoPort = { containerPort: number; hostPort: number; protocol: string }
+
+export type AppNetwork = {
+  url?: string
+  kind: App['kind']
+  steps: PathStep[]
+  issues: Diagnosis[]
+  checkedAt: number
+  networks: TopoEndpoint[]
+  neighbors: string[]
+  others: number
+  listening: number[]
+  published: TopoPort[]
+  routePort?: number
+  measured: boolean
+}
+
+export type ProbeResult = { ok: boolean; status?: number; error?: string; ms: number }
+
+export type TopoContainer = {
+  id: string
+  name: string
+  image: string
+  state: string
+  role: 'app' | 'sandbox' | 'traefik' | 'server' | 'agent' | 'external'
+  appId?: number
+  ownerName?: string
+  url?: string
+  routePort?: number
+  listening: number[]
+  published: TopoPort[]
+  endpoints: TopoEndpoint[]
+  composeProject?: string
+  issue?: Diagnosis
+  steps?: PathStep[]
+}
+
+export type TopoNode = {
+  id: number
+  name: string
+  state: 'online' | 'offline'
+  isLocal: boolean
+  ingressMode: 'traefik' | 'proxy'
+  httpPort: number
+  localIp?: string
+  publicIp?: string
+  relayedBy?: number
+  measured: boolean
+  networks: { name: string; driver: string; subnet?: string; internal?: boolean }[]
+  containers: TopoContainer[]
+}
+
+export type Topology = { domain?: string; publicIp?: string; sshPort?: number; nodes: TopoNode[]; checkedAt: number }
+
 export type SSHKey = { id: number; name: string; type: string; fingerprint: string; createdAt: number; lastUsedAt?: number }
 
 export type TicketKind = 'general' | 'app' | 'infra'
@@ -403,6 +468,9 @@ export const api = {
   saveAgentSettings: (autoUpdate: boolean) => request<{ autoUpdate: boolean; serverVersion: string }>('PUT', '/api/admin/settings/agents', { autoUpdate }),
   testNotify: () => request<void>('POST', '/api/admin/settings/notifications/test', {}),
   testSupportNotify: () => request<void>('POST', '/api/admin/settings/notifications/test-support', {}),
+  appNetwork: (id: number) => request<AppNetwork>('GET', `/api/apps/${id}/network`),
+  probeApp: (id: number) => request<ProbeResult>('POST', `/api/apps/${id}/network/test`, {}),
+  topology: () => request<Topology>('GET', '/api/admin/topology'),
   sshKeys: () => request<SSHKey[]>('GET', '/api/me/ssh-keys'),
   addSSHKey: (publicKey: string, name: string) => request<SSHKey>('POST', '/api/me/ssh-keys', { publicKey, name }),
   deleteSSHKey: (id: number) => request<void>('DELETE', `/api/me/ssh-keys/${id}`, {}),

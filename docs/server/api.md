@@ -47,6 +47,8 @@ Toutes les écritures sont en JSON. Les routes sont déclarées dans `internal/a
 | `GET /api/apps/{id}/logs?tail=` | Logs en direct (SSE) |
 | `GET /api/apps/{id}/usage` | CPU et mémoire de la dernière heure |
 | `GET /api/apps/{id}/events` | Derniers événements |
+| `GET /api/apps/{id}/network` | Chemin d'une requête vérifié étape par étape, réseaux et ports de l'app |
+| `POST /api/apps/{id}/network/test` | Demander l'adresse de l'app depuis la machine de Forgeyard |
 | `GET /api/apps/{id}/terminal` (WebSocket) | Shell dans le conteneur : binaire = frappes et sortie, texte = `resize` et `exit` |
 
 Les routes d'app vérifient que l'utilisateur est le propriétaire ou un admin.
@@ -63,6 +65,7 @@ Les routes d'app vérifient que l'utilisateur est le propriétaire ou un admin.
 | `PUT /api/admin/nodes/{id}/ingress` | IP publique et mode réseau |
 | `DELETE /api/admin/nodes/{id}` | Retirer (refusé s'il a des apps) |
 | `GET /api/admin/nodes/choices` | Nodes en ligne pour une nouvelle app, la recommandée en premier |
+| `GET /api/admin/topology` | Nodes, réseaux Docker, conteneurs (IP, noms, ports, route) et problèmes, pour les vues Topologie et Tableau |
 | `POST /api/admin/nodes/{id}/update-agent` | Mettre à jour l'agent d'un node vers la version du server |
 | `GET`, `PUT /api/admin/settings/agents` | Mise à jour automatique des agents, version du server |
 | `POST /api/admin/apps/{id}/move` | Déplacer une app vers un autre node (`{nodeId}`) |

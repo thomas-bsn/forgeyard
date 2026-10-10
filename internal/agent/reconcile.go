@@ -302,14 +302,15 @@ func appContainerConfig(app *agentpb.AppSpec, hash, ingressMode string) map[stri
 		labels[labelSandbox] = "true"
 		hostConfig["Mounts"] = []map[string]any{{"Type": "volume", "Source": sandboxVolume(id), "Target": "/root"}}
 		return map[string]any{
-			"Image":      app.GetImage(),
-			"Hostname":   app.GetName(),
-			"Entrypoint": []string{""}, // resets the image's own: the idle command runs instead
-			"Cmd":        sandboxIdle,
-			"WorkingDir": "/root",
-			"Env":        env,
-			"Labels":     labels,
-			"HostConfig": hostConfig,
+			"Image":            app.GetImage(),
+			"Hostname":         app.GetName(),
+			"Entrypoint":       []string{""}, // resets the image's own: the idle command runs instead
+			"Cmd":              sandboxIdle,
+			"WorkingDir":       "/root",
+			"Env":              env,
+			"Labels":           labels,
+			"HostConfig":       hostConfig,
+			"NetworkingConfig": map[string]any{"EndpointsConfig": map[string]any{networkName: map[string]any{"Aliases": []string{app.GetName()}}}},
 		}
 	}
 	if host := app.GetHostname(); host != "" {
@@ -338,6 +339,8 @@ func appContainerConfig(app *agentpb.AppSpec, hash, ingressMode string) map[stri
 		"Labels":       labels,
 		"ExposedPorts": map[string]any{port: map[string]any{}},
 		"HostConfig":   hostConfig,
+		// The other containers of the node reach it by its app name, e.g. http://grafana:3000.
+		"NetworkingConfig": map[string]any{"EndpointsConfig": map[string]any{networkName: map[string]any{"Aliases": []string{app.GetName()}}}},
 	}
 }
 

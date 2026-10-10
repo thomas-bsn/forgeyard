@@ -44,6 +44,8 @@
 - [x] Passerelle SSH (port 2222) et apps Sandbox
 - [x] Agents mis à jour tout seuls vers la version du server
 - [x] Détection du port sur lequel une app écoute vraiment
+- [x] Réseau : chemin d'une requête vérifié (page d'une app), topologie et tableau de l'infrastructure (Nodes)
+- [ ] Trafic observé (métriques de Traefik) sur la topologie
 - [ ] SFTP / scp et redirection de ports par la passerelle SSH
 - [ ] Bases de données en un clic
 - [ ] Quotas utilisateurs

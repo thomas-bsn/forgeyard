@@ -2,6 +2,7 @@ import { lazy, Suspense, useEffect, useRef, useState, type FormEvent, type React
 import { api, errorMessage, type App, type AppEvent, type AppInput, type AppState, type AppUsage, type Container, type Node, type NodeChoice } from './api'
 import { AppLogo, AreaChart, CopyField, formatBytes, LOGO_COLORS, Modal, since, Switch, upFor } from './ui'
 import { ImageCropper } from './Cropper'
+import { AppNetworkTab } from './Network'
 // xterm.js is large: it loads only when a terminal opens.
 const Terminal = lazy(() => import('./Terminal'))
 
@@ -1094,7 +1095,7 @@ function AppFormModal({
   )
 }
 
-type DetailTab = 'observability' | 'logs' | 'terminal' | 'events'
+type DetailTab = 'observability' | 'logs' | 'terminal' | 'network' | 'events'
 
 function AppDetail({ app, admin, nodes, onChange, go }: { app: App; admin: boolean; nodes: Node[]; onChange: () => void; go: (path: string) => void }) {
   const [full, setFull] = useState<App | null>(null)
@@ -1326,7 +1327,7 @@ function AppDetail({ app, admin, nodes, onChange, go }: { app: App; admin: boole
       </aside>
 
       <main className="detail-main">
-        <DetailTabs tab={tab} onTab={setTab} label="Vues de l’app" withTerminal />
+        <DetailTabs tab={tab} onTab={setTab} label="Vues de l’app" withTerminal withNetwork />
         {tab === 'observability' && (
           <Observability
             m={{
@@ -1351,6 +1352,7 @@ function AppDetail({ app, admin, nodes, onChange, go }: { app: App; admin: boole
           ) : (
             <div className="empty-state">L’app doit être en ligne pour ouvrir un terminal.</div>
           ))}
+        {tab === 'network' && <AppNetworkTab app={app} onChange={onChange} />}
         {tab === 'events' && <Events eventsKey={`app-${app.id}`} load={() => api.appEvents(app.id)} />}
       </main>
 
@@ -1518,7 +1520,19 @@ function Events({ eventsKey, load }: { eventsKey: string; load: () => Promise<Ap
   )
 }
 
-function DetailTabs({ tab, onTab, label, withTerminal }: { tab: DetailTab; onTab: (t: DetailTab) => void; label: string; withTerminal?: boolean }) {
+function DetailTabs({
+  tab,
+  onTab,
+  label,
+  withTerminal,
+  withNetwork,
+}: {
+  tab: DetailTab
+  onTab: (t: DetailTab) => void
+  label: string
+  withTerminal?: boolean
+  withNetwork?: boolean
+}) {
   return (
     <div className="segmented" role="tablist" aria-label={label}>
       {(
@@ -1526,6 +1540,7 @@ function DetailTabs({ tab, onTab, label, withTerminal }: { tab: DetailTab; onTab
           ['observability', 'Observabilité'],
           ['logs', 'Logs'],
           ...(withTerminal ? ([['terminal', 'Terminal']] as const) : []),
+          ...(withNetwork ? ([['network', 'Réseau']] as const) : []),
           ['events', 'Événements'],
         ] as const
       ).map(([value, text]) => (

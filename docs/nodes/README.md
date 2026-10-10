@@ -43,6 +43,16 @@ Symptôme d'un port 8081 injoignable : le join réussit (il passe par HTTPS) mai
 
 Refusé tant que le node héberge des apps. Sinon le node est supprimé et son agent déconnecté : à la reconnexion suivante, le server refuse son certificat et l'agent s'arrête. Pour rejoindre à nouveau, il faut effacer son dossier d'état (volume `forgeyard-agent`).
 
+## Topologie et tableau
+
+La page Nodes a trois vues (choix retenu par le navigateur) :
+
+- **Cartes** : une carte par machine (ci-dessous).
+- **Topologie** : Internet et la box à gauche ; à droite chaque node avec son Traefik et ses réseaux Docker dessinés en cadres, les conteneurs dedans (une app affiche sa route, `:80 ← grafana.mondomaine.com`, un conteneur externe ses ports publiés). Pas de flèches par défaut : cliquer un conteneur allume **son** chemin (Internet → box → relais éventuel → Traefik → lui) et estompe le reste ; l'interrupteur « Flux » affiche tous les chemins. Le panneau de droite détaille le conteneur (réseaux, IP, noms, ports, route, problème et sa correction) ou liste les problèmes.
+- **Tableau** : une ligne par conteneur, groupée par node : réseaux et IP, ports en écoute, ports publiés, route Traefik, problème. Filtre (nom, image, IP, réseau), problèmes d'abord, conteneurs externes au choix. C'est la vue qui tient avec beaucoup de conteneurs.
+
+Les données viennent de l'agent, qui décrit toutes les 10 secondes les réseaux Docker de son node et, pour chaque conteneur, ses adresses et noms sur chaque réseau, ses ports publiés et ceux sur lesquels il écoute (lus dans `/proc` de l'hôte). Les réseaux par défaut de Docker sans conteneur ne sont pas affichés. Un agent d'avant cette fonction n'envoie rien : la vue le signale.
+
 ## Réseau d'un node
 
 Réglé dans la fenêtre « Réseau… » de sa carte :

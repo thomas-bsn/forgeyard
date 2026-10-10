@@ -110,6 +110,8 @@ type Live struct {
 	// UpdatingSince is when it was asked to update (zero when not), UpdateError why its last update failed.
 	UpdatingSince time.Time
 	UpdateError   string
+	// Topology is the node's last description of its networks and containers, nil until it sends one.
+	Topology *agentpb.Topology
 }
 
 type session struct {
@@ -121,6 +123,7 @@ type session struct {
 	selfUpdate    bool
 	updatingSince time.Time
 	updateError   string
+	topology      *agentpb.Topology
 }
 
 // AppStatus is the last state an agent reported for an app.
@@ -331,6 +334,7 @@ func (h *Hub) Live(nodeID int64) (live Live, ok bool) {
 	return Live{
 		ConnectedAt: s.connectedAt, Metrics: append([]*agentpb.Metrics(nil), s.metrics...),
 		AgentVersion: s.agentVersion, SelfUpdate: s.selfUpdate, UpdatingSince: s.updatingSince, UpdateError: s.updateError,
+		Topology: s.topology,
 	}, true
 }
 
@@ -469,6 +473,10 @@ func (h *Hub) Connect(stream agentpb.AgentService_ConnectServer) error {
 				}
 			case *agentpb.AgentMessage_ExecOutput:
 				h.deliverExec(m.ExecOutput)
+			case *agentpb.AgentMessage_Topology:
+				h.mu.Lock()
+				sess.topology = m.Topology
+				h.mu.Unlock()
 			case *agentpb.AgentMessage_UpdateFailed:
 				h.logger.Warn("agent update failed", "node", node.Name, "err", m.UpdateFailed.GetError())
 				h.mu.Lock()

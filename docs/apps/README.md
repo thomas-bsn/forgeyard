@@ -135,6 +135,25 @@ L'agent liste aussi les conteneurs du node que Forgeyard n'a pas créés (lancé
 - Les conteneurs de Forgeyard lui-même (server, agent, Traefik) sont exclus : leurs images portent le label `forgeyard.internal`, Traefik `forgeyard.ingress`, et l'agent reconnaît son propre conteneur.
 - L'agent revérifie qu'un conteneur est bien externe avant toute action.
 
+## Réseau
+
+L'onglet **Réseau** de la page d'une app montre le **chemin d'une requête**, chaque étape vérifiée avec ce que Forgeyard sait (code : `internal/api/topology.go`, `web/src/Network.tsx`) :
+
+| Étape | Vérifié |
+|---|---|
+| Visiteur | l'adresse de l'app |
+| DNS | le nom est résolu : vers l'IP du node (ou de l'instance), via le proxy Cloudflare, ou ailleurs (avertissement) |
+| Entrée | la box ou ton reverse proxy ; un node en mode Traefik derrière la même box que la machine de Forgeyard est signalé (c'est le 404 classique) |
+| Relais | pour un node « via la machine de Forgeyard » : le relais existe, la machine de Forgeyard est en ligne, l'IP locale du node est connue |
+| Traefik | le node est en ligne, son Traefik tourne, la route vise le port de l'app |
+| Conteneur | l'app tourne et écoute vraiment sur ce port ; sinon « Bad Gateway », avec un bouton « Utiliser 3000 » |
+
+Les étapes qu'on ne peut pas vérifier d'ici (redirection de la box) sont marquées comme telles. **Tester maintenant** demande l'adresse depuis la machine de Forgeyard, comme un visiteur (sans suivre les redirections) ; une box qui ne laisse pas une machine de chez soi se joindre par l'IP publique fait échouer ce test sans que l'app soit en cause.
+
+En dessous : les réseaux Docker de l'app (sous-réseau, IP, noms), les apps du même propriétaire sur ces réseaux (les autres conteneurs sont seulement comptés) et ses ports (écoute réelle, route, ports publiés). Être sur le même réseau veut dire **pouvoir** se joindre, pas le faire. Chaque app est joignable sur son node par son nom : `http://grafana:3000`.
+
+Pour une sandbox, le chemin est celui d'une connexion SSH : ton ordinateur → passerelle → agent du node → conteneur.
+
 ## Terminal
 
 L'onglet **Terminal** de la page d'une app (et d'un conteneur externe, pour le superadmin) ouvre un shell dans le conteneur, dans le navigateur (xterm.js). L'agent cherche le shell dans les fichiers du conteneur, sans rien y exécuter : `bash`, sinon `sh`, `ash` ou `/busybox/sh`.

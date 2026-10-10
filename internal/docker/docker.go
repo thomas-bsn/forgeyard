@@ -275,6 +275,11 @@ type Container struct {
 		Ports map[string][]struct {
 			HostPort string `json:"HostPort"`
 		} `json:"Ports"`
+		Networks map[string]struct {
+			IPAddress string   `json:"IPAddress"`
+			Aliases   []string `json:"Aliases"`
+			DNSNames  []string `json:"DNSNames"`
+		} `json:"Networks"`
 	} `json:"NetworkSettings"`
 }
 
@@ -343,10 +348,46 @@ type Summary struct {
 	Created int64             `json:"Created"`
 	Labels  map[string]string `json:"Labels"`
 	Ports   []struct {
+		IP          string `json:"IP"`
 		PrivatePort int    `json:"PrivatePort"`
 		PublicPort  int    `json:"PublicPort"`
 		Type        string `json:"Type"`
 	} `json:"Ports"`
+	NetworkSettings struct {
+		Networks map[string]struct {
+			IPAddress string   `json:"IPAddress"`
+			Aliases   []string `json:"Aliases"`
+			DNSNames  []string `json:"DNSNames"` // API 1.44+: the names it answers to on this network
+		} `json:"Networks"`
+	} `json:"NetworkSettings"`
+}
+
+// Network is a Docker network, as listed.
+type Network struct {
+	ID       string `json:"Id"`
+	Name     string `json:"Name"`
+	Driver   string `json:"Driver"`
+	Internal bool   `json:"Internal"`
+	IPAM     struct {
+		Config []struct {
+			Subnet string `json:"Subnet"`
+		} `json:"Config"`
+	} `json:"IPAM"`
+}
+
+// RemoveNetwork deletes a network; a missing one is not an error.
+func (c *Client) RemoveNetwork(ctx context.Context, name string) error {
+	err := c.call(ctx, http.MethodDelete, "/networks/"+url.PathEscape(name), nil, nil)
+	if errors.Is(err, ErrNotFound) {
+		return nil
+	}
+	return err
+}
+
+// ListNetworks returns the Docker networks of the node.
+func (c *Client) ListNetworks(ctx context.Context) ([]Network, error) {
+	var list []Network
+	return list, c.get(ctx, "/networks", &list)
 }
 
 // Name is the container's name without the leading slash.
