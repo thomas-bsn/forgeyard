@@ -854,17 +854,7 @@ function AppDetail({ app, admin, nodes, onChange, go }: { app: App; admin: boole
           <dt>Image</dt>
           <dd className="mono">{app.image}</dd>
           <dt>Node</dt>
-          <dd>
-            {app.nodeName}
-            {admin && !app.movingFrom && (
-              <>
-                {' · '}
-                <button type="button" className="link-btn" onClick={() => setMoving(true)}>
-                  Déplacer…
-                </button>
-              </>
-            )}
-          </dd>
+          <dd>{app.nodeName}</dd>
           <dt>Port</dt>
           <dd>{app.port}</dd>
           <dt>Mémoire</dt>
@@ -899,6 +889,11 @@ function AppDetail({ app, admin, nodes, onChange, go }: { app: App; admin: boole
           <button type="button" className="btn" disabled={busy || !full} onClick={() => setEditing(true)}>
             Configuration
           </button>
+          {admin && (
+            <button type="button" className="btn" disabled={busy || !!app.movingFrom} onClick={() => setMoving(true)}>
+              Changer de node
+            </button>
+          )}
           <button
             type="button"
             className="btn btn-danger"
@@ -1237,7 +1232,18 @@ function ContainerDetail({ container: c, superadmin, onChange, go }: { container
   )
 }
 
-type LogLine = { text: string; stderr?: boolean }
+type LogLine = { text: string; stderr?: boolean; time?: string }
+
+// Docker puts the time of each line in front of it (timestamps=1): 2026-10-10T14:03:22.123456789Z text.
+const stamped = /^(\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d)(?:\.\d+)?Z ([\s\S]*)$/
+
+function splitTime(text: string): { time?: string; text: string } {
+  const m = stamped.exec(text)
+  if (!m) return { text }
+  const d = new Date(m[1] + 'Z')
+  const time = d.toLocaleString('fr-FR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit' })
+  return { time, text: m[2] }
+}
 
 const RECONNECT_MS = 2000
 
@@ -1270,7 +1276,7 @@ function Logs({ url }: { url: string }) {
           setLines((prev) => {
             const base = fresh ? [] : prev
             fresh = false
-            return [...base.slice(-1999), { text: line.text, stderr: line.stderr || line.end }]
+            return [...base.slice(-1999), { ...splitTime(line.text), stderr: line.stderr || line.end }]
           })
         }
         if (line.end) reconnect()
@@ -1326,6 +1332,7 @@ function Logs({ url }: { url: string }) {
         ) : (
           lines.map((l, i) => (
             <span key={i} className={l.stderr ? 'log-err' : undefined}>
+              {l.time && <span className="log-time">{l.time} </span>}
               {l.text}
               {'\n'}
             </span>

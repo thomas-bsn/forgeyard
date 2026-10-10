@@ -41,7 +41,13 @@ export default function Terminal({ path }: { path: string }) {
       if (typeof e.data === 'string') {
         const msg = JSON.parse(e.data) as { type: string; code?: number; error?: string }
         if (msg.type === 'exit') {
-          setEnded(msg.error || `Le shell s’est terminé (code ${msg.code ?? 0}).`)
+          // 126 and 127: the shell could not run, usually because the image has none.
+          setEnded(
+            msg.code === 126 || msg.code === 127
+              ? 'Cette image n’a pas de shell : c’est une image minimale (distroless ou scratch), qui ne contient que son programme. On ne peut pas y ouvrir de terminal ; les logs restent disponibles.'
+              : msg.error || `Le shell s’est terminé (code ${msg.code ?? 0}).`,
+          )
+          if (msg.code === 126 || msg.code === 127) term.reset()
         }
         return
       }

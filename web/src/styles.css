@@ -2979,3 +2979,8 @@ a.link-btn {
   color: #fcd34d;
   font-size: 0.85rem;
 }
+
+.log-time {
+  color: #5d6577;
+  user-select: none;
+}

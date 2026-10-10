@@ -396,7 +396,7 @@ type LogLine struct {
 // Logs streams a container's output, starting with the last tail lines, until ctx ends or the container
 // is removed. It calls fn for each line.
 func (c *Client) Logs(ctx context.Context, name string, tail int, fn func(LogLine)) error {
-	resp, err := c.do(ctx, http.MethodGet, fmt.Sprintf("/containers/%s/logs?follow=1&stdout=1&stderr=1&tail=%d",
+	resp, err := c.do(ctx, http.MethodGet, fmt.Sprintf("/containers/%s/logs?follow=1&stdout=1&stderr=1&timestamps=1&tail=%d",
 		url.PathEscape(name), tail), nil)
 	if err != nil {
 		return err

@@ -60,7 +60,7 @@ Partout « Tous » montre tous les nodes, le node choisi est retenu par le navig
 
 ## Changer de node
 
-Un admin déplace une app depuis sa page (Node › « Déplacer… ») :
+Un admin déplace une app depuis sa page (bouton « Changer de node ») :
 
 1. l'app démarre sur le nouveau node pendant que l'ancien continue de la servir (« Déplacement depuis … ») ; l'ancien ne remonte plus son état, seul le nouveau le fait ;
 2. dès qu'elle est en ligne sur le nouveau node, l'ancien arrête son conteneur ;
@@ -112,10 +112,11 @@ L'onglet **Terminal** de la page d'une app (et d'un conteneur externe, pour le s
 
 - Le navigateur parle au server en WebSocket (`/api/apps/{id}/terminal`) ; le server relaie à l'agent, qui ouvre un `docker exec` avec un TTY. Taille de la fenêtre suivie, couleurs, raccourcis.
 - Seules les pages de l'instance peuvent l'ouvrir (Origin vérifiée), pour le propriétaire de l'app ou un admin. Chaque ouverture est notée dans les événements.
-- L'app doit être en ligne ; une image sans shell (distroless) affiche l'erreur.
+- L'app doit être en ligne. Une image minimale (distroless, scratch : `traefik/whoami` par exemple) n'a pas de shell : le terminal l'explique au lieu d'ouvrir.
 
 ## Logs en direct
 
 - `GET /api/apps/{id}/logs?tail=300` en Server-Sent Events (`/api/admin/nodes/{node}/containers/{id}/logs` pour un conteneur externe). Le server demande à l'agent d'ouvrir les logs Docker (`StartLogs`) et les relaie ; il ferme le flux (`StopLogs`) quand l'onglet se ferme.
+- Chaque ligne affiche discrètement sa date et son heure (fournies par Docker).
 - L'UI se reconnecte toute seule 2 s après une coupure (« Reconnexion… ») et garde les 2000 dernières lignes.
 - Le bouton **En direct** met le flux en pause pour lire tranquillement. Le défilement automatique ne suit que si on est en bas.
