@@ -58,7 +58,7 @@ Quel que soit le proxy, la règle est la même : envoyer `*.mondomaine.com` vers
 
 Derrière une seule IP publique, la box envoie tout le trafic web à une seule machine : celle de Forgeyard (son Traefik, ou votre proxy puis son Traefik). Les apps des autres nodes de la même IP y sont donc **relayées** :
 
-- ces nodes se mettent en mode « Mon reverse proxy » (Traefik en HTTP sur leur port d'entrée, 8090 par défaut ; pratique aussi quand le port 80 est déjà pris, par Pi-hole par exemple) ;
+- ces nodes se mettent en mode « Via la machine de Forgeyard » (c'est le mode « Mon reverse proxy », ainsi nommé pour eux : Traefik en HTTP sur leur port d'entrée, 8090 par défaut ; pratique aussi quand le port 80 est déjà pris, par Pi-hole par exemple) ;
 - le Traefik de la machine de Forgeyard reçoit, pour chacune de leurs apps, une règle ``Host(`<app>.<domaine>`)`` vers `http://<IP locale du node>:<port>` ; le Traefik du node la sert ensuite à son app ;
 - l'agent écrit ces règles dans un fichier de configuration du conteneur Traefik (`/forgeyard/relays.yml`), que Traefik relit seul ; elles suivent les apps, les nodes et leurs IP locales.
 

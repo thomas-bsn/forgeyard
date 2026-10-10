@@ -335,8 +335,8 @@ function NodeCard({
             <div className="banner banner-warn">
               <span className="dot dot-warn" />
               <span>
-                Ce node est derrière la même box que Forgeyard : ses apps n’y arrivent pas. Dans « Réseau… », choisissez « Mon reverse
-                proxy » : la machine de Forgeyard lui relaiera ses apps.
+                Ce node est derrière la même box que Forgeyard : ses apps n’y arrivent pas. Dans « Réseau… », choisissez « Via la machine
+                de Forgeyard ».
               </span>
             </div>
           )}
@@ -446,22 +446,35 @@ function NetworkSettings({ node, sharesBox, onClose, onSaved }: { node: Node; sh
       }
     >
       <div className="field">
-        <span>Qui gère les ports 80 et 443 de cette machine ?</span>
+        <span>{sharesBox ? 'Comment ce node reçoit le trafic de ses apps ?' : 'Qui gère les ports 80 et 443 de cette machine ?'}</span>
         <div className="auth-options">
           <button type="button" className={`auth-option ${mode === 'traefik' ? 'selected' : ''}`} onClick={() => setMode('traefik')} aria-pressed={mode === 'traefik'}>
-            <strong>Forgeyard</strong>
-            <small>HTTPS automatique, rien à configurer.</small>
+            <strong>{sharesBox ? 'Directement sur ce node' : 'Forgeyard'}</strong>
+            <small>
+              {sharesBox
+                ? 'Ce node prend les ports 80 et 443 : il faudrait que la box lui envoie le trafic.'
+                : 'HTTPS automatique, rien à configurer.'}
+            </small>
           </button>
           <button type="button" className={`auth-option ${mode === 'proxy' ? 'selected' : ''}`} onClick={() => setMode('proxy')} aria-pressed={mode === 'proxy'}>
-            <strong>Mon reverse proxy</strong>
-            <small>Caddy, Nginx… garde 80/443 et envoie les apps à Forgeyard.</small>
+            {sharesBox ? (
+              <>
+                <strong>Via la machine de Forgeyard</strong>
+                <small>Elle reçoit le trafic de la box et passe à ce node ses apps, sur votre réseau local.</small>
+              </>
+            ) : (
+              <>
+                <strong>Mon reverse proxy</strong>
+                <small>Caddy, Nginx… garde 80/443 et envoie les apps à Forgeyard.</small>
+              </>
+            )}
           </button>
         </div>
       </div>
       {sharesBox && (
         <p className="hint">
-          Ce node est derrière la même box que Forgeyard : choisissez « Mon reverse proxy ». La machine de Forgeyard reçoit le trafic et
-          relaie à ce node ses apps sur votre réseau local{node.localIp ? ` (${node.localIp})` : ''} : aucune règle à ajouter.
+          Ce node est derrière la même box que Forgeyard : choisissez « Via la machine de Forgeyard ». Elle reçoit le trafic et relaie à
+          ce node ses apps sur votre réseau local{node.localIp ? ` (${node.localIp})` : ''} : rien à installer ni à configurer.
         </p>
       )}
       {mode === 'proxy' && (
