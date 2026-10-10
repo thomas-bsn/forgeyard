@@ -80,7 +80,7 @@ export default function Nodes({ localSupported }: { localSupported: boolean }) {
           }}
         />
       )}
-      {join && <JoinInstructions join={join} onClose={() => setJoin(null)} />}
+      {join && <JoinInstructions join={join} lanIp={nodes?.find((n) => n.isLocal)?.localIp} onClose={() => setJoin(null)} />}
       {network && (
         <NetworkSettings
           node={network}
@@ -162,8 +162,13 @@ function AddNode({ localAvailable, onCreated, onClose }: { localAvailable: boole
   )
 }
 
-function JoinInstructions({ join, onClose }: { join: JoinCommand; onClose: () => void }) {
+function JoinInstructions({ join, lanIp, onClose }: { join: JoinCommand; lanIp?: string; onClose: () => void }) {
   const expires = new Date(join.expiresAt * 1000).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })
+  const [sameNetwork, setSameNetwork] = useState(false)
+  const port = join.agentServer.slice(join.agentServer.lastIndexOf(':') + 1)
+  // On the server's local network, the agent dials it directly, without going through the internet.
+  const lanServer = lanIp ? `${lanIp}:${port}` : ''
+  const command = sameNetwork && lanServer ? `${join.dockerCommand} --agent-server ${lanServer}` : join.dockerCommand
   return (
     <Modal
       title={join.node.isLocal ? 'Cette machine' : `Connecter « ${join.node.name} »`}
@@ -183,13 +188,29 @@ function JoinInstructions({ join, onClose }: { join: JoinCommand; onClose: () =>
       ) : (
         <>
           <p className="muted">Rien à installer à part Docker : l’agent Forgeyard est une image Docker, téléchargée et lancée automatiquement.</p>
+          {lanServer && (
+            <label className="check">
+              <input type="checkbox" checked={sameNetwork} onChange={(e) => setSameNetwork(e.target.checked)} />
+              <span>
+                <b>Cette machine est sur le même réseau local que Forgeyard</b>
+                <small>L’agent joindra Forgeyard directement en {lanServer}, sans passer par internet.</small>
+              </span>
+            </label>
+          )}
           <ol className="steps-help">
             <li>
               Sur la machine à ajouter, lancez cette commande dans un terminal :
-              <CopyField value={join.dockerCommand} />
+              <CopyField value={command} />
             </li>
             <li>Le node apparaît en ligne en quelques secondes. L’agent redémarre tout seul avec la machine.</li>
           </ol>
+          {!sameNetwork && (
+            <p className="muted">
+              L’agent se connecte à <code>{join.agentServer}</code> : ce port doit être joignable depuis la machine. Avec Cloudflare,
+              l’enregistrement de Forgeyard doit être en « DNS only » (le proxy orange ne transporte que le HTTPS), et le port{' '}
+              {port} redirigé sur votre box si la machine est ailleurs.
+            </p>
+          )}
           <p className="muted">
             Cette commande ne sert qu’une fois et expire à {expires}. Elle n’est plus jamais affichée : en cas de besoin, générez-en une
             nouvelle depuis la carte du node.

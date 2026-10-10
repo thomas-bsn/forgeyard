@@ -32,7 +32,12 @@ Si l'agent est connecté mais ne joint pas Docker, la carte l'affiche en rouge a
    ou, avec le binaire : `forgeyard-agent join --server … --token … --ca …`.
 3. Le node passe « En ligne » avec son CPU, sa RAM, son disque et sa version de Docker.
 
-Le port **8081** du server doit être joignable depuis la machine (connexion directe, jamais à travers un reverse proxy HTTP ni le proxy Cloudflare).
+Le port **8081** du server doit être joignable depuis la machine (connexion directe, jamais à travers un reverse proxy HTTP ni le proxy Cloudflare) :
+
+- **machine sur le même réseau local** que Forgeyard : cochez « même réseau local » dans la fenêtre, la commande ajoute `--agent-server <IP locale>:8081` et l'agent ne passe pas par internet ;
+- **machine ailleurs** : l'adresse de Forgeyard doit résoudre vers votre IP publique (avec Cloudflare : « DNS only », pas le nuage orange) et le port 8081 doit être redirigé sur la box.
+
+Symptôme d'un port 8081 injoignable : le join réussit (il passe par HTTPS) mais le node reste hors ligne, et les logs de l'agent montrent `dial tcp …:8081: i/o timeout`. Pour corriger un node déjà rejoint, relancez son conteneur avec `--agent-server` : son identité est gardée dans le volume `forgeyard-agent`, pas besoin de nouveau token.
 
 ## Retirer un node
 

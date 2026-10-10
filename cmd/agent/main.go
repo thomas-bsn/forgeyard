@@ -65,7 +65,7 @@ func start(ctx context.Context, args []string, mustJoin bool, logger *slog.Logge
 	server := fs.String("server", "", "URL of the Forgeyard server")
 	token := fs.String("token", "", "one-time join token")
 	ca := fs.String("ca", "", "fingerprint of the server's CA (sha256:…)")
-	agentServer := fs.String("agent-server", "", "host:port of the agent port, when it differs from the server's public address (e.g. forgeyard:8081 in the same Docker Compose project)")
+	agentServer := fs.String("agent-server", os.Getenv("FORGEYARD_AGENT_SERVER"), "host:port of the agent port, when it differs from the server's public address (e.g. 192.168.1.10:8081 on the same local network); also changes it for a node that already joined")
 	stateDir := fs.String("state-dir", defaultStateDir(), "where the node identity is stored")
 	joinFile := fs.String("join-file", os.Getenv("FORGEYARD_JOIN_FILE"), "wait for the server of the same Compose project to drop join details in this file")
 	dockerHost := fs.String("docker-host", docker.DefaultHost(), "Docker daemon socket")
@@ -109,6 +109,12 @@ func start(ctx context.Context, args []string, mustJoin bool, logger *slog.Logge
 	st, err := agent.LoadState(*stateDir)
 	if err != nil {
 		return err
+	}
+	// The address to dial can change after joining: e.g. the public one is behind a proxy that only
+	// carries HTTPS, and the node is on the server's local network.
+	if *agentServer != "" && *agentServer != st.AgentServer {
+		logger.Info("using another address for the server", "joined_with", st.AgentServer, "now", *agentServer)
+		st.AgentServer = *agentServer
 	}
 	dc, err := docker.New(*dockerHost)
 	if err != nil {

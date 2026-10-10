@@ -51,5 +51,5 @@ Taille de la machine via Docker (`/info`) et gopsutil ; disque mesuré sur `FORG
 |---|---|---|
 | `--state-dir` | `FORGEYARD_AGENT_STATE` | Dossier d'identité (`/state` dans l'image) |
 | `--join-file` | `FORGEYARD_JOIN_FILE` | Fichier de join déposé par le server (node local) |
-| `--agent-server` | | `hôte:port` du port agent s'il diffère de l'adresse publique |
+| `--agent-server` | `FORGEYARD_AGENT_SERVER` | `hôte:port` du port agent s'il diffère de l'adresse publique (ex. l'IP locale du server). Lu à chaque démarrage, donc aussi pour un node déjà rejoint. |
 | `--docker-host` | `DOCKER_HOST` | Socket Docker. Par défaut : `/var/run/docker.sock`, puis les sockets d'OrbStack, Docker Desktop et Colima. |

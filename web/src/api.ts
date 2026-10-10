@@ -167,6 +167,7 @@ export type JoinCommand = {
   node: Node
   command: string
   dockerCommand: string
+  agentServer: string
   expiresAt: number
 }
 
