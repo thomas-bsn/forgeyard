@@ -1,6 +1,7 @@
 package api
 
 import (
+	"cmp"
 	"context"
 	"crypto/subtle"
 	"database/sql"
@@ -31,6 +32,7 @@ type oauthState struct {
 	purpose   string       // "login" or "setup"
 	localNode bool         // setup: also enable this machine as a node
 	ingress   setupIngress // setup: how that node receives web traffic
+	returnTo  string       // login: where to go once signed in
 	expires   time.Time
 }
 
@@ -147,7 +149,12 @@ func (s *Server) handleDiscordStart(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/?discord=unavailable", http.StatusFound)
 		return
 	}
-	http.Redirect(w, r, s.discord.AuthorizeURL(cfg, s.newOAuthState(w, r, oauthState{purpose: "login"})), http.StatusFound)
+	// Only known pages, never an address from the query: no open redirect.
+	returnTo := "/"
+	if r.URL.Query().Get("return") == "profile" {
+		returnTo = "/#/profile"
+	}
+	http.Redirect(w, r, s.discord.AuthorizeURL(cfg, s.newOAuthState(w, r, oauthState{purpose: "login", returnTo: returnTo})), http.StatusFound)
 }
 
 type setupDiscordRequest struct {
@@ -268,7 +275,11 @@ func (s *Server) handleDiscordCallback(w http.ResponseWriter, r *http.Request) {
 			s.redirectDiscordError(w, r, err)
 			return
 		}
-		http.Redirect(w, r, "/", http.StatusFound)
+		// Signing in again from the same browser replaces its session instead of piling them up.
+		if old := auth.SessionToken(r); old != "" {
+			s.store.DeleteUserSession(ctx, db.DeleteUserSessionParams{UserID: user.ID, TokenHash: old})
+		}
+		http.Redirect(w, r, cmp.Or(st.returnTo, "/"), http.StatusFound)
 	case errors.Is(err, sql.ErrNoRows):
 		status, err := s.recordAccountRequest(ctx, dUser)
 		if err != nil {

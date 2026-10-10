@@ -33,7 +33,7 @@ TLS 1.3 mutuel avec la CA privée de Forgeyard, empreinte de la CA vérifiée av
 - **CSRF** : toute requête d'écriture doit être en `Content-Type: application/json`, ce qu'un formulaire d'un autre site ne peut pas envoyer sans que le navigateur demande l'autorisation. Les cookies sont en SameSite=Lax.
 - Corps JSON limités à 1 Mo, champs inconnus refusés.
 - **Limitation** : 10 échecs de connexion ou de join par IP en 15 minutes.
-- **Proxies de confiance** : `X-Forwarded-For` / `-Proto` ne sont lus que s'ils viennent d'une IP de `FORGEYARD_TRUSTED_PROXIES` (par défaut loopback et réseaux privés) ; sinon ils sont effacés. L'IP du client sert à la limitation.
+- **Proxies de confiance** : `X-Forwarded-For` / `-Proto` ne sont lus que s'ils viennent d'une IP de `FORGEYARD_TRUSTED_PROXIES` (par défaut `private` : loopback et réseaux privés) ; sinon ils sont effacés. L'IP du client sert à la limitation et à la liste des appareils connectés. Derrière le proxy Cloudflare, ajoutez `cloudflare` (ses plages publiées) : sinon c'est l'IP d'un serveur Cloudflare qui apparaît. Ce n'est pas le défaut, car toute requête passant par Cloudflare pourrait alors choisir son IP.
 
 ## Conteneurs des apps
 

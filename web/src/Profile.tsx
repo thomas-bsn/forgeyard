@@ -149,14 +149,21 @@ function ProfilePanel({ user, onChange }: { user: User; onChange: () => void }) 
             <p className="muted">
               {user.customAvatar
                 ? 'Votre propre photo.'
-                : discord
+                : discord && user.avatarUrl
                   ? 'Celle de votre compte Discord, mise à jour à chaque connexion.'
-                  : 'Votre initiale, tant que vous n’avez pas envoyé de photo.'}
+                  : discord
+                    ? 'Forgeyard n’a pas encore votre photo Discord : elle arrive à la prochaine connexion avec Discord.'
+                    : 'Votre initiale, tant que vous n’avez pas envoyé de photo.'}
             </p>
             <div className="row-actions">
               <button type="button" className="btn" disabled={busy} onClick={() => file.current?.click()}>
                 Envoyer une photo
               </button>
+              {discord && (
+                <a className="btn" href="/api/auth/discord?return=profile" title="Reprend votre photo et votre nom Discord">
+                  Mettre à jour depuis Discord
+                </a>
+              )}
               {user.customAvatar && (
                 <button type="button" className="btn" disabled={busy} onClick={() => run(() => api.deleteAvatar(), 'Photo retirée.')}>
                   {discord ? 'Reprendre celle de Discord' : 'Retirer la photo'}

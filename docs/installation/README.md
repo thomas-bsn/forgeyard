@@ -63,7 +63,7 @@ Ne modifiez ni `docker-compose.yml` ni le `Dockerfile` : copiez-les dans des fic
 | `--addr` | `:8080` | Interface web et API |
 | `--agent-addr` | `:8081` | Connexion des agents (gRPC, mTLS) |
 | `--data-dir` | `data` (`/data` dans l'image) | Base, clés, certificats |
-| `FORGEYARD_TRUSTED_PROXIES` | loopback et réseaux privés | Proxies autorisés à fixer `X-Forwarded-*` (IPs/CIDR séparés par des virgules, ou `none`) |
+| `FORGEYARD_TRUSTED_PROXIES` | `private` | Proxies autorisés à fixer `X-Forwarded-*` : IPs/CIDR, `private` (loopback et réseaux privés), `cloudflare` (si Forgeyard passe par le proxy Cloudflare), séparés par des virgules, ou `none` |
 | `FORGEYARD_SECRET_KEY` | fichier `data/secret.key` | Clé de chiffrement des secrets (32 octets en base64) |
 | `FORGEYARD_JOIN_DIR` | vide (`/join` dans Compose) | Dossier partagé avec l'agent local ; vide = pas de node local |
 | `FORGEYARD_LOCAL_SERVER_URL` | `http://forgeyard:8080` | Adresse du server vue par l'agent local |

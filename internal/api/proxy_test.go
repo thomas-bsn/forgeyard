@@ -53,3 +53,24 @@ func TestParseTrustedProxies(t *testing.T) {
 		t.Fatal("accepted garbage")
 	}
 }
+
+// Behind Cloudflare's proxy then Caddy, the client is found only when Cloudflare's edge is trusted.
+func TestRealClientBehindCloudflare(t *testing.T) {
+	private, _ := ParseTrustedProxies("private")
+	withCloudflare, _ := ParseTrustedProxies("private, cloudflare")
+	for _, c := range []struct {
+		trusted []netip.Prefix
+		want    string
+	}{{private, "162.158.1.2"}, {withCloudflare, "203.0.113.7"}} {
+		s := &Server{trustedProxies: c.trusted}
+		var got *http.Request
+		h := s.realClient(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { got = r }))
+		r := httptest.NewRequest(http.MethodGet, "/", nil)
+		r.RemoteAddr = "172.18.0.5:4000" // Caddy in Docker
+		r.Header.Set("X-Forwarded-For", "203.0.113.7, 162.158.1.2")
+		h.ServeHTTP(httptest.NewRecorder(), r)
+		if ip := clientIP(got); ip != c.want {
+			t.Errorf("trusting %d ranges: client IP %s, want %s", len(c.trusted), ip, c.want)
+		}
+	}
+}

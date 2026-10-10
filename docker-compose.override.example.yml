@@ -24,9 +24,10 @@ services:
     # (with Cloudflare, the record of Forgeyard's address must be "DNS only").
 
     # environment:
-      # Proxies allowed to set X-Forwarded-For/-Proto (comma-separated IPs or CIDRs, or "none").
-      # Default: loopback and private networks, which covers Caddy on the host or in Docker.
-      # FORGEYARD_TRUSTED_PROXIES: "172.20.0.0/16"
+      # Proxies allowed to set X-Forwarded-For/-Proto (comma-separated IPs or CIDRs, "private" for loopback and
+      # private networks, "cloudflare" for Cloudflare's edge, or "none"). Default: "private", which covers Caddy
+      # on the host or in Docker. Behind Cloudflare's proxy (orange cloud), add "cloudflare" to see real IPs:
+      # FORGEYARD_TRUSTED_PROXIES: "private,cloudflare"
 
       # Keep the key that encrypts secrets out of the data volume (32 bytes, base64:
       # generate one with `openssl rand -base64 32`). Without it, the key is data/secret.key.

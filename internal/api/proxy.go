@@ -19,7 +19,26 @@ var DefaultTrustedProxies = []netip.Prefix{
 	netip.MustParsePrefix("fc00::/7"),
 }
 
-// ParseTrustedProxies reads a comma-separated list of IPs and CIDRs; "none" trusts no proxy.
+// CloudflareProxies are Cloudflare's published edge ranges (https://www.cloudflare.com/ips/), for an
+// address served through Cloudflare's proxy.
+var CloudflareProxies = mustPrefixes(
+	"173.245.48.0/20", "103.21.244.0/22", "103.22.200.0/22", "103.31.4.0/22", "141.101.64.0/18",
+	"108.162.192.0/18", "190.93.240.0/20", "188.114.96.0/20", "197.234.240.0/22", "198.41.128.0/17",
+	"162.158.0.0/15", "104.16.0.0/13", "104.24.0.0/14", "172.64.0.0/13", "131.0.72.0/22",
+	"2400:cb00::/32", "2606:4700::/32", "2803:f800::/32", "2405:b500::/32", "2405:8100::/32",
+	"2a06:98c0::/29", "2c0f:f248::/32",
+)
+
+func mustPrefixes(list ...string) []netip.Prefix {
+	out := make([]netip.Prefix, len(list))
+	for i, s := range list {
+		out[i] = netip.MustParsePrefix(s)
+	}
+	return out
+}
+
+// ParseTrustedProxies reads a comma-separated list of IPs, CIDRs and the keywords "private" (the default
+// networks) and "cloudflare" (Cloudflare's edge); "none" trusts no proxy.
 func ParseTrustedProxies(s string) ([]netip.Prefix, error) {
 	if strings.TrimSpace(s) == "none" {
 		return nil, nil
@@ -27,7 +46,14 @@ func ParseTrustedProxies(s string) ([]netip.Prefix, error) {
 	var out []netip.Prefix
 	for _, part := range strings.Split(s, ",") {
 		part = strings.TrimSpace(part)
-		if part == "" {
+		switch part {
+		case "":
+			continue
+		case "private":
+			out = append(out, DefaultTrustedProxies...)
+			continue
+		case "cloudflare":
+			out = append(out, CloudflareProxies...)
 			continue
 		}
 		if p, err := netip.ParsePrefix(part); err == nil {
