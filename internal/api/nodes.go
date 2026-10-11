@@ -250,7 +250,8 @@ func (s *Server) writeJoinCommand(w http.ResponseWriter, r *http.Request, status
 			joinArgs += " --agent-server " + agentServer
 		}
 	}
-	docker := "docker run -d --name forgeyard-agent --restart unless-stopped \\\n" +
+	// --pull always: otherwise Docker reuses an agent image pulled before, which may be outdated.
+	docker := "docker run -d --pull always --name forgeyard-agent --restart unless-stopped \\\n" +
 		"  -v /var/run/docker.sock:/var/run/docker.sock \\\n" +
 		"  -v /:/host:ro -e FORGEYARD_HOST_ROOT=/host \\\n" +
 		"  -v forgeyard-agent:/state \\\n" +

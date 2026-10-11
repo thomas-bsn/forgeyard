@@ -34,7 +34,7 @@ Nodes › « + Ajouter un node » ouvre un assistant en quatre étapes (`web/src
    - Traefik joignable par le chemin des visites : depuis la machine de Forgeyard sur le réseau local (relais, ou ton proxy dans ton réseau), ou sur l'IP publique, port 80 (Traefik de l'agent ailleurs). Derrière ton propre proxy ailleurs, Forgeyard ne peut pas l'essayer : l'onglet Réseau d'une app le fera.
 
    ```bash
-   docker run -d --name forgeyard-agent --restart unless-stopped \
+   docker run -d --pull always --name forgeyard-agent --restart unless-stopped \
      -v /var/run/docker.sock:/var/run/docker.sock -v /:/host:ro -e FORGEYARD_HOST_ROOT=/host \
      -v forgeyard-agent:/state \
      ghcr.io/thomas-bsn/forgeyard-agent:latest run --server <adresse> --token <token> --ca sha256:<empreinte> [--agent-server <IP locale>:8081]
