@@ -135,7 +135,8 @@ func (r *Reconciler) reconcile(ctx context.Context) {
 		r.logger.Error("creating the forgeyard network failed", "err", err)
 		return
 	}
-	needed := len(d.GetApps()) > 0 || len(d.GetRelays()) > 0
+	// Traefik runs as soon as the node is set up, apps or not: adding a node checks that visits reach it.
+	needed := d.GetIngress() != nil
 	if err := r.ensureTraefik(ctx, d.GetIngress(), d.GetRelays(), needed); err != nil {
 		r.logger.Error("starting Traefik failed", "err", err)
 	} else if needed {
@@ -345,8 +346,8 @@ func appContainerConfig(app *agentpb.AppSpec, hash, ingressMode string) map[stri
 	}
 }
 
-// ensureTraefik runs the ingress proxy that routes app domains to containers. It only runs while the node
-// has apps, so an empty node does not hold ports 80/443.
+// ensureTraefik runs the ingress proxy that routes app domains to containers, and removes it when it is not
+// needed.
 func (r *Reconciler) ensureTraefik(ctx context.Context, ingress *agentpb.Ingress, relays []*agentpb.Relay, needed bool) error {
 	if ingress == nil || !needed {
 		return r.dc.Remove(ctx, traefikName)

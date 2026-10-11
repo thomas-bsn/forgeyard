@@ -36,7 +36,7 @@ Pour chaque app :
 
 Réglages de chaque conteneur : réseau Docker `forgeyard`, redémarrage `unless-stopped`, limite mémoire (512 Mo par défaut) sans swap, pas de mode privilégié, `no-new-privileges`, logs limités à 3 × 10 Mo.
 
-L'agent gère aussi le conteneur **Traefik** du node (voir [routing](../network/routing.md)) : créé quand le node a au moins une app, recréé si le mode réseau change, supprimé quand il n'y a plus d'app.
+L'agent gère aussi le conteneur **Traefik** du node (voir [routing](../network/routing.md)) : créé dès que le node est ajouté (même sans app), recréé si le mode réseau change, supprimé avec le node.
 
 ## Infos et métriques
 
