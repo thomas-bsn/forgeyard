@@ -70,7 +70,11 @@ func (m *Memory) DeleteRecords(_ context.Context, zone string, recs []libdns.Rec
 	}
 	for _, r := range recs {
 		rr := r.RR()
-		delete(z, rr.Name+" "+rr.Type)
+		// Like Cloudflare's provider, only a record with this exact data goes: one given without its data
+		// matches nothing.
+		if z[rr.Name+" "+rr.Type].Data == rr.Data {
+			delete(z, rr.Name+" "+rr.Type)
+		}
 	}
 	return recs, nil
 }

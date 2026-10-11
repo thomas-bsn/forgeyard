@@ -133,11 +133,26 @@ func SetAddress(ctx context.Context, p Provider, zone, name string, ip netip.Add
 	return err
 }
 
-// DeleteAddress removes the A or AAAA records of name. A missing record is not an error.
+// DeleteAddress removes the A or AAAA records of name, or only the one pointing to ip when it is valid.
+// A missing record is not an error. The records are looked up first and deleted as they are: some
+// providers (Cloudflare's) only delete a record given with its exact data, and match nothing otherwise.
 func DeleteAddress(ctx context.Context, p Provider, zone, name string, ip netip.Addr) error {
-	_, err := p.DeleteRecords(ctx, zone, []libdns.Record{libdns.Address{
-		Name: libdns.RelativeName(name, zone), IP: ip,
-	}})
+	recs, err := p.GetRecords(ctx, zone)
+	if err != nil {
+		return err
+	}
+	rel := libdns.RelativeName(name, zone)
+	var found []libdns.Record
+	for _, r := range recs {
+		rr := r.RR()
+		if rr.Name == rel && (rr.Type == "A" || rr.Type == "AAAA") && (!ip.IsValid() || rr.Data == ip.String()) {
+			found = append(found, r)
+		}
+	}
+	if len(found) == 0 {
+		return nil
+	}
+	_, err = p.DeleteRecords(ctx, zone, found)
 	return err
 }
 
