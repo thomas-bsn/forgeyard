@@ -1655,6 +1655,8 @@ function ContainerDetail({ container: c, superadmin, onChange, go }: { container
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
   const tone = containerTone(c)
+  // Running, or about to again (a restart loop, a pause): it can be stopped or restarted.
+  const up = c.state === 'running' || c.state === 'restarting' || c.state === 'paused'
 
   async function act(action: 'start' | 'stop' | 'restart') {
     setBusy(true)
@@ -1708,18 +1710,21 @@ function ContainerDetail({ container: c, superadmin, onChange, go }: { container
         {error && <p className="error">{error}</p>}
         {superadmin ? (
           <div className="detail-actions">
-            {c.state === 'running' ? (
-              <button type="button" className="btn" disabled={busy} onClick={() => act('stop')}>
-                Arrêter
-              </button>
+            {/* Restarting only means something for a container that runs; a stopped or crashed one starts. */}
+            {up ? (
+              <>
+                <button type="button" className="btn" disabled={busy} onClick={() => act('stop')}>
+                  Arrêter
+                </button>
+                <button type="button" className="btn" disabled={busy} onClick={() => act('restart')}>
+                  Redémarrer
+                </button>
+              </>
             ) : (
-              <button type="button" className="btn" disabled={busy} onClick={() => act('start')}>
+              <button type="button" className="btn btn-primary detail-actions-wide" disabled={busy} onClick={() => act('start')}>
                 Démarrer
               </button>
             )}
-            <button type="button" className="btn" disabled={busy} onClick={() => act('restart')}>
-              Redémarrer
-            </button>
           </div>
         ) : (
           <p className="muted">Seul le superadmin peut agir sur ce conteneur.</p>
