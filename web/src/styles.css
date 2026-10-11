@@ -1565,6 +1565,42 @@ button.row:hover {
   margin-top: auto;
 }
 
+/* A node being removed: dimmed and pulsing while its agent cleans the machine, then fading out. */
+.node-removing {
+  pointer-events: none;
+  animation: node-pulse 1.4s ease-in-out infinite;
+}
+
+.node-gone {
+  pointer-events: none;
+  animation: node-leave 0.4s ease-in forwards;
+}
+
+@keyframes node-pulse {
+  50% {
+    opacity: 0.55;
+  }
+}
+
+@keyframes node-leave {
+  to {
+    opacity: 0;
+    transform: scale(0.94) translateY(8px);
+    filter: blur(2px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .node-removing {
+    animation: none;
+    opacity: 0.6;
+  }
+  .node-gone {
+    animation: none;
+    opacity: 0;
+  }
+}
+
 .meters-off {
   opacity: 0.5;
 }

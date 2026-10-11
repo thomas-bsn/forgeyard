@@ -5,6 +5,8 @@ import { TopologyMap, TopologyTable } from './Network'
 import { Logs } from './Apps'
 
 const POLL_MS = 5000
+// How long a removed node's card takes to fade out (the .node-gone animation).
+const REMOVAL_MS = 400
 
 type View = 'cards' | 'map' | 'table'
 
@@ -539,6 +541,8 @@ function NodeCard({
 }) {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
+  // removing: while its agent cleans the machine; gone: the card fades out before leaving the list.
+  const [removal, setRemoval] = useState<'removing' | 'gone' | null>(null)
   const m = node.metrics
 
   async function run(action: () => Promise<void>) {
@@ -562,12 +566,12 @@ function NodeCard({
   const externalsRunning = externals.filter((c) => c.state === 'running').length
 
   return (
-    <article className="panel node-card">
+    <article className={`panel node-card${removal ? ` node-${removal}` : ''}`}>
       <div className="node-head">
         <span className={`dot ${tone ? `dot-${tone}` : ''}`} />
         <h2 className="node-name">{node.name}</h2>
         {node.isLocal && <span className="badge badge-accent">cette machine</span>}
-        <span className={`node-state ${tone ? `text-${tone}` : 'muted'}`}>{stateLabel}</span>
+        <span className={`node-state ${tone ? `text-${tone}` : 'muted'}`}>{removal ? 'Retrait…' : stateLabel}</span>
       </div>
 
       {node.state === 'pending' ? (
@@ -671,16 +675,24 @@ function NodeCard({
               )
             ) {
               run(async () => {
-                const res = await api.deleteNode(node.id)
-                if (!res.cleaned) {
-                  window.alert(`Node retiré, mais ${res.detail}. Les commandes pour nettoyer la machine à la main sont dans la doc : docs/nodes/README.md, « Retirer un node ».`)
+                setRemoval('removing')
+                try {
+                  const res = await api.deleteNode(node.id)
+                  if (!res.cleaned) {
+                    window.alert(`Node retiré, mais ${res.detail}. Les commandes pour nettoyer la machine à la main sont dans la doc : docs/nodes/README.md, « Retirer un node ».`)
+                  }
+                } catch (err) {
+                  setRemoval(null)
+                  throw err
                 }
+                setRemoval('gone')
+                await new Promise((resolve) => setTimeout(resolve, REMOVAL_MS))
                 onChange()
               })
             }
           }}
         >
-          Retirer
+          {removal ? 'Retrait…' : 'Retirer'}
         </button>
       </div>
       {showLogs && (
