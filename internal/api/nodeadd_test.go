@@ -43,6 +43,19 @@ func TestAddNodeInNetwork(t *testing.T) {
 	pi := connectFakeAgent(t, ts.URL, server, admin, "pi2")
 	pi.desired(t)
 	server.store.DB.ExecContext(context.Background(), "UPDATE nodes SET relayed = 1, ingress_mode = 'proxy', lan = 1, local_ip = '192.168.1.50' WHERE id = ?", pi.nodeID)
+	// A just connected agent is still starting Traefik: neither it nor the path is an error yet.
+	pi.stream.Send(&agentpb.AgentMessage{Msg: &agentpb.AgentMessage_Topology{Topology: &agentpb.Topology{}}})
+	for deadline := time.Now().Add(5 * time.Second); ; {
+		var check nodeCheck
+		postJSON(t, admin, ts.URL+"/api/admin/nodes/"+itoa(pi.nodeID)+"/check", struct{}{}, &check)
+		if check.Connected && check.Traefik == "unknown" && check.Reach == "skip" && check.ReachTarget == "" {
+			break
+		}
+		if check.Traefik == "down" || check.Reach == "error" || time.Now().After(deadline) {
+			t.Fatalf("check while Traefik starts: %+v", check)
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
 	pi.stream.Send(&agentpb.AgentMessage{Msg: &agentpb.AgentMessage_Topology{Topology: &agentpb.Topology{
 		Containers: []*agentpb.TopoContainer{{Id: "t", Name: "forgeyard-traefik", Role: "traefik", State: "running"}},
 	}}})

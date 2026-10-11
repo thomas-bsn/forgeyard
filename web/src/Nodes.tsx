@@ -260,7 +260,7 @@ function AddNode({ localAvailable, front, onDone, onClose }: { localAvailable: b
     .filter(Boolean)
     .join(' · ')
   const canNext = step === 1 ? /^[a-z0-9][a-z0-9-]{0,31}$/.test(name) || place === 'this' : true
-  const ready = !!check && check.connected && check.traefik !== 'down' && check.reach !== 'error'
+  const ready = !!check && check.connected && check.traefik === 'ok' && check.reach !== 'error'
 
   return (
     <Modal

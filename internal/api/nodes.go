@@ -558,6 +558,10 @@ func (s *Server) repointAppRecords(ctx context.Context, node db.Node, c dnsConfi
 	return nil
 }
 
+// traefikStartGrace is how long a node's Traefik may take to start once its agent connected, its image
+// pulled for the first time.
+const traefikStartGrace = 2 * time.Minute
+
 // nodeCheck is what the last step of adding a node verifies.
 type nodeCheck struct {
 	Connected bool `json:"connected"`
@@ -591,6 +595,10 @@ func (s *Server) handleCheckNode(w http.ResponseWriter, r *http.Request) {
 				out.Traefik = "ok"
 			}
 		}
+		// A freshly connected agent still pulls and starts Traefik: it is not down yet.
+		if out.Traefik == "down" && time.Since(live.ConnectedAt) < traefikStartGrace {
+			out.Traefik = "unknown"
+		}
 	}
 	c, err := s.loadDNSConfig(r.Context())
 	if err != nil {
@@ -611,6 +619,9 @@ func (s *Server) handleCheckNode(w http.ResponseWriter, r *http.Request) {
 		out.ReachTarget = net.JoinHostPort(nodeIP(node, c), "80")
 	default:
 		out.ReachDetail = "pas d'adresse connue pour ce node"
+	}
+	if out.ReachTarget != "" && out.Traefik != "ok" {
+		out.ReachTarget = "" // nothing to reach before Traefik runs
 	}
 	if out.ReachTarget != "" {
 		ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
