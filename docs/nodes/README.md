@@ -25,13 +25,14 @@ Nodes › « + Ajouter un node » ouvre un assistant en quatre étapes (`web/src
 2. **Où est la machine** : **dans mon réseau** (derrière la même box que la machine de Forgeyard) ou **ailleurs** (un VPS, une autre maison : sa propre IP publique).
 3. **Qui reçoit les visites de ses apps** (voir [routing](../network/routing.md#les-modes-dentrée-dun-node)) :
    - dans ton réseau : **Traefik de la machine de Forgeyard** (relais, recommandé : rien à configurer) ou **ton reverse proxy** ;
-   - ailleurs : **Traefik de l'agent** (il prend 80/443 et gère le HTTPS, recommandé) ou **ton reverse proxy**, avec l'IP publique de la machine.
+   - dans ton réseau, pour une machine que le réseau local ne joint pas (un PC sous WSL…) : **Tunnel par l'agent** ;
+   - ailleurs : **Tunnel par l'agent** (recommandé quand la machine de Forgeyard est un node : aucun port à ouvrir, aucune IP publique), **Traefik de l'agent** (il prend 80/443 et gère le HTTPS) ou **ton reverse proxy**, avec l'IP publique de la machine.
 
    Avec un reverse proxy, la règle à ajouter est donnée pour Caddy, Nginx, Traefik, Nginx Proxy Manager, HAProxy et Apache, avec le port du Traefik du node (8090 par défaut).
 4. **Installer l'agent** : la commande à lancer sur la machine, valable 1 h ; pour une machine de ton réseau, elle contient déjà `--agent-server <IP locale de Forgeyard>:8081`. La fenêtre suit ensuite l'installation et coche :
    - l'agent connecté (système, architecture, CPU) ;
    - Traefik lancé ;
-   - Traefik joignable par le chemin des visites : depuis la machine de Forgeyard sur le réseau local (relais, ou ton proxy dans ton réseau), ou sur l'IP publique, port 80 (Traefik de l'agent ailleurs). Derrière ton propre proxy ailleurs, Forgeyard ne peut pas l'essayer : l'onglet Réseau d'une app le fera.
+   - Traefik joignable par le chemin des visites : depuis la machine de Forgeyard sur le réseau local (relais, ou ton proxy dans ton réseau), ou sur l'IP publique, port 80 (Traefik de l'agent ailleurs) ; en tunnel, les deux étapes : la machine de Forgeyard joint le port HTTP du server, puis le server joint le Traefik du node par son agent. Derrière ton propre proxy ailleurs, Forgeyard ne peut pas l'essayer : l'onglet Réseau d'une app le fera.
 
    ```bash
    docker run -d --pull always --name forgeyard-agent --restart unless-stopped \

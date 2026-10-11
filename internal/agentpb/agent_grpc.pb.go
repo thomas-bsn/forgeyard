@@ -20,6 +20,7 @@ const _ = grpc.SupportPackageIsVersion9
 
 const (
 	AgentService_Connect_FullMethodName = "/forgeyard.agent.v1.AgentService/Connect"
+	AgentService_Tunnel_FullMethodName  = "/forgeyard.agent.v1.AgentService/Tunnel"
 )
 
 // AgentServiceClient is the client API for AgentService service.
@@ -30,6 +31,10 @@ const (
 // the agent dials out, so nodes need no inbound port. The node is identified by its client certificate.
 type AgentServiceClient interface {
 	Connect(ctx context.Context, opts ...grpc.CallOption) (grpc.BidiStreamingClient[AgentMessage, ServerMessage], error)
+	// Tunnel carries one TCP connection from the control plane to the node's Traefik, for a node that
+	// receives its visits through its agent (ingress mode "tunnel"). The agent opens it when asked by
+	// TunnelOpen; its first chunk names the tunnel, then both sides send the connection's bytes.
+	Tunnel(ctx context.Context, opts ...grpc.CallOption) (grpc.BidiStreamingClient[TunnelChunk, TunnelChunk], error)
 }
 
 type agentServiceClient struct {
@@ -53,6 +58,19 @@ func (c *agentServiceClient) Connect(ctx context.Context, opts ...grpc.CallOptio
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
 type AgentService_ConnectClient = grpc.BidiStreamingClient[AgentMessage, ServerMessage]
 
+func (c *agentServiceClient) Tunnel(ctx context.Context, opts ...grpc.CallOption) (grpc.BidiStreamingClient[TunnelChunk, TunnelChunk], error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	stream, err := c.cc.NewStream(ctx, &AgentService_ServiceDesc.Streams[1], AgentService_Tunnel_FullMethodName, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	x := &grpc.GenericClientStream[TunnelChunk, TunnelChunk]{ClientStream: stream}
+	return x, nil
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type AgentService_TunnelClient = grpc.BidiStreamingClient[TunnelChunk, TunnelChunk]
+
 // AgentServiceServer is the server API for AgentService service.
 // All implementations must embed UnimplementedAgentServiceServer
 // for forward compatibility.
@@ -61,6 +79,10 @@ type AgentService_ConnectClient = grpc.BidiStreamingClient[AgentMessage, ServerM
 // the agent dials out, so nodes need no inbound port. The node is identified by its client certificate.
 type AgentServiceServer interface {
 	Connect(grpc.BidiStreamingServer[AgentMessage, ServerMessage]) error
+	// Tunnel carries one TCP connection from the control plane to the node's Traefik, for a node that
+	// receives its visits through its agent (ingress mode "tunnel"). The agent opens it when asked by
+	// TunnelOpen; its first chunk names the tunnel, then both sides send the connection's bytes.
+	Tunnel(grpc.BidiStreamingServer[TunnelChunk, TunnelChunk]) error
 	mustEmbedUnimplementedAgentServiceServer()
 }
 
@@ -73,6 +95,9 @@ type UnimplementedAgentServiceServer struct{}
 
 func (UnimplementedAgentServiceServer) Connect(grpc.BidiStreamingServer[AgentMessage, ServerMessage]) error {
 	return status.Errorf(codes.Unimplemented, "method Connect not implemented")
+}
+func (UnimplementedAgentServiceServer) Tunnel(grpc.BidiStreamingServer[TunnelChunk, TunnelChunk]) error {
+	return status.Errorf(codes.Unimplemented, "method Tunnel not implemented")
 }
 func (UnimplementedAgentServiceServer) mustEmbedUnimplementedAgentServiceServer() {}
 func (UnimplementedAgentServiceServer) testEmbeddedByValue()                      {}
@@ -102,6 +127,13 @@ func _AgentService_Connect_Handler(srv interface{}, stream grpc.ServerStream) er
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
 type AgentService_ConnectServer = grpc.BidiStreamingServer[AgentMessage, ServerMessage]
 
+func _AgentService_Tunnel_Handler(srv interface{}, stream grpc.ServerStream) error {
+	return srv.(AgentServiceServer).Tunnel(&grpc.GenericServerStream[TunnelChunk, TunnelChunk]{ServerStream: stream})
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type AgentService_TunnelServer = grpc.BidiStreamingServer[TunnelChunk, TunnelChunk]
+
 // AgentService_ServiceDesc is the grpc.ServiceDesc for AgentService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -113,6 +145,12 @@ var AgentService_ServiceDesc = grpc.ServiceDesc{
 		{
 			StreamName:    "Connect",
 			Handler:       _AgentService_Connect_Handler,
+			ServerStreams: true,
+			ClientStreams: true,
+		},
+		{
+			StreamName:    "Tunnel",
+			Handler:       _AgentService_Tunnel_Handler,
 			ServerStreams: true,
 			ClientStreams: true,
 		},

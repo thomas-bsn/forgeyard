@@ -166,9 +166,12 @@ func (t *topoContext) appPath(ctx context.Context, a db.App, withDNS bool) ([]pa
 		case node.Relayed != 0 && t.local != nil:
 			steps = append(steps, pathStep{Key: "entry", Title: "Box → " + t.local.Name, Detail: ip + " :443", State: "info", Note: "machine de Forgeyard"})
 			relay := pathStep{Key: "relay", Title: "Relais · " + t.local.Name, Detail: "→ " + node.LocalIp + ":" + port, State: "ok", Note: "relais en place"}
+			if node.Relayed == relayTunnel {
+				relay.Detail = "→ tunnel par l'agent"
+			}
 			_, localOnline := t.live[t.local.ID]
 			switch {
-			case node.LocalIp == "":
+			case node.LocalIp == "" && node.Relayed != relayTunnel:
 				relay.State, relay.Note, relay.Detail = "error", "IP locale inconnue", "→ ?:"+port
 				diags = append(diags, diagnosis{Level: "error", Message: "L'IP locale de " + node.Name + " est inconnue : la machine de Forgeyard ne sait pas où relayer ses apps.",
 					Help: "Elle est trouvée par l'agent quand il se connecte : vérifiez qu'il est en ligne."})

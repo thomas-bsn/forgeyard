@@ -31,6 +31,8 @@ type Deps struct {
 	Nodes   *nodes.Hub
 	// AgentPort is the port agents dial for their gRPC stream.
 	AgentPort string
+	// HTTPPort is the port of the API and web UI, where Forgeyard's machine's Traefik sends tunneled apps.
+	HTTPPort string
 	// TrustedProxies may set X-Forwarded-For and X-Forwarded-Proto.
 	TrustedProxies []netip.Prefix
 	// AgentImage is the agent's container image shown in join commands.
@@ -56,6 +58,7 @@ type Server struct {
 	ca        *pki.CA
 	nodes     *nodes.Hub
 	agentPort string
+	httpPort  string
 
 	trustedProxies []netip.Prefix
 	agentImage     string
@@ -82,6 +85,9 @@ type Server struct {
 	imagePorts    map[string]imagePorts // ports images expose, by image name
 	// agentUpdateTried is when each node's agent was last asked to update.
 	agentUpdateTried map[int64]time.Time
+
+	tunnelMu      sync.RWMutex
+	tunneledHosts map[string]int64 // tunneled apps' domains, by their nodes
 }
 
 // NewServer returns a Server. setupToken must be non-empty while the setup wizard has not been completed.
@@ -92,6 +98,7 @@ func NewServer(d Deps, setupToken string) *Server {
 		ca:        d.CA,
 		nodes:     d.Nodes,
 		agentPort: d.AgentPort,
+		httpPort:  d.HTTPPort,
 
 		trustedProxies:   d.TrustedProxies,
 		agentImage:       d.AgentImage,
@@ -225,7 +232,7 @@ func (s *Server) Handler(webFS fs.FS) http.Handler {
 	mux.HandleFunc("GET /api/admin/settings/login", s.requireSuperadmin(s.handleGetLoginSettings))
 	mux.HandleFunc("PUT /api/admin/settings/login", s.requireSuperadmin(s.handlePutLoginSettings))
 	mux.Handle("/", spaHandler(webFS))
-	return s.realClient(requireJSONForWrites(mux))
+	return s.tunnelIngress(s.realClient(requireJSONForWrites(mux)))
 }
 
 // spaHandler serves static files and falls back to index.html so client-side routes work.

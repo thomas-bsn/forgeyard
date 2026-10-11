@@ -321,7 +321,7 @@ export function TopologyMap() {
     for (const n of fronts) out.push({ from: 'entry', to: traefikOf(n), kind: 'entry', tone: 'up' })
     for (const n of nodes) {
       const front = nodes.find((x) => x.id === n.relayedBy)
-      if (front) out.push({ from: traefikOf(front), to: traefikOf(n), kind: 'relay', tone: 'relay', label: 'relais LAN' })
+      if (front) out.push({ from: traefikOf(front), to: traefikOf(n), kind: 'relay', tone: 'relay', label: n.ingressMode === 'tunnel' ? 'tunnel' : 'relais LAN' })
       for (const c of n.containers) {
         const key = topoKey(n, c)
         if (!c.url || !visible(c)) continue

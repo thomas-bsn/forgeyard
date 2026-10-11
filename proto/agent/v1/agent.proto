@@ -8,6 +8,15 @@ option go_package = "github.com/thomas-bsn/forgeyard/internal/agentpb;agentpb";
 // the agent dials out, so nodes need no inbound port. The node is identified by its client certificate.
 service AgentService {
   rpc Connect(stream AgentMessage) returns (stream ServerMessage);
+  // Tunnel carries one TCP connection from the control plane to the node's Traefik, for a node that
+  // receives its visits through its agent (ingress mode "tunnel"). The agent opens it when asked by
+  // TunnelOpen; its first chunk names the tunnel, then both sides send the connection's bytes.
+  rpc Tunnel(stream TunnelChunk) returns (stream TunnelChunk);
+}
+
+message TunnelChunk {
+  string tunnel_id = 1; // only in the agent's first chunk
+  bytes data = 2;
 }
 
 message AgentMessage {
@@ -105,7 +114,13 @@ message ServerMessage {
     UpdateAgent update_agent = 10;
     DropAppData drop_app_data = 11;
     Uninstall uninstall = 12;
+    TunnelOpen tunnel_open = 13;
   }
+}
+
+// TunnelOpen asks the agent to open a Tunnel stream for this ID and connect it to the node's Traefik.
+message TunnelOpen {
+  string tunnel_id = 1;
 }
 
 // Uninstall: the node is being removed. The agent deletes what Forgeyard put on it (the apps' containers
@@ -201,6 +216,8 @@ message AppSpec {
 message Ingress {
   // "traefik": Traefik listens on 80/443 and gets HTTPS certificates itself.
   // "proxy": Traefik listens on http_port in plain HTTP, behind a proxy the user runs (Caddy…).
+  // "tunnel": Traefik listens in plain HTTP on no port of the machine: visits come through the agent's
+  // Tunnel streams.
   string mode = 1;
   int32 http_port = 2;
 }

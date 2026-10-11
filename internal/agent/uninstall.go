@@ -41,6 +41,10 @@ func uninstall(ctx context.Context, dc *docker.Client) error {
 			errs = append(errs, fmt.Errorf("volume %s : %w", v.Name, err))
 		}
 	}
+	// An agent of a tunneled node sits on the network too.
+	if self, err := selfContainer(ctx, dc); err == nil {
+		dc.DisconnectNetwork(ctx, networkName, self.ID)
+	}
 	if err := dc.RemoveNetwork(ctx, networkName); err != nil {
 		errs = append(errs, fmt.Errorf("réseau %s : %w", networkName, err))
 	}

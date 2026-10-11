@@ -4633,6 +4633,10 @@ a.link-btn {
   grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
 }
 
+.auth-options.auth-options-2x2 {
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+}
+
 .auth-option:disabled {
   opacity: 0.5;
   cursor: not-allowed;

@@ -164,6 +164,7 @@ type Hub struct {
 	extUsage   map[string][]UsageSample               // by ExternalKey, oldest first
 	logStreams map[string]chan *agentpb.LogLine       // by stream ID
 	execs      map[string]*execStream                 // terminals, by session ID
+	tunnels    map[string]*tunnelWaiter               // tunnels asked for, until their agent opens them
 }
 
 // NewHub returns an empty Hub.
@@ -172,7 +173,7 @@ func NewHub(st *store.Store, logger *slog.Logger) *Hub {
 		store: st, logger: logger, sessions: make(map[int64]*session),
 		statuses: make(map[int64]AppStatus), usage: make(map[int64][]UsageSample), extUsage: make(map[string][]UsageSample),
 		externals: make(map[int64][]*agentpb.ExternalContainer), logStreams: make(map[string]chan *agentpb.LogLine),
-		execs: make(map[string]*execStream),
+		execs: make(map[string]*execStream), tunnels: make(map[string]*tunnelWaiter),
 	}
 }
 

@@ -25,6 +25,7 @@ import (
 // fakeAgent is a node connected over the real gRPC stream, driven by the test.
 type fakeAgent struct {
 	stream agentpb.AgentService_ConnectClient
+	client agentpb.AgentServiceClient
 	nodeID int64
 }
 
@@ -68,7 +69,8 @@ func connectFakeAgent(t *testing.T, ts string, server *Server, admin *http.Clien
 	t.Cleanup(func() { conn.Close() })
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
-	stream, err := agentpb.NewAgentServiceClient(conn).Connect(ctx)
+	client := agentpb.NewAgentServiceClient(conn)
+	stream, err := client.Connect(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -81,7 +83,7 @@ func connectFakeAgent(t *testing.T, ts string, server *Server, admin *http.Clien
 	if err != nil || msg.GetWelcome() == nil {
 		t.Fatalf("welcome: %v %v", msg, err)
 	}
-	return &fakeAgent{stream: stream, nodeID: msg.GetWelcome().GetNodeId()}
+	return &fakeAgent{stream: stream, client: client, nodeID: msg.GetWelcome().GetNodeId()}
 }
 
 // desired waits for the next desired state.

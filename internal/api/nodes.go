@@ -59,11 +59,21 @@ type nodeResponse struct {
 	UpdateError   string `json:"updateError,omitempty"`
 }
 
+// nodes.relayed: how Forgeyard's machine passes a relayed node its visits.
+const (
+	relayLAN    = 1 // over the local network, to its Traefik's port
+	relayTunnel = 2 // through its agent's connection to the server: the node needs no inbound port
+)
+
 // ingressMode is how a node receives its apps' visits: traefik (directly, on 80/443), proxy (behind its
-// own reverse proxy) or relay (through Forgeyard's machine).
+// own reverse proxy), relay (through Forgeyard's machine, over the local network) or tunnel (through
+// Forgeyard's machine, then its agent).
 func ingressMode(n db.Node) string {
-	if n.Relayed != 0 {
+	switch n.Relayed {
+	case relayLAN:
 		return "relay"
+	case relayTunnel:
+		return "tunnel"
 	}
 	return n.IngressMode
 }
@@ -469,18 +479,22 @@ func (s *Server) setIngress(ctx context.Context, node db.Node, body nodeIngressR
 	if body.PublicIP != "" && net.ParseIP(body.PublicIP) == nil {
 		return node, http.StatusBadRequest, "IP publique invalide", nil
 	}
-	// relay: a node behind a proxy, Forgeyard's own machine.
+	// relay and tunnel: a node behind a proxy, Forgeyard's own machine.
 	relayed := int64(0)
 	switch body.Mode {
 	case "traefik", "proxy":
-	case "relay":
+	case "relay", "tunnel":
 		if node.IsLocal != 0 {
 			return node, http.StatusBadRequest, "la machine de Forgeyard ne se relaie pas elle-même : Traefik ou votre reverse proxy", nil
 		}
 		if _, err := s.store.GetLocalNode(ctx); err != nil {
 			return node, http.StatusConflict, "pas de machine de Forgeyard pour relayer : activez-la comme node, ou choisissez un autre mode", nil
 		}
-		body.Mode, relayed, body.PublicIP = "proxy", 1, ""
+		relayed = relayLAN
+		if body.Mode == "tunnel" {
+			relayed = relayTunnel
+		}
+		body.Mode, body.PublicIP = "proxy", ""
 	default:
 		return node, http.StatusBadRequest, "mode inconnu", nil
 	}
@@ -609,6 +623,11 @@ func (s *Server) handleCheckNode(w http.ResponseWriter, r *http.Request) {
 	switch {
 	case node.IsLocal != 0:
 		out.ReachDetail = "la machine de Forgeyard reçoit ses visites elle-même"
+	case node.Relayed == relayTunnel:
+		if out.Traefik == "ok" {
+			out.ReachTarget = "tunnel"
+			out.Reach, out.ReachDetail = s.checkTunnel(r.Context(), node)
+		}
 	case node.IngressMode == "proxy" && (node.Relayed != 0 || node.Lan != 0) && node.LocalIp != "":
 		out.ReachTarget = net.JoinHostPort(node.LocalIp, port)
 	case node.IngressMode == "proxy":
@@ -623,7 +642,7 @@ func (s *Server) handleCheckNode(w http.ResponseWriter, r *http.Request) {
 	if out.ReachTarget != "" && out.Traefik != "ok" {
 		out.ReachTarget = "" // nothing to reach before Traefik runs
 	}
-	if out.ReachTarget != "" {
+	if out.ReachTarget != "" && out.ReachTarget != "tunnel" {
 		ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 		defer cancel()
 		req, _ := http.NewRequestWithContext(ctx, http.MethodGet, "http://"+out.ReachTarget+"/", nil)

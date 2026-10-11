@@ -395,7 +395,7 @@ func (r *Reconciler) ensureTraefik(ctx context.Context, ingress *agentpb.Ingress
 		ports["443/tcp"] = []map[string]string{{"HostPort": "443"}}
 		exposed["443/tcp"] = map[string]any{}
 		binds = append(binds, "forgeyard-traefik-acme:/acme")
-	} else {
+	} else if ingress.GetMode() != "tunnel" { // a tunneled node's Traefik is reached through its agent only
 		port := ingress.GetHttpPort()
 		if port == 0 {
 			port = 8090

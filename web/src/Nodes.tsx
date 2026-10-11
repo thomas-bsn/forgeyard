@@ -191,7 +191,7 @@ function AddNode({ localAvailable, front, onDone, onClose }: { localAvailable: b
   // The second question depends on the first: on Forgeyard's network, its machine can relay.
   function pickPlace(p: Place) {
     setPlace(p)
-    setIngress(p === 'lan' && front ? 'relay' : 'traefik')
+    setIngress(front && p === 'lan' ? 'relay' : front && p === 'remote' ? 'tunnel' : 'traefik')
   }
 
   // Once the command is shown, wait for the agent, then check the node is ready.
@@ -226,7 +226,7 @@ function AddNode({ localAvailable, front, onDone, onClose }: { localAvailable: b
         local,
         lan: place === 'lan',
         ingressMode: ingress,
-        publicIp: place === 'remote' ? publicIp : '',
+        publicIp: place === 'remote' && ingress !== 'tunnel' ? publicIp : '',
         ingressHttpPort: Number(port) || 8090,
       })
       setJoin(j)
@@ -250,9 +250,12 @@ function AddNode({ localAvailable, front, onDone, onClose }: { localAvailable: b
               ? { key: 'relay', title: `Traefik de ${frontName}`, text: `Les visites arrivent sur ${frontName}, qui les relaie à ce node par le réseau local. Rien à configurer.`, flow: `box → ${frontName} :443 → ce node :${port} → apps`, recommended: true }
               : { key: 'traefik', title: 'Traefik de l’agent', text: 'Il prend les ports 80 et 443 de cette machine : la box doit les lui envoyer.', flow: 'box → Traefik :443 → apps' },
             { key: 'proxy', title: 'Mon reverse proxy', text: 'Ton Caddy (sur une autre machine ou celle-ci) envoie lui-même les apps au Traefik de ce node. Une règle à ajouter.', flow: `box → ton proxy :443 → ce node :${port} → apps` },
+            // For a machine the local network cannot reach (WSL, a guest network…).
+            ...(front ? [{ key: 'tunnel' as const, title: 'Tunnel par l’agent', text: `Les visites arrivent sur ${frontName}, qui les passe à ce node par la connexion de son agent. Aucun port à ouvrir sur la machine.`, flow: `box → ${frontName} :443 → agent → apps` }] : []),
           ]
         : [
-            { key: 'traefik', title: 'Traefik de l’agent', text: 'Il prend les ports 80 et 443 de la machine et gère le HTTPS. Rien à configurer.', flow: 'Internet → Traefik :443 → apps', recommended: true },
+            ...(front ? [{ key: 'tunnel' as const, title: 'Tunnel par l’agent', text: `Les visites arrivent sur ${frontName}, qui les passe à ce node par la connexion de son agent. Aucun port à ouvrir sur la machine.`, flow: `box → ${frontName} :443 → agent → apps`, recommended: true }] : []),
+            { key: 'traefik', title: 'Traefik de l’agent', text: 'Il prend les ports 80 et 443 de la machine et gère le HTTPS : la machine doit avoir sa propre IP publique.', flow: 'Internet → Traefik :443 → apps', recommended: !front },
             { key: 'proxy', title: 'Mon reverse proxy', text: 'Ton Caddy, Nginx… garde 80/443 et envoie les apps au Traefik de l’agent. Une règle à ajouter.', flow: `Internet → ton proxy :443 → Traefik :${port} → apps` },
           ]
   const placeText = { this: 'cette machine', lan: 'dans ton réseau', remote: 'ailleurs' }[place]
@@ -374,14 +377,14 @@ function AddNode({ localAvailable, front, onDone, onClose }: { localAvailable: b
               ))}
             </div>
           </div>
-          {place === 'remote' && (
+          {place === 'remote' && ingress !== 'tunnel' && (
             <label className="field">
               <span>IP publique de la machine</span>
               <input value={publicIp} onChange={(e) => setPublicIp(e.target.value.trim())} placeholder="51.210.33.7" required />
               <small>Le DNS de ses apps pointera ici.</small>
             </label>
           )}
-          {ingress !== 'traefik' && (
+          {ingress !== 'traefik' && ingress !== 'tunnel' && (
             <label className="field field-narrow">
               <span>{ingress === 'relay' ? 'Port du Traefik de ce node pour le relais' : 'Port du Traefik, vers lequel ton proxy envoie les apps'}</span>
               <input type="number" min={1} max={65535} value={port} onChange={(e) => setPort(e.target.value)} required />
@@ -419,13 +422,19 @@ function AddNode({ localAvailable, front, onDone, onClose }: { localAvailable: b
             {node?.state === 'online' && (
               <CheckItem
                 state={!check || check.traefik === 'unknown' ? 'wait' : check.traefik === 'ok' ? 'ok' : 'error'}
-                text={check?.traefik === 'down' ? 'Traefik ne tourne pas : regarde les logs de l’agent' : check?.traefik === 'ok' ? `Traefik lancé${ingress === 'traefik' ? ' sur 80 et 443' : ` sur le port ${port}`}` : 'Lancement de Traefik…'}
+                text={check?.traefik === 'down' ? 'Traefik ne tourne pas : regarde les logs de l’agent' : check?.traefik === 'ok' ? `Traefik lancé${ingress === 'traefik' ? ' sur 80 et 443' : ingress === 'tunnel' ? ', sans port ouvert' : ` sur le port ${port}`}` : 'Lancement de Traefik…'}
               />
             )}
             {node?.state === 'online' && check && check.reach !== 'skip' && (
               <CheckItem
                 state={check.reach === 'ok' ? 'ok' : 'error'}
-                text={check.reach === 'ok' ? `${ingress === 'relay' ? `${frontName} joint ce node` : 'Traefik joignable'} sur ${check.reachTarget}` : (check.reachDetail ?? 'injoignable')}
+                text={
+                  check.reach !== 'ok'
+                    ? (check.reachDetail ?? 'injoignable')
+                    : ingress === 'tunnel'
+                      ? `${frontName} joint ce node par le tunnel de son agent`
+                      : `${ingress === 'relay' ? `${frontName} joint ce node` : 'Traefik joignable'} sur ${check.reachTarget}`
+                }
               />
             )}
             {node?.state === 'online' && check?.reach === 'skip' && check.reachDetail && <CheckItem state="info" text={check.reachDetail} />}
@@ -638,7 +647,7 @@ function NodeCard({
               <strong>{ingressLine(node, local).title}</strong>
               <span className="muted">
                 {ingressLine(node, local).text}
-                {node.publicIp && node.ingressMode !== 'relay' ? ` · IP publique ${node.publicIp}` : ''}
+                {node.publicIp && node.ingressMode !== 'relay' && node.ingressMode !== 'tunnel' ? ` · IP publique ${node.publicIp}` : ''}
               </span>
             </div>
           </div>
@@ -734,7 +743,7 @@ function NetworkSettings({ node, local, onClose, onSaved }: { node: Node; local?
     setBusy(true)
     setError('')
     try {
-      await api.setNodeIngress(node.id, { publicIp: mode === 'relay' ? '' : ip, ingressMode: mode, ingressHttpPort: Number(port) })
+      await api.setNodeIngress(node.id, { publicIp: mode === 'relay' || mode === 'tunnel' ? '' : ip, ingressMode: mode, ingressHttpPort: Number(port) })
       onSaved()
     } catch (err) {
       setError(errorMessage(err))
@@ -759,6 +768,13 @@ function NetworkSettings({ node, local, onClose, onSaved }: { node: Node; local?
             ? `Sur le même réseau que ${front.name} : les visites arrivent chez lui, qui les passe à ce node par le réseau local. Rien à configurer.`
             : 'Il faut d’abord activer la machine de Forgeyard comme node.',
         },
+        {
+          key: 'tunnel',
+          title: front ? `Tunnel par ${front.name}` : 'Tunnel par la machine de Forgeyard',
+          text: front
+            ? `Où qu’il soit : les visites arrivent chez ${front.name}, qui les passe à ce node par la connexion de son agent. Aucun port à ouvrir.`
+            : 'Il faut d’abord activer la machine de Forgeyard comme node.',
+        },
         { key: 'traefik', title: 'Directement', text: 'Ce node a sa propre IP publique (un VPS, une autre box) : son Traefik prend 80 et 443 et gère le HTTPS.' },
         { key: 'proxy', title: 'Son propre reverse proxy', text: 'Un Caddy ou un Nginx devant ce node lui envoie ses apps : à configurer chez toi.' },
       ]
@@ -775,13 +791,13 @@ function NetworkSettings({ node, local, onClose, onSaved }: { node: Node; local?
           <button type="button" className="btn" onClick={onClose} disabled={busy}>
             Annuler
           </button>
-          <button type="submit" className="btn btn-primary" disabled={busy || (mode === 'relay' && !front)}>
+          <button type="submit" className="btn btn-primary" disabled={busy || ((mode === 'relay' || mode === 'tunnel') && !front)}>
             Enregistrer
           </button>
         </>
       }
     >
-      <div className={`auth-options ${options.length === 3 ? 'auth-options-3' : ''}`}>
+      <div className={`auth-options ${options.length === 3 ? 'auth-options-3' : options.length === 4 ? 'auth-options-2x2' : ''}`}>
         {options.map((o) => (
           <button
             key={o.key}
@@ -789,7 +805,7 @@ function NetworkSettings({ node, local, onClose, onSaved }: { node: Node; local?
             className={`auth-option ${mode === o.key ? 'selected' : ''}`}
             onClick={() => setMode(o.key)}
             aria-pressed={mode === o.key}
-            disabled={o.key === 'relay' && !front}
+            disabled={(o.key === 'relay' || o.key === 'tunnel') && !front}
           >
             <strong>{o.title}</strong>
             <small>{o.text}</small>
@@ -810,6 +826,13 @@ function NetworkSettings({ node, local, onClose, onSaved }: { node: Node; local?
           <p className="hint">Le DNS des apps de ce node pointe vers {front.name}{frontIp ? ` (${frontIp})` : ''}, qui reçoit les visites et gère le HTTPS.</p>
         </>
       )}
+      {mode === 'tunnel' && front && (
+        <p className="hint">
+          Le DNS des apps de ce node pointe vers {front.name}
+          {frontIp ? ` (${frontIp})` : ''}, qui reçoit les visites et gère le HTTPS, puis les passe à Forgeyard, qui les envoie à ce node par la
+          connexion de son agent.
+        </p>
+      )}
       {mode === 'traefik' && !isFront && sameIpAsFront && (
         <div className="banner banner-warn">
           <span className="dot dot-warn" />
@@ -829,7 +852,7 @@ function NetworkSettings({ node, local, onClose, onSaved }: { node: Node; local?
           <ProxySnippet domain={domain} port={Number(port) || 8090} detectedIp={node.localIp} />
         </>
       )}
-      {mode !== 'relay' && (
+      {mode !== 'relay' && mode !== 'tunnel' && (
         <label className="field">
           <span>IP publique de ce node</span>
           <input value={ip} onChange={(e) => setIp(e.target.value)} placeholder={defaultIp ? `${defaultIp} (celle de Réglages › Domaine)` : 'Celle de Réglages › Domaine'} />
@@ -849,6 +872,8 @@ function ingressLine(node: Node, local?: Node): { title: string; text: string } 
   switch (node.ingressMode) {
     case 'relay':
       return { title: `Relayé par ${local?.name ?? 'la machine de Forgeyard'}`, text: `Apps reçues sur le port ${node.ingressHttpPort}, par le réseau local` }
+    case 'tunnel':
+      return { title: `Tunnel par ${local?.name ?? 'la machine de Forgeyard'}`, text: 'Apps reçues par la connexion de son agent, sans port ouvert' }
     case 'proxy':
       return { title: 'Derrière son reverse proxy', text: `Apps reçues sur le port ${node.ingressHttpPort}` }
   }
