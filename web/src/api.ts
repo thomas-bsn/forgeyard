@@ -102,7 +102,7 @@ export type TopoNode = {
   name: string
   state: 'online' | 'offline'
   isLocal: boolean
-  ingressMode: 'traefik' | 'proxy' | 'relay' // relay: through Forgeyard's machine
+  ingressMode: 'traefik' | 'proxy' | 'relay' | 'tunnel' // relay, tunnel: through Forgeyard's machine
   httpPort: number
   localIp?: string
   publicIp?: string
@@ -201,7 +201,7 @@ export type Node = {
   publicIp: string
   localIp: string
   dockerError?: string
-  ingressMode: 'traefik' | 'proxy' | 'relay' // relay: through Forgeyard's machine
+  ingressMode: 'traefik' | 'proxy' | 'relay' | 'tunnel' // relay, tunnel: through Forgeyard's machine
   ingressHttpPort: number
   lan: boolean // on Forgeyard's network
   metrics?: {
@@ -491,7 +491,7 @@ export const api = {
   saveGeneralSettings: (name: string, publicUrl: string, appsLayout: Instance['appsLayout']) =>
     request<{ name: string; publicUrl: string; appsLayout: Instance['appsLayout'] }>('PUT', '/api/admin/settings/general', { name, publicUrl, appsLayout }),
   nodes: () => request<Node[]>('GET', '/api/admin/nodes'),
-  setNodeIngress: (id: number, body: { publicIp: string; ingressMode: 'traefik' | 'proxy' | 'relay'; ingressHttpPort: number }) =>
+  setNodeIngress: (id: number, body: { publicIp: string; ingressMode: 'traefik' | 'proxy' | 'relay' | 'tunnel'; ingressHttpPort: number }) =>
     request<Node>('PUT', `/api/admin/nodes/${id}/ingress`, body),
   createNode: (body: { name: string; local: boolean; lan?: boolean; ingressMode?: Node['ingressMode']; publicIp?: string; ingressHttpPort?: number }) =>
     request<JoinCommand>('POST', '/api/admin/nodes', body),

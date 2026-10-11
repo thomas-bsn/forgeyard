@@ -58,11 +58,12 @@ Quel que soit le proxy, la règle est la même : envoyer `*.mondomaine.com` vers
 
 La machine de Forgeyard (node A) reçoit ses visites de deux façons : **Traefik** prend les ports 80/443 et gère le HTTPS, ou **ton reverse proxy** les garde et envoie les apps à Traefik.
 
-Les autres nodes ont trois modes, choisis dans leur fenêtre « Réseau… » :
+Les autres nodes ont quatre modes, choisis dans leur fenêtre « Réseau… » :
 
 | Mode | Les visites arrivent… | DNS des apps | Pour |
 |---|---|---|---|
 | **Relais par le node A** | sur le node A, dont le Traefik les passe au Traefik du node par le réseau local | IP du node A | un node sur le même réseau que le node A (derrière la même box) |
+| **Tunnel par le node A** | sur le node A, dont le Traefik les passe au server, qui les envoie au Traefik du node par la connexion de son agent | IP du node A | n'importe quelle machine, sans port à ouvrir : un PC sous WSL, une machine derrière une box ou un NAT qu'on ne contrôle pas |
 | **Directement** | sur le node, dont le Traefik prend 80/443 et gère le HTTPS | IP publique du node | un node avec sa propre IP publique (VPS, autre box) |
 | **Son propre reverse proxy** | sur un Caddy ou un Nginx devant le node, qui les envoie à son Traefik | IP publique du node | un node d'un autre réseau, avec un proxy déjà en place |
 
@@ -71,6 +72,13 @@ En relais :
 - le Traefik du node écoute en HTTP sur son port d'entrée (8090 par défaut ; pratique aussi quand le port 80 est déjà pris, par Pi-hole par exemple) ;
 - le Traefik du node A reçoit, pour chaque app du node, une règle ``Host(`<app>.<domaine>`)`` vers `http://<IP locale du node>:<port>` ; l'agent l'écrit dans un fichier de configuration du conteneur Traefik (`/forgeyard/relays.yml`), que Traefik relit seul ; les règles suivent les apps, les nodes et leurs IP locales ;
 - il faut que le node A joigne le node à son IP locale (même réseau, ou un VPN).
+
+En tunnel :
+
+- le Traefik du node n'écoute sur aucun port de la machine : seul l'agent le joint, par le réseau `forgeyard` (l'agent s'y ajoute lui-même) ;
+- le Traefik du node A reçoit, pour chaque app du node, une règle ``Host(`<app>.<domaine>`)`` vers le port HTTP du server sur le node A (`http://<IP locale du node A>:8080` ; `FORGEYARD_HTTP_HOST_PORT` s'il est publié sur un autre port) ;
+- le server reconnaît le domaine de l'app et passe la requête au node : il demande à l'agent, sur sa connexion habituelle (port 8081), d'ouvrir un flux `Tunnel`, que l'agent relie à son Traefik ; une connexion TCP par flux, gardée et réutilisée entre les requêtes (`internal/tunnel`, `internal/nodes/tunnel.go`) ;
+- le node n'a besoin que de joindre le server, ce qu'il fait déjà ; en échange, toutes les visites de ses apps passent par la machine de Forgeyard et sa connexion.
 
 Une box n'envoie les ports 80 et 443 qu'à une seule machine : un node en « Directement » sans IP publique à lui (donc celle du node A) ne reçoit rien ; sa carte et sa fenêtre Réseau le signalent, et l'onglet Réseau de ses apps le montre en rouge. Avant que le relais soit un mode à part, il était deviné (un node derrière un proxy avec l'IP du node A) : ces nodes sont passés en « Relais » à la mise à jour.
 

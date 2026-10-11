@@ -106,6 +106,10 @@ func run(addr, agentAddr, dataDir string, logger *slog.Logger) error {
 	if err != nil {
 		return fmt.Errorf("agent-addr: %w", err)
 	}
+	_, httpPort, err := net.SplitHostPort(addr)
+	if err != nil {
+		return fmt.Errorf("addr: %w", err)
+	}
 
 	done, err := api.SetupCompleted(ctx, st.Queries)
 	if err != nil {
@@ -133,6 +137,8 @@ func run(addr, agentAddr, dataDir string, logger *slog.Logger) error {
 	}
 	apiServer := api.NewServer(api.Deps{
 		Store: st, Logger: logger, Secrets: box, CA: ca, Nodes: hub, AgentPort: agentPort,
+		// The machine publishes the HTTP port as is (docker-compose.yml): its Traefik reaches tunneled apps there.
+		HTTPPort:       envOr("FORGEYARD_HTTP_HOST_PORT", httpPort),
 		TrustedProxies: trustedProxies,
 		AgentImage:     envOr("FORGEYARD_AGENT_IMAGE", "ghcr.io/thomas-bsn/forgeyard-agent:latest"),
 		JoinDir:        os.Getenv("FORGEYARD_JOIN_DIR"),

@@ -232,6 +232,10 @@ func session(ctx context.Context, client agentpb.AgentServiceClient, dc *docker.
 					send(&agentpb.AgentMessage{Msg: &agentpb.AgentMessage_Uninstalled{Uninstalled: &agentpb.Uninstalled{Error: res}}})
 				}()
 			}
+		case *agentpb.ServerMessage_TunnelOpen:
+			if dc != nil {
+				go openTunnel(ctx, client, dc, m.TunnelOpen.GetTunnelId(), logger)
+			}
 		case *agentpb.ServerMessage_DropAppData:
 			if dc != nil {
 				go func(appID int64) {

@@ -381,6 +381,20 @@ type Network struct {
 }
 
 // RemoveNetwork deletes a network; a missing one is not an error.
+// ConnectNetwork attaches a container to a network.
+func (c *Client) ConnectNetwork(ctx context.Context, network, container string) error {
+	return c.call(ctx, http.MethodPost, "/networks/"+url.PathEscape(network)+"/connect", map[string]any{"Container": container}, nil)
+}
+
+// DisconnectNetwork detaches a container from a network; a missing network is not an error.
+func (c *Client) DisconnectNetwork(ctx context.Context, network, container string) error {
+	err := c.call(ctx, http.MethodPost, "/networks/"+url.PathEscape(network)+"/disconnect", map[string]any{"Container": container, "Force": true}, nil)
+	if errors.Is(err, ErrNotFound) {
+		return nil
+	}
+	return err
+}
+
 func (c *Client) RemoveNetwork(ctx context.Context, name string) error {
 	err := c.call(ctx, http.MethodDelete, "/networks/"+url.PathEscape(name), nil, nil)
 	if errors.Is(err, ErrNotFound) {

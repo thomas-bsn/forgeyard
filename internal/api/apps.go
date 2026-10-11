@@ -228,6 +228,9 @@ func (s *Server) desiredState(ctx context.Context, nodeID int64) (*agentpb.Desir
 		return nil, err
 	}
 	d := &agentpb.DesiredState{Ingress: &agentpb.Ingress{Mode: node.IngressMode, HttpPort: int32(node.IngressHttpPort)}}
+	if node.Relayed == relayTunnel {
+		d.Ingress.Mode = "tunnel"
+	}
 	for _, a := range apps {
 		env, err := s.openEnv(a.EnvSealed)
 		if err != nil {
@@ -250,9 +253,10 @@ func (s *Server) desiredState(ctx context.Context, nodeID int64) (*agentpb.Desir
 
 // relays lists the apps Forgeyard's own machine passes on to the relayed nodes: their visits reach it
 // (their DNS points to it), and its Traefik sends them over the local network to the node's Traefik,
-// which listens on its HTTP port.
+// which listens on its HTTP port, or to the server for a tunneled node.
 func (s *Server) relays(ctx context.Context, front db.Node, c dnsConfig) ([]*agentpb.Relay, error) {
 	if c.Mode == "none" {
+		s.setTunneledHosts(nil)
 		return nil, nil
 	}
 	nodeList, err := s.store.ListNodes(ctx)
@@ -260,21 +264,33 @@ func (s *Server) relays(ctx context.Context, front db.Node, c dnsConfig) ([]*age
 		return nil, err
 	}
 	var out []*agentpb.Relay
+	tunneled := map[string]int64{}
 	for _, n := range nodeList {
-		if n.ID == front.ID || n.Status != "active" || n.Relayed == 0 || n.LocalIp == "" {
+		if n.ID == front.ID || n.Status != "active" || n.Relayed == 0 {
 			continue
+		}
+		// A tunneled node's apps go to the server, which passes them on through the node's agent.
+		target := s.tunnelTarget(front)
+		if n.Relayed != relayTunnel {
+			if n.LocalIp == "" {
+				continue
+			}
+			target = "http://" + net.JoinHostPort(n.LocalIp, strconv.FormatInt(n.IngressHttpPort, 10))
 		}
 		apps, err := s.store.ListAppsByNode(ctx, n.ID)
 		if err != nil {
 			return nil, err
 		}
-		target := "http://" + net.JoinHostPort(n.LocalIp, strconv.FormatInt(n.IngressHttpPort, 10))
 		for _, a := range apps {
 			if host := webHost(c, a); host != "" {
 				out = append(out, &agentpb.Relay{Hostname: host, Target: target})
+				if n.Relayed == relayTunnel {
+					tunneled[host] = n.ID
+				}
 			}
 		}
 	}
+	s.setTunneledHosts(tunneled)
 	return out, nil
 }
 
