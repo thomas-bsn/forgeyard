@@ -1783,6 +1783,8 @@ export function Logs({ url }: { url: string }) {
   const [connected, setConnected] = useState(false)
   const box = useRef<HTMLPreElement>(null)
   const stick = useRef(true)
+  // Where the view last scrolled itself: lines arriving before its scroll event must not unstick it.
+  const autoTop = useRef(0)
 
   useEffect(() => {
     if (!live) return
@@ -1825,7 +1827,10 @@ export function Logs({ url }: { url: string }) {
   }, [url, live])
 
   useEffect(() => {
-    if (stick.current && box.current) box.current.scrollTop = box.current.scrollHeight
+    if (stick.current && box.current) {
+      box.current.scrollTop = box.current.scrollHeight
+      autoTop.current = box.current.scrollTop
+    }
   }, [lines])
 
   return (
@@ -1850,7 +1855,7 @@ export function Logs({ url }: { url: string }) {
         ref={box}
         onScroll={(e) => {
           const el = e.currentTarget
-          stick.current = el.scrollHeight - el.scrollTop - el.clientHeight < 40
+          stick.current = el.scrollTop >= autoTop.current - 1 || el.scrollHeight - el.scrollTop - el.clientHeight < 40
         }}
       >
         {lines.length === 0 ? (
