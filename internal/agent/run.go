@@ -210,7 +210,9 @@ func session(ctx context.Context, client agentpb.AgentServiceClient, dc *docker.
 				send(&agentpb.AgentMessage{Msg: &agentpb.AgentMessage_Uninstalled{Uninstalled: &agentpb.Uninstalled{}}})
 			} else {
 				go func() {
-					uctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
+					// The server disconnects the agent as soon as it answers, which ends the session's context:
+					// the cleanup must not end with it.
+					uctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 2*time.Minute)
 					defer cancel()
 					logger.Info("node removed: deleting what Forgeyard put on it")
 					res := ""
@@ -218,7 +220,8 @@ func session(ctx context.Context, client agentpb.AgentServiceClient, dc *docker.
 						logger.Warn("uninstalling left some things", "err", err)
 						res = err.Error()
 					}
-					send(&agentpb.AgentMessage{Msg: &agentpb.AgentMessage_Uninstalled{Uninstalled: &agentpb.Uninstalled{Error: res}}})
+					// The remover starts before the answer, as the agent stops once disconnected; it waits a
+					// little before deleting the agent's container, so the answer goes out.
 					stateDir := os.Getenv("FORGEYARD_AGENT_STATE")
 					if stateDir == "" {
 						stateDir = "/state"
@@ -226,6 +229,7 @@ func session(ctx context.Context, client agentpb.AgentServiceClient, dc *docker.
 					if err := removeSelf(uctx, dc, stateDir); err != nil {
 						logger.Warn("removing the agent's own container failed", "err", err)
 					}
+					send(&agentpb.AgentMessage{Msg: &agentpb.AgentMessage_Uninstalled{Uninstalled: &agentpb.Uninstalled{Error: res}}})
 				}()
 			}
 		case *agentpb.ServerMessage_DropAppData:
