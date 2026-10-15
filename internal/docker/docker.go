@@ -284,8 +284,8 @@ type Container struct {
 			Status string `json:"Status"` // starting, healthy, unhealthy
 		} `json:"Health"`
 	} `json:"State"`
-	RestartCount int `json:"RestartCount"`
-	HostConfig   HostConfig `json:"HostConfig"`
+	RestartCount    int        `json:"RestartCount"`
+	HostConfig      HostConfig `json:"HostConfig"`
 	NetworkSettings struct {
 		Ports map[string][]struct {
 			HostPort string `json:"HostPort"`
