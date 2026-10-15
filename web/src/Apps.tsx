@@ -898,6 +898,23 @@ function dockerfileBase(dockerfile: string): string {
 }
 
 /** The ports a Dockerfile exposes, from its EXPOSE lines (TCP only). */
+/** The paths a Dockerfile keeps: its VOLUME lines, as a JSON array or separated by spaces. */
+function dockerfileVolumes(dockerfile: string): string[] {
+  const out: string[] = []
+  for (const line of dockerfile.split('\n')) {
+    const m = line.trim().match(/^VOLUME\s+(.+)$/i)
+    if (!m) continue
+    let paths: string[]
+    try {
+      paths = m[1].trim().startsWith('[') ? JSON.parse(m[1]) : m[1].trim().split(/\s+/)
+    } catch {
+      continue
+    }
+    for (const p of paths) if (typeof p === 'string' && p.startsWith('/') && !out.includes(p)) out.push(p)
+  }
+  return out
+}
+
 function dockerfileExposed(dockerfile: string): number[] {
   const ports: number[] = []
   for (const line of dockerfile.split('\n')) {
@@ -964,12 +981,12 @@ function AppFormModal({
   const [port, setPort] = useState(String(initial?.port ?? 80))
   // The port fills in from what the image (or the Dockerfile) declares, until it is typed by hand.
   const [portTouched, setPortTouched] = useState(!!initial)
-  const [declared, setDeclared] = useState<{ image: string; ports: number[]; volumes: string[]; error?: string } | null>(null)
+  const [declared, setDeclared] = useState<{ image: string; ports: number[]; volumes: string[]; volumesFrom?: string; hub?: string; error?: string } | null>(null)
   useEffect(() => {
     if (!settledImage.trim() || sandbox) return
     let live = true
     api.imagePorts(settledImage).then(
-      (r) => live && setDeclared({ image: settledImage, ports: r.ports, volumes: r.volumes ?? [], error: r.error }),
+      (r) => live && setDeclared({ image: settledImage, ports: r.ports, volumes: r.volumes ?? [], volumesFrom: r.volumesFrom, hub: r.hub, error: r.error }),
       (err) => live && setDeclared({ image: settledImage, ports: [], volumes: [], error: errorMessage(err) }),
     )
     return () => {
@@ -989,12 +1006,19 @@ function AppFormModal({
   const [volumes, setVolumes] = useState<string[]>((initial?.volumes ?? []).filter((v) => !v.builtin).map((v) => v.path))
   const [volumesTouched, setVolumesTouched] = useState(!!initial)
   const [volumesOpen, setVolumesOpen] = useState(volumes.length > 0)
-  const declaredVolumes = declared?.image === settledImage ? declared.volumes : []
+  // Suggested: the Dockerfile's VOLUMEs, then those of the image (declared by it, or known for it).
+  const imageVolumes = declared?.image === settledImage ? declared.volumes : []
+  const fileVolumes = source === 'dockerfile' ? dockerfileVolumes(dockerfile) : []
+  const declaredVolumes = [...fileVolumes, ...imageVolumes.filter((v) => !fileVolumes.includes(v))]
+  const knownOnly = fileVolumes.length === 0 && declared?.image === settledImage && declared.volumesFrom === 'known'
+  const imageName = settledImage.split('/').pop()?.split(':')[0] ?? ''
+  const docs = declared?.image === settledImage ? declared.hub : undefined
   const declaredKey = declaredVolumes.join('\n')
+  // Until edited by hand, the volumes follow the suggestions: another image drops the previous one's.
   useEffect(() => {
-    if (volumesTouched || !declaredKey) return
-    setVolumes(declaredKey.split('\n'))
-    setVolumesOpen(true)
+    if (volumesTouched) return
+    setVolumes(declaredKey ? declaredKey.split('\n') : [])
+    if (declaredKey) setVolumesOpen(true)
   }, [declaredKey, volumesTouched])
   const editVolumes = (v: string[]) => {
     setVolumes(v)
@@ -1277,7 +1301,23 @@ function AppFormModal({
           </div>
           <small>
             Les dossiers du conteneur gardés quand l’app est redéployée (une base de données, des fichiers envoyés…). Le reste repart de zéro.
-            {declaredVolumes.length > 0 && !volumesTouched && ' Proposés par l’image.'}
+            {declaredVolumes.length > 0 &&
+              !volumesTouched &&
+              (knownOnly ? ` Proposés pour ${imageName}, d’après sa documentation : modifiez-les si besoin.` : fileVolumes.length ? ' Proposés par le Dockerfile.' : ' Proposés par l’image.')}
+            {declaredVolumes.length === 0 && !sandbox && (
+              <>
+                {' '}
+                L’image n’en indique pas : cherchez le dossier de ses données dans{' '}
+                {docs ? (
+                  <a href={docs} target="_blank" rel="noopener noreferrer">
+                    sa documentation
+                  </a>
+                ) : (
+                  'sa documentation'
+                )}{' '}
+                (souvent appelé « volumes » ou « persistent data »).
+              </>
+            )}
             {sandbox && ' Le /root d’une sandbox est déjà gardé.'}
           </small>
         </div>

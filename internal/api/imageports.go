@@ -9,7 +9,8 @@ import (
 )
 
 // The app form fills in the port an image exposes and offers the paths it keeps (its VOLUMEs): read from
-// its registry, without pulling it, and remembered for an hour.
+// its registry, without pulling it, and remembered for an hour. An image that declares no VOLUME gets the
+// folders its docs give, when it is a well-known one (see knownVolumes).
 
 const imagePortsTTL = time.Hour
 
@@ -23,7 +24,10 @@ type imagePorts struct {
 type imagePortsResponse struct {
 	Ports   []int    `json:"ports"`
 	Volumes []string `json:"volumes"`
-	Error   string   `json:"error,omitempty"` // why the image could not be read (private, unknown…)
+	// VolumesFrom says where the volumes come from: "image" (its VOLUMEs), "known" (Forgeyard's list).
+	VolumesFrom string `json:"volumesFrom,omitempty"`
+	Hub         string `json:"hub,omitempty"`   // its Docker Hub page, where its docs are
+	Error       string `json:"error,omitempty"` // why the image could not be read (private, unknown…)
 }
 
 func (s *Server) handleImagePorts(w http.ResponseWriter, r *http.Request) {
@@ -59,9 +63,14 @@ func (s *Server) handleImagePorts(w http.ResponseWriter, r *http.Request) {
 	if ports == nil {
 		ports = []int{}
 	}
-	volumes := cached.volumes
-	if volumes == nil {
-		volumes = []string{}
+	resp := imagePortsResponse{Ports: ports, Volumes: cached.volumes, Hub: hubPage(image), Error: cached.err}
+	switch {
+	case len(resp.Volumes) > 0:
+		resp.VolumesFrom = "image"
+	case knownImageVolumes(image) != nil:
+		resp.Volumes, resp.VolumesFrom = knownImageVolumes(image), "known"
+	default:
+		resp.Volumes = []string{}
 	}
-	writeJSON(w, http.StatusOK, imagePortsResponse{Ports: ports, Volumes: volumes, Error: cached.err})
+	writeJSON(w, http.StatusOK, resp)
 }
