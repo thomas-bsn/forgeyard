@@ -31,7 +31,7 @@ func (s *Server) handleMoveApp(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if a.StackID != 0 {
-		writeError(w, http.StatusConflict, "les services d'une stack tournent tous sur le même node : ils ne changent pas de node un par un")
+		writeError(w, http.StatusConflict, "les services d'un projet tournent tous sur le même node : ils ne changent pas de node un par un")
 		return
 	}
 	if a.MovingFrom != 0 {

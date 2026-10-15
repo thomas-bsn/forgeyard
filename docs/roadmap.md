@@ -46,7 +46,7 @@
 - [x] Détection du port sur lequel une app écoute vraiment
 - [x] Volumes : dossiers gardés entre les redéploiements, proposés d'après l'image, supprimés avec l'app
 - [ ] Copie des volumes lors d'un changement de node
-- [x] Sauvegardes des volumes des stacks vers un stockage S3 (restic, `pg_dump` pour postgres), planning, rétention, restauration dans un volume neuf ([sauvegardes](apps/backups.md))
+- [x] Sauvegardes des volumes des projets vers un stockage S3 (restic, `pg_dump` pour postgres), planning, rétention, restauration dans un volume neuf ([sauvegardes](apps/backups.md))
 - [ ] Sauvegardes des volumes des apps seules
 - [x] Réseau : chemin d'une requête vérifié (page d'une app), topologie et tableau de l'infrastructure (Nodes)
 - [ ] Trafic observé (métriques de Traefik) sur la topologie
@@ -55,13 +55,13 @@
 - [ ] Quotas utilisateurs
 - [ ] SMTP et emails
 
-## v0.5 : stacks
-- [x] Stacks docker-compose : un compose collé, un service = une app, réseau par stack, ordre des `depends_on`, jobs, redéploiement service par service ([stacks](apps/stacks.md))
+## v0.5 : projets docker-compose
+- [x] Projets docker-compose : un compose collé, un service = une app, réseau par projet, ordre des `depends_on`, jobs, redéploiement service par service ([projets](apps/projects.md))
 - [ ] `build:` dans un compose (avec la source GitHub)
 - [ ] Plusieurs services exposés, ports publics
 
 ## Plus tard
-- Stacks sur plusieurs nodes
+- Projets docker-compose sur plusieurs nodes
 - Preview deployments par pull request
 - Réseau privé WireGuard entre nodes
 - Volumes persistants (les données suivraient aussi un changement de node)
@@ -78,7 +78,7 @@
 - L'historique CPU / mémoire n'est gardé qu'en mémoire : il repart de zéro quand le server redémarre.
 - Changer de domaine ne supprime pas les anciens enregistrements DNS.
 - Pas d'en-têtes de sécurité HTTP ni d'email ACME (voir [sécurité](security/README.md#limites-connues)).
-- Une stack n'a qu'un service exposé, et tourne sur un seul node.
+- Un projet n'a qu'un service exposé, et tourne sur un seul node.
 - Les sauvegardes passent une à la fois sur toute l'instance.
 
 ---
@@ -130,4 +130,4 @@ Postgres, MySQL ou Redis sur le node de l'app, variables de connexion injectées
 ### Questions ouvertes
 - Railpack ou Nixpacks.
 
-Tranché : docker-compose prend la forme de [stacks](apps/stacks.md), un sous-ensemble du format (images publiées, volumes nommés, `x-forgeyard` pour exposer et sauvegarder), chaque service étant une app ; le même fichier tourne avec `docker compose up`.
+Tranché : docker-compose prend la forme de [projets](apps/projects.md), un sous-ensemble du format (images publiées, volumes nommés, `x-forgeyard` pour exposer et sauvegarder), chaque service étant une app ; le même fichier tourne avec `docker compose up`.

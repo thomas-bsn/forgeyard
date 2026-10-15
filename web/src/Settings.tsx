@@ -97,7 +97,7 @@ const intros: Record<Section, string> = {
   login: 'Comment les comptes se connectent.',
   discord: 'L’application Discord qui permet de se connecter avec Discord.',
   notifications: 'Les alertes envoyées aux admins dans un salon Discord.',
-  backups: 'Où vont les sauvegardes des volumes des stacks : un stockage compatible S3, hors des nodes, chiffré par restic.',
+  backups: 'Où vont les sauvegardes des volumes des projets docker-compose : un stockage compatible S3, hors des nodes, chiffré par restic.',
 }
 
 export default function Settings({ superadmin, section, onRenamed }: { superadmin: boolean; section?: string; onRenamed: () => void }) {
@@ -323,7 +323,7 @@ function BackupsPanel() {
       <section className="panel">
         <h2>Ce qui est sauvegardé</h2>
         <p className="muted">
-          Les volumes nommés des stacks, volume par volume, depuis la page de la stack (onglet Volumes et sauvegardes) : tous les jours ou toutes
+          Les volumes nommés des projets, volume par volume, depuis la page du projet (onglet Volumes et sauvegardes) : tous les jours ou toutes
           les heures, en gardant les N dernières. Un volume utilisé par un service marqué <span className="mono">x-forgeyard: {'{ backup: { type: postgres } }'}</span>{' '}
           est sauvegardé avec pg_dump, une copie cohérente de la base. Une restauration va toujours dans un volume neuf.
         </p>

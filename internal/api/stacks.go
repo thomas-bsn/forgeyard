@@ -194,12 +194,12 @@ func (in *stackInput) parse(creating bool) (*compose.Stack, string, compose.Erro
 		return nil, "", errs
 	}
 	if len(st.Services) > 20 {
-		return nil, "", compose.Errors{{Message: "20 services au maximum par stack"}}
+		return nil, "", compose.Errors{{Message: "20 services au maximum par projet"}}
 	}
 	if in.Name != "" {
 		for _, svc := range st.Services {
 			if name := stackAppName(in.Name, svc); len(name) > 32 {
-				errs = append(errs, compose.Error{Message: "le service " + svc.Name + " donnerait l'app " + name + " : 32 caractères au maximum, raccourcissez le nom de la stack ou du service"})
+				errs = append(errs, compose.Error{Message: "le service " + svc.Name + " donnerait l'app " + name + " : 32 caractères au maximum, raccourcissez le nom du projet ou du service"})
 			}
 		}
 	}
@@ -346,12 +346,12 @@ func canManageStack(u db.User, st db.Stack) bool {
 func (s *Server) stackFromPath(w http.ResponseWriter, r *http.Request) (db.Stack, bool) {
 	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
 	if err != nil {
-		writeError(w, http.StatusNotFound, "stack introuvable")
+		writeError(w, http.StatusNotFound, "projet introuvable")
 		return db.Stack{}, false
 	}
 	st, err := s.store.GetStack(r.Context(), id)
 	if errors.Is(err, sql.ErrNoRows) || (err == nil && !canManageStack(currentUser(r), st)) {
-		writeError(w, http.StatusNotFound, "stack introuvable")
+		writeError(w, http.StatusNotFound, "projet introuvable")
 		return db.Stack{}, false
 	}
 	if err != nil {
@@ -565,14 +565,14 @@ func (s *Server) checkStackNames(ctx context.Context, r *http.Request, c dnsConf
 			continue
 		}
 		if reserved[p.Name] {
-			return http.StatusConflict, p.Name + " est un nom réservé : renommez la stack"
+			return http.StatusConflict, p.Name + " est un nom réservé : renommez le projet"
 		}
 		taken, err := s.store.NameTaken(ctx, p.Name)
 		if err != nil {
 			return http.StatusInternalServerError, err.Error()
 		}
 		if taken != 0 {
-			return http.StatusConflict, "une app porte déjà le nom " + p.Name + " : renommez la stack ou le service"
+			return http.StatusConflict, "une app porte déjà le nom " + p.Name + " : renommez le projet ou le service"
 		}
 		if prov, err := s.dnsProvider(c); err == nil && prov != nil && p.Kind == kindWeb {
 			dctx, cancel := context.WithTimeout(ctx, 20*time.Second)
@@ -582,7 +582,7 @@ func (s *Server) checkStackNames(ctx context.Context, r *http.Request, c dnsConf
 				return http.StatusBadGateway, "vérification du DNS : " + err.Error()
 			}
 			if taken {
-				return http.StatusConflict, appHostname(c, p.Name) + " existe déjà dans votre DNS (un autre site l'utilise) : choisissez un autre nom de stack"
+				return http.StatusConflict, appHostname(c, p.Name) + " existe déjà dans votre DNS (un autre site l'utilise) : choisissez un autre nom de projet"
 			}
 		}
 	}
@@ -610,7 +610,7 @@ func (s *Server) handleCreateStack(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if in.NodeID != 0 && !isAdmin(user) {
-		writeError(w, http.StatusForbidden, "seul un admin choisit la machine d'une stack")
+		writeError(w, http.StatusForbidden, "seul un admin choisit la machine d'un projet")
 		return
 	}
 	c, err := s.loadDNSConfig(ctx)
@@ -630,7 +630,7 @@ func (s *Server) handleCreateStack(w http.ResponseWriter, r *http.Request) {
 	}
 	node, err := s.pickNode(ctx, in.NodeID)
 	if errors.Is(err, errNoNode) {
-		writeError(w, http.StatusServiceUnavailable, "aucun node en ligne pour accueillir la stack")
+		writeError(w, http.StatusServiceUnavailable, "aucun node en ligne pour accueillir le projet")
 		return
 	}
 	if errors.Is(err, errNodeUnavailable) {
@@ -681,7 +681,7 @@ func (s *Server) handleCreateStack(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 		}
-		s.appEvent(a.ID, eventInfo, "Créée par "+user.DisplayName+" avec la stack "+st.Name+" sur le node "+node.Name)
+		s.appEvent(a.ID, eventInfo, "Créée par "+user.DisplayName+" avec le projet "+st.Name+" sur le node "+node.Name)
 	}
 	s.logger.Info("stack created", "stack", st.Name, "services", len(created), "node", node.Name, "by", user.DisplayName)
 	s.push(ctx, node.ID)
@@ -829,10 +829,10 @@ func (s *Server) handleUpdateStack(w http.ResponseWriter, r *http.Request) {
 				s.appEvent(a.ID, eventError, err.Error())
 			}
 		}
-		s.appEvent(a.ID, eventInfo, "Ajoutée à la stack "+st.Name+" par "+user.DisplayName)
+		s.appEvent(a.ID, eventInfo, "Ajoutée au projet "+st.Name+" par "+user.DisplayName)
 	}
 	for _, u := range plan.Update {
-		s.appEvent(u.App.ID, eventInfo, "Configuration modifiée par "+user.DisplayName+" (compose de la stack)")
+		s.appEvent(u.App.ID, eventInfo, "Configuration modifiée par "+user.DisplayName+" (compose du projet)")
 	}
 	s.logger.Info("stack updated", "stack", st.Name, "created", len(plan.Create), "updated", len(plan.Update), "removed", len(plan.Remove), "by", user.DisplayName)
 	s.push(ctx, st.NodeID)
@@ -887,7 +887,7 @@ func (s *Server) handleStackAction(w http.ResponseWriter, r *http.Request) {
 			delete(s.crashes, a.ID)
 			s.mu.Unlock()
 		}
-		s.appEvent(a.ID, eventInfo, verb+" avec la stack par "+currentUser(r).DisplayName)
+		s.appEvent(a.ID, eventInfo, verb+" avec le projet par "+currentUser(r).DisplayName)
 	}
 	s.logger.Info("stack "+action, "stack", st.Name, "by", currentUser(r).DisplayName)
 	s.push(ctx, st.NodeID)
@@ -932,4 +932,4 @@ func (s *Server) removeStack(ctx context.Context, st db.Stack, volumes bool) err
 }
 
 // errStackApp refuses to change one service of a stack on its own: the compose file says how it runs.
-const errStackApp = "ce service appartient à une stack : modifiez son docker-compose.yml"
+const errStackApp = "ce service appartient à un projet : modifiez son docker-compose.yml"

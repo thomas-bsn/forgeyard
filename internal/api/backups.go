@@ -408,7 +408,7 @@ func (s *Server) runBackup(ctx context.Context, p db.BackupPolicy) {
 			s.appEvent(t.App.ID, eventError, "Sauvegarde du volume "+p.Volume+" en échec : "+msg)
 		}
 		s.notifyAdmins("backups", notification{Title: "Sauvegarde en échec : " + t.Stack.Name + " · " + p.Volume, Text: msg,
-			Path: "#/stacks/" + strconv.FormatInt(p.StackID, 10), Color: colorError})
+			Path: "#/projects/" + strconv.FormatInt(p.StackID, 10), Color: colorError})
 		return
 	}
 	s.logger.Info("backup done", "stack", t.Stack.Name, "volume", p.Volume, "snapshot", snapshot)
@@ -439,7 +439,7 @@ func (s *Server) doBackup(ctx context.Context, p db.BackupPolicy) (string, error
 	res, err := s.nodes.BackupJob(bctx, t.Stack.NodeID, &agentpb.BackupJob{Op: "backup", Restic: b.restic(), Volume: t.Docker,
 		Tag: backupTag(p), Keep: int32(p.Keep), Postgres: t.Postgres})
 	if errors.Is(err, nodes.ErrOffline) {
-		return "", errors.New("le node de la stack est hors ligne")
+		return "", errors.New("le node du projet est hors ligne")
 	}
 	if err != nil {
 		return "", err
@@ -487,7 +487,7 @@ func (s *Server) handlePutBackupPolicy(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !s.stackUsesVolume(ctx, st, p.Volume) {
-		writeError(w, http.StatusNotFound, "aucun service de la stack n'utilise ce volume")
+		writeError(w, http.StatusNotFound, "aucun service du projet n'utilise ce volume")
 		return
 	}
 	switch {
@@ -589,7 +589,7 @@ func (s *Server) handleListSnapshots(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 	res, err := s.nodes.BackupJob(tctx, st.NodeID, &agentpb.BackupJob{Op: "snapshots", Restic: b.restic(), Tag: backupTag(p)})
 	if errors.Is(err, nodes.ErrOffline) {
-		writeError(w, http.StatusServiceUnavailable, "le node de la stack est hors ligne")
+		writeError(w, http.StatusServiceUnavailable, "le node du projet est hors ligne")
 		return
 	}
 	if err != nil {

@@ -3152,13 +3152,13 @@ a.link-btn {
 
 .source-pick {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 8px;
 }
 
 @media (max-width: 560px) {
   .source-pick {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 }
 
@@ -4766,30 +4766,62 @@ a.link-btn {
 
 /* --- Stacks ------------------------------------------------------------------ */
 
-.stacks {
-  display: grid;
-  gap: 16px;
-}
-
-.stack-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
-  gap: 12px;
-}
-
-.stack-dots {
+.list-section {
   display: flex;
-  flex-wrap: wrap;
-  gap: 4px 12px;
-  margin: 6px 0 2px;
-  font-size: 0.82rem;
+  align-items: baseline;
+  gap: 6px;
+  margin: 6px 0 -4px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
   color: var(--muted);
 }
 
-.stack-dots > span {
-  display: inline-flex;
+.list-section .muted {
+  text-transform: none;
+  letter-spacing: 0;
+  font-weight: 400;
+}
+
+/* A project's logo: its first services' logos, overlapping. */
+.project-logo {
+  position: relative;
+  flex: none;
+  display: inline-block;
+}
+
+.project-logo > :first-child {
+  position: absolute;
+  left: 0;
+  top: 0;
+}
+
+.project-logo > :nth-child(2) {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  box-shadow: 0 0 0 2px var(--card);
+}
+
+.project-card-services {
+  display: grid;
+  gap: 3px;
+  margin-top: 6px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+  font-size: 0.84rem;
+}
+
+.project-card-service {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
-  gap: 5px;
+  gap: 8px;
+}
+
+.project-card-service > :last-child {
+  font-size: 0.8rem;
 }
 
 .compose-editor {

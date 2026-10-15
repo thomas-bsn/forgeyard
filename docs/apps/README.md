@@ -2,7 +2,7 @@
 
 Une **app** = un conteneur Docker lancé depuis une image (publiée, ou construite depuis un Dockerfile), avec ses variables d'environnement, sa limite mémoire et son adresse.
 
-Plusieurs conteneurs qui vont ensemble (une base, un job de migration, une API, un front) se déploient en **[stack](stacks.md)** depuis un `docker-compose.yml` : chaque service y devient une app. Leurs volumes se [sauvegardent](backups.md) vers un stockage S3.
+Plusieurs conteneurs qui vont ensemble (une base, un job de migration, une API, un front) se déploient en **[projet](projects.md)** depuis un `docker-compose.yml` : chaque service y devient une app. Leurs volumes se [sauvegardent](backups.md) vers un stockage S3.
 
 ## D'où vient l'app
 
@@ -10,6 +10,7 @@ La fenêtre de création (et de configuration) a le formulaire à gauche et, à 
 
 - **Image Docker** : une image publiée (Docker Hub, ghcr.io…), téléchargée par le node.
 - **Dockerfile** : collé dans le formulaire (64 Ko max., avec une ligne `FROM`), le node construit l'image (état « Construction de l'image… ») avec `pull=1`, pour reprendre les mises à jour de l'image de base. Le Dockerfile est seul, sans autres fichiers : `COPY` ne trouve rien, le code se récupère avec `RUN git clone` ou `ADD` d'une URL. L'image est nommée `forgeyard/<nom>:<empreinte du Dockerfile>` : un nouveau Dockerfile donne une nouvelle image, déployée sans coupure, et l'agent supprime l'ancienne une fois remplacée (et celle d'une app supprimée). Une construction ratée affiche l'erreur et ses dernières lignes. Le logo automatique est celui de l'image du premier `FROM`.
+- **Docker Compose** : un `docker-compose.yml`, déployé en [projet](projects.md) : une app par service.
 - **Sandbox** : une machine Linux sans adresse web, à laquelle on se connecte en SSH (voir [Sandbox et SSH](#sandbox-et-ssh)).
 - **GitHub** : bientôt.
 
@@ -82,7 +83,7 @@ Par défaut, la liste montre les apps Forgeyard ; les conteneurs externes sont �
 
 ## États
 
-`pending` (en attente du node), `pulling`, `creating`, `running`, `restarting`, `stopped`, `exited`, `error`, et `node-offline` si le node n'est pas connecté. Un service de [stack](stacks.md#démarrage) a aussi `waiting` (il attend ses dépendances), `blocked` (l'une d'elles a échoué), et un job `completed` ou `failed`. L'UI rafraîchit toutes les 3 s et affiche aussi le code de sortie, « tuée par manque de mémoire » et le nombre de redémarrages.
+`pending` (en attente du node), `pulling`, `creating`, `running`, `restarting`, `stopped`, `exited`, `error`, et `node-offline` si le node n'est pas connecté. Un service de [projet](projects.md#démarrage) a aussi `waiting` (il attend ses dépendances), `blocked` (l'une d'elles a échoué), et un job `completed` ou `failed`. L'UI rafraîchit toutes les 3 s et affiche aussi le code de sortie, « tuée par manque de mémoire » et le nombre de redémarrages.
 
 ## Adresse
 
@@ -108,7 +109,7 @@ Les **volumes** gardent des dossiers du conteneur quand l'app est redéployée :
 - Une app avec des volumes est **arrêtée puis relancée** à chaque redéploiement : deux versions ne doivent pas écrire les mêmes fichiers (deux PostgreSQL sur les mêmes données se corrompent). Quelques secondes de coupure, donc.
 - La page de l'app montre chaque volume et sa taille (mesurée par l'agent environ une fois par minute).
 - Les volumes ne sont supprimés qu'avec l'app, sur ordre explicite du server (pas quand un conteneur disparaît pour une autre raison : un changement de node ou un état mal reçu ne détruit pas de données). Une sandbox a déjà son `/root` gardé.
-- Pas encore : copie des données lors d'un changement de node, sauvegardes (elles existent pour les volumes des [stacks](backups.md)).
+- Pas encore : copie des données lors d'un changement de node, sauvegardes (elles existent pour les volumes des [projets](backups.md)).
 
 ## Déploiement sans coupure
 

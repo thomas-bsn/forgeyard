@@ -717,7 +717,7 @@ func (s *Server) handleCreateApp(w http.ResponseWriter, r *http.Request) {
 		s.internalError(w, r, err)
 		return
 	} else if taken != 0 {
-		writeError(w, http.StatusConflict, "une app ou une stack porte déjà ce nom")
+		writeError(w, http.StatusConflict, "une app ou un projet porte déjà ce nom")
 		return
 	}
 	// A name already in the DNS zone belongs to another site: its record must not be overwritten.
@@ -908,7 +908,7 @@ func (s *Server) handleDeleteApp(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if a.StackID != 0 {
-		writeError(w, http.StatusConflict, "ce service appartient à une stack : retirez-le de son docker-compose.yml, ou supprimez la stack")
+		writeError(w, http.StatusConflict, "ce service appartient à un projet : retirez-le de son docker-compose.yml, ou supprimez le projet")
 		return
 	}
 	if err := s.removeApp(r.Context(), a); err != nil {

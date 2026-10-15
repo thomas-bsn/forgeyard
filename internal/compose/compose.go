@@ -103,9 +103,9 @@ var (
 var refused = map[string]string{
 	"build":          "build n'est pas pris en charge : utilisez une image publiée (image: …)",
 	"ports":          "ports n'est pas pris en charge : exposez le service avec x-forgeyard: { expose: { port: 80 } }",
-	"expose":         "expose n'est pas nécessaire : les services de la stack se joignent par leur nom",
-	"env_file":       "env_file n'est pas pris en charge : mettez les variables dans la stack et utilisez ${VAR}",
-	"networks":       "networks n'est pas pris en charge : la stack a son propre réseau, les services s'y joignent par leur nom",
+	"expose":         "expose n'est pas nécessaire : les services du projet se joignent par leur nom",
+	"env_file":       "env_file n'est pas pris en charge : mettez les variables dans le projet et utilisez ${VAR}",
+	"networks":       "networks n'est pas pris en charge : le projet a son propre réseau, les services s'y joignent par leur nom",
 	"container_name": "container_name n'est pas pris en charge : Forgeyard nomme les conteneurs",
 	"network_mode":   "network_mode n'est pas pris en charge",
 	"privileged":     "privileged n'est pas autorisé",
@@ -212,7 +212,7 @@ func (p *parser) stack(root *yaml.Node) *Stack {
 		case kv.key == "version" || kv.key == "name" || strings.HasPrefix(kv.key, "x-"):
 			// version is obsolete, name is the stack's own; x- keys hold anchors.
 		case kv.key == "networks":
-			p.errorf(kv.keyN, "networks n'est pas pris en charge : la stack a son propre réseau")
+			p.errorf(kv.keyN, "networks n'est pas pris en charge : le projet a son propre réseau")
 		default:
 			p.errorf(kv.keyN, "%s n'est pas pris en charge", kv.key)
 		}
@@ -625,7 +625,7 @@ func (p *parser) links(st *Stack, services *yaml.Node) {
 		}
 	}
 	if len(exposed) > 1 {
-		p.errorf(line[exposed[1]], "un seul service exposé par stack : %s", strings.Join(exposed, ", "))
+		p.errorf(line[exposed[1]], "un seul service exposé par projet : %s", strings.Join(exposed, ", "))
 	}
 	for _, s := range st.Services {
 		if !s.Job {

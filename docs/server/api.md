@@ -51,7 +51,7 @@ Toutes les écritures sont en JSON. Les routes sont déclarées dans `internal/a
 | `POST /api/apps/{id}/network/test` | Demander l'adresse de l'app depuis la machine de Forgeyard |
 | `GET /api/apps/{id}/terminal` (WebSocket) | Shell dans le conteneur : binaire = frappes et sortie, texte = `resize` et `exit` |
 
-| `GET`, `POST /api/stacks` | Lister, créer une stack (`name`, `compose`, `env`, `nodeId` facultatif, admins seulement) ; un compose refusé répond 400 avec `errors: [{line, message}]` |
+| `GET`, `POST /api/stacks` | Lister, créer un projet (`name`, `compose`, `env`, `nodeId` facultatif, admins seulement) ; un compose refusé répond 400 avec `errors: [{line, message}]` |
 | `POST /api/stacks/validate` | Vérifier un compose sans rien enregistrer : services dans l'ordre de démarrage, volumes, erreurs |
 | `GET`, `PUT`, `DELETE /api/stacks/{id}` | Voir (avec compose et variables), modifier (seuls les services changés sont redéployés), supprimer (`?volumes=1` supprime aussi les volumes) |
 | `POST /api/stacks/{id}/{start\|stop\|redeploy}` | Actions sur tous les services |
@@ -59,9 +59,9 @@ Toutes les écritures sont en JSON. Les routes sont déclarées dans `internal/a
 | `POST /api/stacks/{id}/backups/{volume}/run` | Sauvegarder maintenant (202) |
 | `GET /api/stacks/{id}/backups/{volume}/snapshots` | Sauvegardes du volume, les plus récentes d'abord |
 | `POST /api/stacks/{id}/backups/{volume}/restore` | Restaurer une sauvegarde (`snapshot`) dans un volume neuf (202) |
-| `POST /api/stacks/{id}/backups/{volume}/restores/{restore}/use` | Mettre le volume restauré à la place de celui de la stack (`confirm: true`) |
+| `POST /api/stacks/{id}/backups/{volume}/restores/{restore}/use` | Mettre le volume restauré à la place de celui du projet (`confirm: true`) |
 
-Les routes d'app et de stack vérifient que l'utilisateur est le propriétaire ou un admin. Un service de stack ne se modifie, ne se supprime ni ne change de node comme une app (409) : on passe par le compose.
+Les routes d'app et de projet vérifient que l'utilisateur est le propriétaire ou un admin. Un service de projet ne se modifie, ne se supprime ni ne change de node comme une app (409) : on passe par le compose.
 
 ## Admin
 
@@ -88,7 +88,7 @@ Les routes d'app et de stack vérifient que l'utilisateur est le propriétaire o
 | `GET /api/admin/nodes/{node}/containers/{id}/events` | Derniers événements d'un conteneur externe |
 | `GET /api/admin/users` | Comptes, avec leur nombre d'apps |
 | `PUT /api/admin/users/{id}` | Rôle, désactivé, apps suspendues (jamais le superadmin ni soi-même) |
-| `DELETE /api/admin/users/{id}` | Supprimer un compte, ses apps et ses stacks (avec leurs volumes) |
+| `DELETE /api/admin/users/{id}` | Supprimer un compte, ses apps et ses projets (avec leurs volumes) |
 
 ## Superadmin
 

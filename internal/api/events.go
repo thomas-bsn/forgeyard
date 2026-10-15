@@ -65,7 +65,7 @@ func (s *Server) onAppStateChange(appID int64, from, to *agentpb.AppStatus) {
 	case "completed":
 		s.appEvent(appID, eventSuccess, "Job terminé")
 	case "failed":
-		msg := fmt.Sprintf("Job en échec (code %d) : la stack attend qu'il réussisse", to.GetExitCode())
+		msg := fmt.Sprintf("Job en échec (code %d) : le projet attend qu'il réussisse", to.GetExitCode())
 		if to.GetOomKilled() {
 			msg = "Job en échec : manque de mémoire"
 		}

@@ -1,7 +1,8 @@
 import { lazy, Suspense, useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react'
-import { api, errorMessage, type App, type AppEvent, type AppInput, type AppState, type AppUsage, type Container, type Node, type NodeChoice } from './api'
+import { api, errorMessage, type App, type AppEvent, type AppInput, type AppState, type AppUsage, type Container, type Node, type NodeChoice, type Stack } from './api'
 import { AppLogo, AreaChart, CopyField, formatBytes, LOGO_COLORS, Modal, since, Switch, upFor } from './ui'
 import { ImageCropper } from './Cropper'
+import { ProjectCard, ProjectDetail, ProjectFormModal, ProjectLogo, projectStates } from './Projects'
 import { AppNetworkTab } from './Network'
 // xterm.js is large: it loads only when a terminal opens.
 const Terminal = lazy(() => import('./Terminal'))
@@ -69,14 +70,21 @@ function useAppsData(admin: boolean) {
   const [apps, setApps] = useState<App[] | null>(null)
   const [nodes, setNodes] = useState<Node[]>([])
   const [containers, setContainers] = useState<Container[]>([])
+  const [projects, setProjects] = useState<Stack[]>([])
   const [error, setError] = useState('')
 
   async function load() {
     try {
-      const [a, n, c] = await Promise.all([api.apps(), admin ? api.nodes() : Promise.resolve([]), admin ? api.containers() : Promise.resolve([])])
+      const [a, n, c, p] = await Promise.all([
+        api.apps(),
+        admin ? api.nodes() : Promise.resolve([]),
+        admin ? api.containers() : Promise.resolve([]),
+        api.stacks(),
+      ])
       setApps(a)
       setNodes(n)
       setContainers(c)
+      setProjects(p)
       setError('')
     } catch (err) {
       setError(errorMessage(err))
@@ -89,7 +97,7 @@ function useAppsData(admin: boolean) {
     return () => clearInterval(id)
   }, [admin])
 
-  return { apps, nodes, containers, error, load }
+  return { apps, nodes, containers, projects, error, load }
 }
 
 export default function Apps({
@@ -105,7 +113,15 @@ export default function Apps({
   route: string[]
   go: (path: string) => void
 }) {
-  const { apps, nodes, containers, error, load } = useAppsData(admin)
+  const { apps, nodes, containers, projects, error, load } = useAppsData(admin)
+
+  // #/projects/3, and #/projects/3 from older links.
+  if ((route[0] === 'projects' || route[0] === 'stacks') && route[1]) {
+    if (!apps) return null
+    const project = projects.find((p) => p.id === Number(route[1]))
+    if (!project) return <NotFound what="Ce projet n’existe plus." go={go} />
+    return <ProjectDetail key={project.id} stack={project} onChange={load} go={go} />
+  }
 
   if (route[0] === 'apps' && route[1]) {
     const app = apps?.find((a) => a.id === Number(route[1]))
@@ -119,7 +135,7 @@ export default function Apps({
     if (!c) return <NotFound what="Ce conteneur n’existe plus, ou son node est hors ligne." go={go} />
     return <ContainerDetail container={c} superadmin={superadmin} onChange={load} go={go} />
   }
-  return <AppList apps={apps} nodes={nodes} containers={containers} admin={admin} layout={layout} error={error} onChange={load} go={go} />
+  return <AppList apps={apps} nodes={nodes} containers={containers} projects={projects} admin={admin} layout={layout} error={error} onChange={load} go={go} />
 }
 
 function NotFound({ what, go }: { what: string; go: (path: string) => void }) {
@@ -154,15 +170,22 @@ function containerText(c: Container): string {
 }
 
 /** One entry of the list: a Forgeyard app or an external container, with what the filters need. */
-type Item = { key: string; name: string; tone: string; group: StateFilter; external: boolean; app?: App; container?: Container }
+type Item = { key: string; name: string; tone: string; group: StateFilter; external: boolean; app?: App; container?: Container; project?: Stack }
 
-function toItems(apps: App[], containers: Container[]): Item[] {
+function toItems(apps: App[], containers: Container[], projects: Stack[]): Item[] {
   const group = (tone: string, running: boolean): StateFilter => (tone === 'down' ? 'problem' : running ? 'up' : 'stopped')
   return [
-    ...apps.map((a) => {
-      const tone = appTone(a)
-      return { key: `a${a.id}`, name: a.name, tone, group: group(tone, a.state === 'running' || a.state === 'completed' || tone === 'warn'), external: false, app: a }
+    // The apps of a project are listed in its card.
+    ...projects.map((p) => {
+      const tone = projectStates[p.state]?.tone ?? ''
+      return { key: `p${p.id}`, name: p.name, tone, group: group(tone, p.state !== 'stopped' && p.state !== 'pending'), external: false, project: p }
     }),
+    ...apps
+      .filter((a) => !a.stackId)
+      .map((a) => {
+        const tone = appTone(a)
+        return { key: `a${a.id}`, name: a.name, tone, group: group(tone, a.state === 'running' || tone === 'warn'), external: false, app: a }
+      }),
     ...containers.map((c) => {
       const tone = containerTone(c)
       return { key: `c${c.nodeId}-${c.id}`, name: c.name, tone, group: group(tone, c.state === 'running'), external: true, container: c }
@@ -202,6 +225,7 @@ function AppList({
   apps,
   nodes,
   containers,
+  projects,
   admin,
   layout,
   error,
@@ -211,20 +235,22 @@ function AppList({
   apps: App[] | null
   nodes: Node[]
   containers: Container[]
+  projects: Stack[]
   admin: boolean
   layout: AppsLayout
   error: string
   onChange: () => void
   go: (path: string) => void
 }) {
-  const [creating, setCreating] = useState(false)
+  const [creating, setCreating] = useState<Source | null>(null)
+  const [only, setOnly] = useState<'all' | 'apps' | 'projects'>('all')
   const [query, setQuery] = useState('')
   const [kind, setKind] = useState<Kind>('apps') // Forgeyard's apps first; external containers are one click away
   const [stateFilter, setStateFilter] = useState<StateFilter>('all')
   const [picked, setPicked] = useSelectedNode()
 
-  const all = toItems(apps ?? [], containers)
-  const nodeOf = (i: Item) => i.app?.nodeId ?? i.container?.nodeId
+  const all = toItems(apps ?? [], containers, projects)
+  const nodeOf = (i: Item) => i.app?.nodeId ?? i.container?.nodeId ?? i.project?.nodeId
   const choices = nodes.filter((n) => n.state !== 'pending' || all.some((i) => nodeOf(i) === n.id))
   // Users never pick a node: they see their apps, wherever they run.
   const node = admin ? choices.find((n) => String(n.id) === picked) : undefined
@@ -232,14 +258,17 @@ function AppList({
 
   const q = query.trim().toLowerCase()
   const matchesQuery = (i: Item) =>
-    !q || [i.name, i.app?.image ?? i.container?.image ?? '', i.app?.ownerName ?? '', i.container?.composeProject ?? ''].some((f) => f.toLowerCase().includes(q))
-  const byKind = inNode.filter((i) => kind === 'all' || (kind === 'external') === i.external)
+    !q ||
+    [i.name, i.app?.image ?? i.container?.image ?? '', i.app?.ownerName ?? i.project?.ownerName ?? '', i.container?.composeProject ?? '', ...(i.project?.services.map((a) => a.service ?? '') ?? [])].some((f) =>
+      f.toLowerCase().includes(q),
+    )
+  const byKind = inNode.filter((i) => (kind === 'all' || (kind === 'external') === i.external) && (only === 'all' || i.external || (only === 'projects') === !!i.project))
   const shown = byKind.filter((i) => (stateFilter === 'all' || i.group === stateFilter) && matchesQuery(i))
   const count = (f: StateFilter) => byKind.filter((i) => i.group === f).length
   const problems = (id?: number) => all.filter((i) => (id === undefined || nodeOf(i) === id) && i.group === 'problem').length
 
   const newApp = (
-    <button type="button" className="btn btn-primary" onClick={() => setCreating(true)}>
+    <button type="button" className="btn btn-primary" onClick={() => setCreating('image')}>
       + Nouvelle app
     </button>
   )
@@ -264,6 +293,22 @@ function AppList({
           ).map(([value, label]) => (
             <button key={value} type="button" aria-pressed={kind === value} className={kind === value ? 'on' : ''} onClick={() => setKind(value)}>
               {label}
+            </button>
+          ))}
+        </div>
+      )}
+      {kind !== 'external' && inNode.some((i) => i.project) && (
+        <div className="segmented segmented-small" role="group" aria-label="Apps ou projets">
+          {(
+            [
+              ['all', 'Tout', null],
+              ['apps', 'Apps', inNode.filter((i) => i.app).length],
+              ['projects', 'Projets', inNode.filter((i) => i.project).length],
+            ] as const
+          ).map(([value, label, n]) => (
+            <button key={value} type="button" aria-pressed={only === value} className={only === value ? 'on' : ''} onClick={() => setOnly(value)}>
+              {label}
+              {n !== null && <span className="filter-count">{n}</span>}
             </button>
           ))}
         </div>
@@ -301,21 +346,38 @@ function AppList({
 
   const title = node ? node.name : admin ? 'Toutes les apps' : 'Mes apps'
   const nodeDot = (n: Node) => <Dot tone={n.state === 'online' ? 'up' : n.state === 'offline' ? 'down' : ''} />
-  const createModal = creating && (
-    <AppFormModal
-      title="Nouvelle app"
-      admin={admin}
-      submitLabel="Créer et démarrer"
-      onClose={() => setCreating(false)}
-      onSubmit={async (input, logo) => {
-        const app = await api.createApp(input)
-        if (logo) await api.setAppLogo(app.id, { mode: 'custom', image: logo }).catch(() => {})
-        setCreating(false)
-        onChange()
-        go(`apps/${app.id}`)
-      }}
-    />
-  )
+  const createModal =
+    creating === 'compose' ? (
+      <ProjectFormModal
+        admin={admin}
+        onSource={setCreating}
+        onClose={() => setCreating(null)}
+        onSaved={(p) => {
+          setCreating(null)
+          onChange()
+          go(`projects/${p.id}`)
+        }}
+      />
+    ) : (
+      creating && (
+        <AppFormModal
+          key={creating}
+          title="Nouvelle app"
+          admin={admin}
+          initialSource={creating}
+          onCompose={() => setCreating('compose')}
+          submitLabel="Créer et démarrer"
+          onClose={() => setCreating(null)}
+          onSubmit={async (input, logo) => {
+            const app = await api.createApp(input)
+            if (logo) await api.setAppLogo(app.id, { mode: 'custom', image: logo }).catch(() => {})
+            setCreating(null)
+            onChange()
+            go(`apps/${app.id}`)
+          }}
+        />
+      )
+    )
 
   if (layout === 'launcher') {
     return (
@@ -342,19 +404,23 @@ function AppList({
         {error && <p className="error">{error}</p>}
         {empty}
         {shown.length > 0 && (
-          <div className="launcher-grid">
-            {shown.map((i) => (
+          <Sectioned
+            items={shown}
+            className="launcher-grid"
+            render={(i) => (
               <WithMenu key={i.key} item={i} admin={admin} onChange={onChange} place="launcher">
                 <LauncherIcon item={i} />
               </WithMenu>
-            ))}
-            <button type="button" className="launcher-icon launcher-new" onClick={() => setCreating(true)}>
-              <span className="launcher-plus" aria-hidden="true">
-                +
-              </span>
-              <span>Nouvelle app</span>
-            </button>
-          </div>
+            )}
+            extra={
+              <button type="button" className="launcher-icon launcher-new" onClick={() => setCreating('image')}>
+                <span className="launcher-plus" aria-hidden="true">
+                  +
+                </span>
+                <span>Nouvelle app</span>
+              </button>
+            }
+          />
         )}
         {createModal}
       </div>
@@ -404,19 +470,21 @@ function AppList({
         <section className="panel apps-panel">
           <div className="apps-panel-head">
             <h2>{title}</h2>
-            <span className="muted">{inNode.length} apps</span>
+            <span className="muted">{countText(inNode)}</span>
           </div>
           {filters}
           {error && <p className="error">{error}</p>}
           {empty}
           {shown.length > 0 && (
-            <div className="tile-grid">
-              {shown.map((i) => (
+            <Sectioned
+              items={shown}
+              className="tile-grid"
+              render={(i) => (
                 <WithMenu key={i.key} item={i} admin={admin} onChange={onChange} place="tile">
                   <AppTile item={i} />
                 </WithMenu>
-              ))}
-            </div>
+              )}
+            />
           )}
         </section>
         {createModal}
@@ -459,7 +527,7 @@ function AppList({
       <main className="apps-main">
         <div className="toolbar">
           <h1 className="toolbar-title">
-            {title} <span className="muted">{inNode.length} apps</span>
+            {title} <span className="muted">{countText(inNode)}</span>
           </h1>
           {newApp}
         </div>
@@ -467,13 +535,15 @@ function AppList({
         {error && <p className="error">{error}</p>}
         {empty}
         {shown.length > 0 && (
-          <div className="card-grid">
-            {shown.map((i) => (
+          <Sectioned
+            items={shown}
+            className="card-grid"
+            render={(i) => (
               <WithMenu key={i.key} item={i} admin={admin} onChange={onChange} place="card">
                 <AppCard item={i} admin={admin} />
               </WithMenu>
-            ))}
-          </div>
+            )}
+          />
         )}
       </main>
       {createModal}
@@ -497,6 +567,7 @@ function MiniMeter({ label, text, pct }: { label: string; text: string; pct: num
 }
 
 function ItemLogo({ item, size }: { item: Item; size: number }) {
+  if (item.project) return <ProjectLogo project={item.project} size={size} />
   return item.app ? (
     <AppLogo url={item.app.logo.url} color={item.app.logo.color} name={item.name} size={size} faded={item.group === 'stopped'} />
   ) : (
@@ -505,10 +576,12 @@ function ItemLogo({ item, size }: { item: Item; size: number }) {
 }
 
 function itemHref(i: Item): string {
+  if (i.project) return `#/projects/${i.project.id}`
   return i.app ? `#/apps/${i.app.id}` : `#/containers/${i.container!.nodeId}/${i.container!.id}`
 }
 
 function itemState(i: Item): string {
+  if (i.project) return projectStates[i.project.state]?.label ?? i.project.state
   return i.app ? stateText(i.app) : containerText(i.container!)
 }
 
@@ -577,8 +650,8 @@ function WithMenu({ item, admin, onChange, place, children }: { item: Item; admi
             Redéployer
           </button>
           {app.stackId ? (
-            <a role="menuitem" href={`#/stacks/${app.stackId}`} onClick={() => setOpen(false)}>
-              Voir sa stack
+            <a role="menuitem" href={`#/projects/${app.stackId}`} onClick={() => setOpen(false)}>
+              Voir son projet
             </a>
           ) : null}
           {admin && !app.stackId && (
@@ -623,13 +696,48 @@ function WithMenu({ item, admin, onChange, place, children }: { item: Item; admi
   )
 }
 
+/** "3 apps · 1 projet": how many single apps (and external containers) and projects a list holds. */
+function countText(items: Item[]): string {
+  const apps = items.filter((i) => !i.project).length
+  const projects = items.length - apps
+  const text = `${apps} app${apps > 1 ? 's' : ''}`
+  return projects ? `${text} · ${projects} projet${projects > 1 ? 's' : ''}` : text
+}
+
+/** The items of a list, projects first under their own title when there are both projects and single apps. */
+function Sectioned({ items, className, render, extra }: { items: Item[]; className: string; render: (i: Item) => ReactNode; extra?: ReactNode }) {
+  const projects = items.filter((i) => i.project)
+  const singles = items.filter((i) => !i.project)
+  if (projects.length === 0 || singles.length === 0)
+    return (
+      <div className={className}>
+        {items.map(render)}
+        {extra}
+      </div>
+    )
+  return (
+    <>
+      <h2 className="list-section">
+        Projets <span className="muted">· docker-compose</span>
+      </h2>
+      <div className={className}>{projects.map(render)}</div>
+      <h2 className="list-section">Apps</h2>
+      <div className={className}>
+        {singles.map(render)}
+        {extra}
+      </div>
+    </>
+  )
+}
+
 /** View B: logo, name, owner, state and address. */
 function AppCard({ item: i, admin }: { item: Item; admin: boolean }) {
+  if (i.project) return <ProjectCard project={i.project} admin={admin} />
   const address =
     i.app?.kind === 'sandbox'
       ? 'sandbox · accès SSH'
       : i.app?.kind === 'service' || i.app?.kind === 'job'
-        ? `${i.app.kind === 'job' ? 'job' : 'service'} ${i.app.service} · stack, sans adresse`
+        ? `${i.app.kind === 'job' ? 'job' : 'service'} ${i.app.service} · projet, sans adresse`
         : (i.app?.url?.replace(/^https?:\/\//, '') ?? (i.container?.ports.length ? i.container.ports.join(' · ') : ''))
   return (
     <a href={itemHref(i)} className={`app-card ${i.tone === 'down' ? 'app-card-down' : ''} ${i.external ? 'app-card-external' : ''}`}>
@@ -697,7 +805,8 @@ function nodeChoiceLabel(c: NodeChoice): string {
   return `${c.name} · ${formatBytes(c.freeMemoryBytes)} libres · ${c.cpus} CPU · ${c.apps} app${c.apps > 1 ? 's' : ''}${c.recommended ? ' (recommandée)' : ''}`
 }
 
-type Source = 'image' | 'dockerfile' | 'sandbox'
+// compose: a docker-compose.yml, deployed as a project (its form is in Projects.tsx).
+export type Source = 'image' | 'dockerfile' | 'compose' | 'sandbox'
 
 // The systems a sandbox starts from in one click; any other image works too.
 const sandboxSystems = [
@@ -720,6 +829,15 @@ const sourceIcons: Record<string, ReactNode> = {
       <path d="M14 3v5h5M9 13h6M9 17h4" />
     </svg>
   ),
+  // Four containers.
+  compose: (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" aria-hidden="true">
+      <rect x="3" y="3" width="8" height="8" rx="2" />
+      <rect x="13" y="3" width="8" height="8" rx="2" />
+      <rect x="3" y="13" width="8" height="8" rx="2" />
+      <rect x="13" y="13" width="8" height="8" rx="2" />
+    </svg>
+  ),
   sandbox: (
     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
       <rect x="3" y="4" width="18" height="16" rx="2" />
@@ -733,12 +851,36 @@ const sourceIcons: Record<string, ReactNode> = {
   ),
 }
 
-const sources: { key: Source | 'sandbox' | 'github'; label: string; soon?: boolean }[] = [
+const sources: { key: Source | 'github'; label: string; soon?: boolean }[] = [
   { key: 'image', label: 'Image' },
   { key: 'dockerfile', label: 'Dockerfile' },
+  { key: 'compose', label: 'Docker Compose' },
   { key: 'sandbox', label: 'Sandbox' },
   { key: 'github', label: 'GitHub', soon: true },
 ]
+
+/** Where a new app comes from. disabled: the sources that cannot be picked (an app's kind is set at creation). */
+export function SourcePick({ source, onPick, disabled }: { source: Source; onPick: (s: Source) => void; disabled?: (s: Source) => boolean }) {
+  return (
+    <div className="source-pick" role="radiogroup" aria-label="D’où vient l’app">
+      {sources.map((s) => (
+        <button
+          key={s.key}
+          type="button"
+          role="radio"
+          aria-checked={source === s.key}
+          className={`source-chip ${source === s.key ? 'on' : ''}`}
+          disabled={s.soon || (s.key !== 'github' && disabled?.(s.key))}
+          onClick={() => s.key !== 'github' && onPick(s.key)}
+        >
+          {sourceIcons[s.key]}
+          {s.label}
+          {s.soon && <span className="soon">bientôt</span>}
+        </button>
+      ))}
+    </div>
+  )
+}
 
 const dockerfileExample = `FROM nginx:alpine
 RUN echo 'Bonjour !' > /usr/share/nginx/html/index.html`
@@ -775,19 +917,24 @@ function AppFormModal({
   submitLabel,
   initial,
   admin,
+  initialSource,
+  onCompose,
   onSubmit,
   onClose,
 }: {
   title: string
   submitLabel: string
   initial?: App
+  initialSource?: Source
+  // onCompose: Docker Compose picked, whose form takes the place of this one.
+  onCompose?: () => void
   // Admins pick the node of a new app; users' apps go to the recommended one.
   admin?: boolean
   // logo: a framed picture chosen at creation, as a data URL.
   onSubmit: (input: AppInput, logo?: string) => Promise<void>
   onClose: () => void
 }) {
-  const [source, setSource] = useState<Source>(initial?.kind === 'sandbox' ? 'sandbox' : initial?.dockerfile ? 'dockerfile' : 'image')
+  const [source, setSource] = useState<Source>(initialSource ?? (initial?.kind === 'sandbox' ? 'sandbox' : initial?.dockerfile ? 'dockerfile' : 'image'))
   const [name, setName] = useState(initial?.name ?? '')
   const [image, setImage] = useState(initial?.dockerfile ? '' : (initial?.image ?? ''))
   const [dockerfile, setDockerfile] = useState(initial?.dockerfile ?? '')
@@ -988,27 +1135,16 @@ function AppFormModal({
 
   return (
     <Modal title={title} onClose={onClose} onSubmit={submit} aside={aside}>
-      <div className="source-pick" role="radiogroup" aria-label="D’où vient l’app">
-        {sources.map((s) => (
-          <button
-            key={s.key}
-            type="button"
-            role="radio"
-            aria-checked={source === s.key}
-            className={`source-chip ${source === s.key ? 'on' : ''}`}
-            // A sandbox stays one, an app stays one: the kind is set at creation.
-            disabled={s.soon || busy || (!!initial && (s.key === 'sandbox') !== (initial.kind === 'sandbox'))}
-            onClick={() => {
-              setSource(s.key as Source)
-              if (s.key === 'sandbox' && !image.trim()) setImage(sandboxSystems[0].image)
-            }}
-          >
-            {sourceIcons[s.key]}
-            {s.label}
-            {s.soon && <span className="soon">bientôt</span>}
-          </button>
-        ))}
-      </div>
+      <SourcePick
+        source={source}
+        // A sandbox stays one, an app stays one: the kind is set at creation. A project starts from Nouvelle app only.
+        disabled={(k) => busy || (k === 'compose' && !onCompose) || (!!initial && (k === 'sandbox') !== (initial.kind === 'sandbox'))}
+        onPick={(k) => {
+          if (k === 'compose') return onCompose?.()
+          setSource(k)
+          if (k === 'sandbox' && !image.trim()) setImage(sandboxSystems[0].image)
+        }}
+      />
       {sandbox ? (
         <div className="field">
           <span>Système</span>
@@ -1247,8 +1383,8 @@ function AppDetail({
         {app.stackId ? (
           <div className="banner">
             <span>
-              Service <strong>{app.service}</strong> de la <a href={`#/stacks/${app.stackId}`}>stack</a>
-              {app.kind === 'job' ? ' : un job, lancé une fois par version' : ''}. Sa configuration vient du docker-compose.yml de la stack.
+              Service <strong>{app.service}</strong> du <a href={`#/projects/${app.stackId}`}>projet</a>
+              {app.kind === 'job' ? ' : un job, lancé une fois par version' : ''}. Sa configuration vient du docker-compose.yml du projet.
             </span>
           </div>
         ) : null}
@@ -1381,7 +1517,7 @@ function AppDetail({
           <dt>Données</dt>
           <dd>
             {app.stackId ? (
-              <a href={`#/stacks/${app.stackId}`}>volumes de la stack</a>
+              <a href={`#/projects/${app.stackId}`}>volumes du projet</a>
             ) : app.volumes.length ? (
               <span className="volume-list">
                 {app.volumes.map((v) => (
@@ -1434,8 +1570,8 @@ function AppDetail({
             </button>
           )}
           {app.stackId ? (
-            <a className="btn detail-actions-wide" href={`#/stacks/${app.stackId}`}>
-              Configuration de la stack
+            <a className="btn detail-actions-wide" href={`#/projects/${app.stackId}`}>
+              Configuration du projet
             </a>
           ) : (
             <button type="button" className="btn detail-actions-wide" disabled={busy || !full} onClick={() => setEditing(true)}>

@@ -4,7 +4,6 @@ import { Avatar, Logo, useRoute, useTheme } from './ui'
 import Settings from './Settings'
 import Nodes from './Nodes'
 import Apps from './Apps'
-import Stacks from './Stacks'
 import Users from './Users'
 import Profile from './Profile'
 import Support from './Support'
@@ -55,8 +54,8 @@ export default function Dashboard({
     onLogout()
   }
 
-  // An app or an external container opens under Apps, a member's profile under Members.
-  const aliases: Record<string, string> = { containers: 'apps', users: 'members', u: 'members' }
+  // An app, a project or an external container opens under Apps, a member's profile under Members.
+  const aliases: Record<string, string> = { containers: 'apps', projects: 'apps', stacks: 'apps', users: 'members', u: 'members' }
   const page = aliases[route[0]] ?? route[0] ?? 'apps'
   const tab = (value: string, label: string, count?: number) => (
     <a href={`#/${value}`} className={`chip ${page === value ? 'on' : ''}`} aria-current={page === value ? 'page' : undefined}>
@@ -74,7 +73,6 @@ export default function Dashboard({
         </a>
         <nav className="tabs" aria-label="Sections">
           {tab('apps', 'Apps')}
-          {tab('stacks', 'Stacks')}
           {admin && tab('nodes', 'Nodes')}
           {tab('members', 'Membres', admin ? pending : 0)}
           {tab('support', 'Support', support)}
@@ -84,7 +82,6 @@ export default function Dashboard({
       </header>
 
       {page === 'apps' && <Apps admin={admin} superadmin={user.role === 'superadmin'} layout={instance.appsLayout} route={route.length ? route : ['apps']} go={go} />}
-      {page === 'stacks' && <Stacks admin={admin} route={route} go={go} />}
       {page === 'nodes' && admin && <Nodes localSupported={instance.localNodeSupported} />}
       {route[0] === 'u' && route[1] ? (
         <MemberPage id={Number(route[1])} me={user} />

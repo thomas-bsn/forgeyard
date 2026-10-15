@@ -74,7 +74,7 @@ func Interpolate(s string, vars map[string]string) (string, error) {
 			name := s[i+1 : j]
 			v, ok := vars[name]
 			if !ok {
-				return "", fmt.Errorf("variable %s non définie : ajoutez-la aux variables de la stack", name)
+				return "", fmt.Errorf("variable %s non définie : ajoutez-la aux variables du projet", name)
 			}
 			b.WriteString(v)
 			i = j - 1
@@ -115,7 +115,7 @@ func expand(expr string, vars map[string]string) (string, error) {
 	v, set := vars[name]
 	if rest == "" {
 		if !set {
-			return "", fmt.Errorf("variable %s non définie : ajoutez-la aux variables de la stack ou donnez une valeur par défaut (${%s:-…})", name, name)
+			return "", fmt.Errorf("variable %s non définie : ajoutez-la aux variables du projet ou donnez une valeur par défaut (${%s:-…})", name, name)
 		}
 		return v, nil
 	}

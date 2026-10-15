@@ -300,8 +300,8 @@ func (t *topoContext) sandboxPath(a db.App) ([]pathStep, []diagnosis) {
 func (t *topoContext) stackServicePath(a db.App) ([]pathStep, []diagnosis) {
 	var diags []diagnosis
 	node := t.nodes[a.NodeID]
-	steps := []pathStep{{Key: "visitor", Title: "Services de la stack", Detail: a.Service, State: "info", Note: "par son nom, sans adresse publique"}}
-	ag := pathStep{Key: "node", Title: "Réseau · " + stackNetwork(a.StackID), Detail: node.Name, State: "ok", Note: "réseau de la stack"}
+	steps := []pathStep{{Key: "visitor", Title: "Services du projet", Detail: a.Service, State: "info", Note: "par son nom, sans adresse publique"}}
+	ag := pathStep{Key: "node", Title: "Réseau · " + stackNetwork(a.StackID), Detail: node.Name, State: "ok", Note: "réseau du projet"}
 	if _, ok := t.live[node.ID]; !ok {
 		ag.State, ag.Note = "error", "hors ligne"
 		diags = append(diags, diagnosis{Level: "error", Message: "Le node " + node.Name + " est hors ligne."})

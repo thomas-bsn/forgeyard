@@ -13,12 +13,10 @@ import {
   type StackState,
   type StackVolume,
 } from './api'
-import { appTone, Dot, Logs, stateText } from './Apps'
-import { formatBytes, Modal, since, Switch } from './ui'
+import { appTone, Dot, Logs, SourcePick, stateText, type Source } from './Apps'
+import { AppLogo, formatBytes, Modal, since, Switch } from './ui'
 
-const POLL_MS = 3000
-
-const stackStates: Record<StackState, { label: string; tone: 'up' | 'warn' | 'down' | '' }> = {
+export const projectStates: Record<StackState, { label: string; tone: 'up' | 'warn' | 'down' | '' }> = {
   pending: { label: 'En attente', tone: '' },
   running: { label: 'En ligne', tone: 'up' },
   deploying: { label: 'Déploiement…', tone: 'warn' },
@@ -50,107 +48,52 @@ volumes:
   data:
 `
 
-function useStacks() {
-  const [stacks, setStacks] = useState<Stack[] | null>(null)
-  const [error, setError] = useState('')
-  const load = () =>
-    api.stacks().then(
-      (s) => {
-        setStacks(s)
-        setError('')
-      },
-      (err) => setError(errorMessage(err)),
-    )
-  useEffect(() => {
-    load()
-    const id = setInterval(load, POLL_MS)
-    return () => clearInterval(id)
-  }, [])
-  return { stacks, error, load }
-}
-
-export default function Stacks({ admin, route, go }: { admin: boolean; route: string[]; go: (path: string) => void }) {
-  const { stacks, error, load } = useStacks()
-  if (route[1]) {
-    if (!stacks) return null
-    const stack = stacks.find((s) => s.id === Number(route[1]))
-    if (!stack)
-      return (
-        <div className="empty-state">
-          <strong>Cette stack n’existe plus.</strong>
-          <button type="button" className="btn" onClick={() => go('stacks')}>
-            ← Retour aux stacks
-          </button>
-        </div>
-      )
-    return <StackDetail key={stack.id} stack={stack} onChange={load} go={go} />
-  }
-  return <StackList stacks={stacks} admin={admin} error={error} onChange={load} go={go} />
-}
-
-function StackList({ stacks, admin, error, onChange, go }: { stacks: Stack[] | null; admin: boolean; error: string; onChange: () => void; go: (path: string) => void }) {
-  const [creating, setCreating] = useState(false)
+/** A project's picture: the logos of its first services, overlapping. */
+export function ProjectLogo({ project, size }: { project: Stack; size: number }) {
+  const small = Math.round(size * 0.68)
   return (
-    <section className="stacks">
-      <div className="toolbar">
-        <h1 className="toolbar-title">
-          Stacks <span className="muted">· docker-compose</span>
-        </h1>
-        <button type="button" className="btn btn-primary" onClick={() => setCreating(true)}>
-          + Nouvelle stack
-        </button>
-      </div>
-      {error && <p className="error">{error}</p>}
-      {stacks && stacks.length === 0 && (
-        <div className="empty-state">
-          <strong>Aucune stack pour le moment.</strong>
+    <span className="project-logo" style={{ width: size, height: size }} aria-hidden="true">
+      {project.services.slice(0, 2).map((a) => (
+        <AppLogo key={a.id} url={a.logo.url} color={a.logo.color} name={a.name} size={small} />
+      ))}
+      {project.services.length === 0 && <AppLogo name={project.name} size={small} />}
+    </span>
+  )
+}
+
+/** A project in the app list: its state, address, and one line per app. */
+export function ProjectCard({ project: p, admin }: { project: Stack; admin: boolean }) {
+  const st = projectStates[p.state] ?? { label: p.state, tone: '' }
+  return (
+    <a href={`#/projects/${p.id}`} className={`app-card project-card ${st.tone === 'down' ? 'app-card-down' : ''}`}>
+      <span className="app-card-head">
+        <ProjectLogo project={p} size={44} />
+        <span className="app-card-title">
+          <strong>{p.name}</strong>
           <span className="muted">
-            Collez un docker-compose.yml : chaque service devient une app, sur un réseau à elle, démarrée dans l’ordre de ses depends_on.
+            projet · {p.services.length} app{p.services.length > 1 ? 's' : ''}
+            {admin ? ` · ${p.ownerName}` : ''}
           </span>
-        </div>
-      )}
-      <div className="stack-grid">
-        {stacks?.map((s) => {
-          const st = stackStates[s.state] ?? { label: s.state, tone: '' }
-          return (
-            <a key={s.id} href={`#/stacks/${s.id}`} className={`app-card ${st.tone === 'down' ? 'app-card-down' : ''}`}>
-              <span className="app-card-head">
-                <span className="app-card-title">
-                  <strong>{s.name}</strong>
-                  <span className="muted">
-                    {s.services.length} service{s.services.length > 1 ? 's' : ''} · {admin ? `${s.ownerName} · ${s.nodeName}` : s.nodeName}
-                  </span>
-                </span>
-                <span className="app-card-state">
-                  <Dot tone={st.tone} />
-                  {st.label}
-                </span>
-              </span>
-              <span className="stack-dots" aria-hidden="true">
-                {s.services.map((a) => (
-                  <span key={a.id} title={`${a.service} · ${stateText(a)}`}>
-                    <Dot tone={appTone(a)} />
-                    {a.service}
-                  </span>
-                ))}
-              </span>
-              <span className={s.url ? 'app-card-url' : 'muted app-card-meta'}>{s.url?.replace(/^https?:\/\//, '') ?? 'aucun service exposé'}</span>
-            </a>
-          )
-        })}
-      </div>
-      {creating && (
-        <StackFormModal
-          admin={admin}
-          onClose={() => setCreating(false)}
-          onSaved={(s) => {
-            setCreating(false)
-            onChange()
-            go(`stacks/${s.id}`)
-          }}
-        />
-      )}
-    </section>
+        </span>
+        <span className="app-card-state">
+          <Dot tone={st.tone} />
+          {st.label}
+        </span>
+      </span>
+      <span className={p.url ? 'app-card-url' : 'muted app-card-meta'}>{p.url?.replace(/^https?:\/\//, '') ?? 'aucun service exposé'}</span>
+      <span className="project-card-services">
+        {p.services.slice(0, 5).map((a) => (
+          <span key={a.id} className="project-card-service">
+            <Dot tone={appTone(a)} />
+            <span>
+              {a.service} <span className="muted">· {kindLabels[a.kind] ?? a.kind}</span>
+            </span>
+            <span className="muted">{stateText(a)}</span>
+          </span>
+        ))}
+        {p.services.length > 5 && <span className="muted">et {p.services.length - 5} autres</span>}
+      </span>
+    </a>
   )
 }
 
@@ -168,7 +111,20 @@ function usedVariables(compose: string): string[] {
 
 const kindLabels: Record<string, string> = { web: 'exposé', service: 'privé', job: 'job', sandbox: 'sandbox' }
 
-function StackFormModal({ stack, admin, onClose, onSaved }: { stack?: Stack; admin?: boolean; onClose: () => void; onSaved: (s: Stack) => void }) {
+export function ProjectFormModal({
+  stack,
+  admin,
+  onClose,
+  onSaved,
+  onSource,
+}: {
+  stack?: Stack
+  admin?: boolean
+  onClose: () => void
+  onSaved: (s: Stack) => void
+  // onSource: another source picked in Nouvelle app, which then shows its own form.
+  onSource?: (s: Source) => void
+}) {
   const [name, setName] = useState(stack?.name ?? '')
   const [compose, setCompose] = useState(stack?.compose ?? composeExample)
   // The example's password is made up here, so that it is valid as it comes.
@@ -198,7 +154,7 @@ function StackFormModal({ stack, admin, onClose, onSaved }: { stack?: Stack; adm
   // Checked as it is typed, once typing pauses.
   useEffect(() => {
     const t = setTimeout(() => {
-      api.validateStack({ name: stack?.name ?? (name.trim() || 'stack'), compose, env: vars }).then(
+      api.validateStack({ name: stack?.name ?? (name.trim() || 'projet'), compose, env: vars }).then(
         (p) => {
           setPreview(p)
           setErrors(p.errors)
@@ -235,7 +191,7 @@ function StackFormModal({ stack, admin, onClose, onSaved }: { stack?: Stack; adm
     }
   }
 
-  const shownName = stack?.name ?? (name.trim() || 'ma-stack')
+  const shownName = stack?.name ?? (name.trim() || 'mon-projet')
   const aside = (
     <>
       <span className="aside-label">Aperçu</span>
@@ -288,7 +244,7 @@ function StackFormModal({ stack, admin, onClose, onSaved }: { stack?: Stack; adm
       <span className="aside-spacer" />
       {error && <p className="error">{error}</p>}
       <button type="submit" className="btn btn-primary btn-block btn-big" disabled={busy || errors.length > 0}>
-        {busy ? 'Envoi…' : stack ? 'Enregistrer et déployer' : 'Créer la stack'}
+        {busy ? 'Envoi…' : stack ? 'Enregistrer et déployer' : 'Créer le projet'}
       </button>
       <button type="button" className="link-button aside-cancel" onClick={onClose} disabled={busy}>
         Annuler
@@ -297,10 +253,11 @@ function StackFormModal({ stack, admin, onClose, onSaved }: { stack?: Stack; adm
   )
 
   return (
-    <Modal title={stack ? `Stack ${stack.name}` : 'Nouvelle stack'} onClose={onClose} onSubmit={submit} aside={aside}>
+    <Modal title={stack ? `Projet ${stack.name}` : 'Nouvelle app'} onClose={onClose} onSubmit={submit} aside={aside}>
+      {onSource && <SourcePick source="compose" onPick={onSource} />}
       {!stack && (
         <label className="field">
-          <span>Nom</span>
+          <span>Nom du projet</span>
           <input value={name} onChange={(e) => setName(e.target.value.toLowerCase())} placeholder="shameless" required autoFocus pattern="[a-z0-9]([a-z0-9\-]{0,30}[a-z0-9])?" />
           <small>Le service exposé prend ce nom (son sous-domaine), les autres « {shownName}-service ».</small>
         </label>
@@ -371,7 +328,7 @@ function StackFormModal({ stack, admin, onClose, onSaved }: { stack?: Stack; adm
 
 type StackTab = 'services' | 'logs' | 'volumes' | 'compose'
 
-function StackDetail({ stack, onChange, go }: { stack: Stack; onChange: () => void; go: (path: string) => void }) {
+export function ProjectDetail({ stack, onChange, go }: { stack: Stack; onChange: () => void; go: (path: string) => void }) {
   const [full, setFull] = useState<Stack | null>(null)
   const [tab, setTab] = useState<StackTab>('services')
   const [editing, setEditing] = useState(false)
@@ -397,15 +354,15 @@ function StackDetail({ stack, onChange, go }: { stack: Stack; onChange: () => vo
     }
   }
 
-  const st = stackStates[stack.state] ?? { label: stack.state, tone: '' }
+  const st = projectStates[stack.state] ?? { label: stack.state, tone: '' }
   const running = stack.services.some((s) => s.running)
   const failedJob = stack.services.find((s) => s.state === 'failed')
 
   return (
     <div className="detail">
       <aside className="panel detail-side">
-        <a href="#/stacks" className="back-link">
-          ← Stacks
+        <a href="#/apps" className="back-link">
+          ← Apps
         </a>
         <div className="detail-title">
           <div>
@@ -474,15 +431,15 @@ function StackDetail({ stack, onChange, go }: { stack: Stack; onChange: () => vo
           </button>
         </div>
         <button type="button" className="link-button danger-link" disabled={busy} onClick={() => setDeleting(true)}>
-          Supprimer la stack…
+          Supprimer le projet…
         </button>
       </aside>
 
       <main className="detail-main">
-        <div className="segmented" role="tablist" aria-label="Vues de la stack">
+        <div className="segmented" role="tablist" aria-label="Vues du projet">
           {(
             [
-              ['services', 'Services'],
+              ['services', 'Apps du projet'],
               ['logs', 'Logs'],
               ['volumes', 'Volumes et sauvegardes'],
               ['compose', 'Compose'],
@@ -521,7 +478,7 @@ function StackDetail({ stack, onChange, go }: { stack: Stack; onChange: () => vo
       </main>
 
       {editing && full && (
-        <StackFormModal
+        <ProjectFormModal
           stack={full}
           onClose={() => setEditing(false)}
           onSaved={(s) => {
@@ -531,7 +488,7 @@ function StackDetail({ stack, onChange, go }: { stack: Stack; onChange: () => vo
           }}
         />
       )}
-      {deleting && <DeleteStack stack={stack} onClose={() => setDeleting(false)} onDeleted={() => (onChange(), go('stacks'))} />}
+      {deleting && <DeleteStack stack={stack} onClose={() => setDeleting(false)} onDeleted={() => (onChange(), go('apps'))} />}
     </div>
   )
 }
@@ -578,7 +535,7 @@ function DeleteStack({ stack, onClose, onDeleted }: { stack: Stack; onClose: () 
   }
   return (
     <Modal
-      title={`Supprimer la stack ${stack.name}`}
+      title={`Supprimer le projet ${stack.name}`}
       onClose={onClose}
       onSubmit={submit}
       footer={
@@ -593,7 +550,7 @@ function DeleteStack({ stack, onClose, onDeleted }: { stack: Stack; onClose: () 
       }
     >
       <p>
-        Ses {stack.services.length} services, leurs conteneurs, leur enregistrement DNS et le réseau de la stack sont supprimés. Les sauvegardes
+        Ses {stack.services.length} apps, leurs conteneurs, leur enregistrement DNS et le réseau du projet sont supprimés. Les sauvegardes
         déjà faites restent sur le stockage.
       </p>
       {stack.volumes.length > 0 && (
