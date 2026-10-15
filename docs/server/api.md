@@ -33,6 +33,7 @@ Toutes les écritures sont en JSON. Les routes sont déclarées dans `internal/a
 | `PUT /api/apps/{id}/logo`, `GET /api/apps/{id}/logo` | Choisir le logo d'une app (auto, image, initiale) ; logo envoyé |
 | `GET /api/logos?repo=` | Logo d'une image Docker Hub (mis en cache) |
 | `PUT /api/apps/{id}/public` | Afficher ou masquer une app sur le profil de son propriétaire |
+| `POST /api/me/discord/refresh` | Relire son profil Discord avec le bot (409 sans bot : passer par la connexion Discord) |
 | `PUT /api/me/notifications`, `POST /api/me/notifications/test` | Webhook personnel, message de test |
 | `GET`, `POST /api/me/ssh-keys`, `DELETE /api/me/ssh-keys/{id}` | Clés SSH de la passerelle |
 | `GET /api/me/sessions`, `DELETE /api/me/sessions/{id\|others}` | Appareils connectés, en déconnecter un ou tous les autres |
@@ -70,6 +71,7 @@ Les routes d'app et de projet vérifient que l'utilisateur est le propriétaire 
 | `GET /api/admin/requests` | Demandes de compte |
 | `POST /api/admin/requests/{id}/accept`, `/refuse` | Accepter (avec rôle) ou refuser |
 | `GET`, `PUT /api/admin/settings/discord` | App Discord |
+| `GET`, `PUT`, `DELETE /api/admin/settings/discord/bot` | Token du bot Discord (vérifié, chiffré), qui relit les profils chaque jour |
 | `GET`, `POST /api/admin/nodes` | Lister, créer un node (`local: true` pour la machine de Forgeyard ; `lan`, `ingressMode`, `publicIp`, `ingressHttpPort` pour son réseau) |
 | `POST /api/admin/nodes/{id}/join-command` | Nouvelle commande (node en attente) |
 | `PUT /api/admin/nodes/{id}/ingress` | IP publique et mode d’entrée : `traefik` (directement), `proxy` (son reverse proxy), `relay` (par la machine de Forgeyard) |

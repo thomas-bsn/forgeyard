@@ -80,6 +80,89 @@ function DiscordSettingsPanel() {
   )
 }
 
+/** The bot of the Discord application, which keeps the members' Discord pictures and names up to date. */
+function DiscordBotPanel() {
+  const [bot, setBot] = useState<{ set: boolean; name?: string } | null>(null)
+  const [token, setToken] = useState('')
+  const [error, setError] = useState('')
+  const [saved, setSaved] = useState(false)
+  const [busy, setBusy] = useState(false)
+
+  useEffect(() => {
+    api.discordBot().then(setBot, (err) => setError(errorMessage(err)))
+  }, [])
+
+  async function act(action: () => Promise<{ set: boolean; name?: string }>) {
+    setBusy(true)
+    setError('')
+    setSaved(false)
+    try {
+      setBot(await action())
+      setToken('')
+      setSaved(true)
+    } catch (err) {
+      setError(errorMessage(err))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  if (!bot) return error ? <p className="error">{error}</p> : null
+  return (
+    <form
+      className="panel"
+      onSubmit={(e) => {
+        e.preventDefault()
+        act(() => api.saveDiscordBot(token))
+      }}
+    >
+      <div className="header">
+        <h2 className="header-title">
+          Bot <span className="muted">(facultatif)</span>
+        </h2>
+        <span className={`banner ${bot.set ? 'banner-up' : ''}`}>
+          <span className={`dot ${bot.set ? 'dot-up' : ''}`} />
+          {bot.set ? `Actif${bot.name ? ` : ${bot.name}` : ''}` : 'Pas de bot'}
+        </span>
+      </div>
+      <p className="muted">
+        Sans bot, la photo, la bannière et le nom Discord d’un membre ne changent que quand il se reconnecte avec Discord. Avec, Forgeyard les relit
+        chaque jour, et tout de suite quand une photo a changé.
+      </p>
+      <ol className="steps-help">
+        <li>
+          Sur{' '}
+          <a href="https://discord.com/developers/applications" target="_blank" rel="noopener noreferrer">
+            discord.com/developers/applications
+          </a>
+          , ouvrez la même application, onglet <b>Bot</b>.
+        </li>
+        <li>
+          Cliquez sur <b>Reset Token</b> et collez le token ici. Le bot n’a besoin d’aucune permission ni d’être invité sur un serveur.
+        </li>
+      </ol>
+      <label className="field">
+        <span>Token du bot</span>
+        <input type="password" value={token} onChange={(e) => setToken(e.target.value)} placeholder={bot.set ? '•••••••• (enregistré)' : ''} autoComplete="off" />
+        <small>Vérifié auprès de Discord, puis chiffré ; jamais réaffiché.</small>
+      </label>
+      {error && <p className="error">{error}</p>}
+      <div className="panel-footer">
+        {saved && <span className="muted">{bot.set ? 'Enregistré : les profils sont relus.' : 'Bot retiré.'}</span>}
+        <span className="spacer" />
+        {bot.set && (
+          <button type="button" className="btn" disabled={busy} onClick={() => act(() => api.deleteDiscordBot())}>
+            Retirer
+          </button>
+        )}
+        <button type="submit" className="btn btn-primary" disabled={busy || !token.trim()}>
+          {busy ? 'Vérification…' : 'Enregistrer'}
+        </button>
+      </div>
+    </form>
+  )
+}
+
 type Section = 'general' | 'domain' | 'login' | 'discord' | 'notifications' | 'backups'
 
 const sections: { id: Section; label: string; superadmin: boolean }[] = [
@@ -121,7 +204,12 @@ export default function Settings({ superadmin, section, onRenamed }: { superadmi
         {current.id === 'general' && <GeneralPanel onRenamed={onRenamed} />}
         {current.id === 'domain' && <DomainPanel />}
         {current.id === 'login' && <LoginSettingsPanel />}
-        {current.id === 'discord' && <DiscordSettingsPanel />}
+        {current.id === 'discord' && (
+          <>
+            <DiscordSettingsPanel />
+            <DiscordBotPanel />
+          </>
+        )}
         {current.id === 'notifications' && <NotifyPanel />}
         {current.id === 'backups' && <BackupsPanel />}
       </div>

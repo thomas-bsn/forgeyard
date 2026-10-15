@@ -607,6 +607,10 @@ export const api = {
   saveBackupSettings: (body: { endpoint: string; bucket: string; prefix: string; region: string; accessKey: string; secretKey: string; password: string }) =>
     request<BackupSettings>('PUT', '/api/admin/settings/backups', body),
   testBackupSettings: () => request<{ ok: boolean; error?: string; log?: string }>('POST', '/api/admin/settings/backups/test', {}),
+  discordBot: () => request<{ set: boolean; name?: string }>('GET', '/api/admin/settings/discord/bot'),
+  saveDiscordBot: (token: string) => request<{ set: boolean; name?: string }>('PUT', '/api/admin/settings/discord/bot', { token }),
+  deleteDiscordBot: () => request<{ set: boolean; name?: string }>('DELETE', '/api/admin/settings/discord/bot', {}),
+  refreshMyDiscord: () => request<User>('POST', '/api/me/discord/refresh', {}),
   loginSettings: () => request<{ passwordLogin: boolean }>('GET', '/api/admin/settings/login'),
   saveLoginSettings: (passwordLogin: boolean) =>
     request<{ passwordLogin: boolean }>('PUT', '/api/admin/settings/login', { passwordLogin }),

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react'
-import { api, errorMessage, type Session, type SSHKey, type User } from './api'
+import { api, ApiError, errorMessage, type Session, type SSHKey, type User } from './api'
 import { Avatar, CopyField, since, Switch, WebhookForm, WebhookSteps } from './ui'
 import { ImageCropper } from './Cropper'
 
@@ -116,6 +116,7 @@ function ImageSource({
   busy,
   onUpload,
   onReset,
+  onRefresh,
   url,
 }: {
   label: string
@@ -126,6 +127,8 @@ function ImageSource({
   busy: boolean
   onUpload: (f: File) => void
   onReset: () => void
+  // onRefresh reads the Discord profile again; silent: only if the instance has a bot, without leaving the page.
+  onRefresh: (silent: boolean) => void
   // url: the Discord picture, checked here: Discord deletes the old one when it changes.
   url?: string
 }) {
@@ -136,7 +139,10 @@ function ImageSource({
     setStale(false)
     if (!discord || custom || !url) return
     const img = new Image()
-    img.onerror = () => setStale(true)
+    img.onerror = () => {
+      setStale(true)
+      onRefresh(true)
+    }
     img.src = url
   }, [discord, custom, url])
   return (
@@ -173,9 +179,9 @@ function ImageSource({
         ) : discord ? (
           <>
             {missing || (stale ? 'Elle a changé sur Discord depuis votre dernière connexion.' : fromDiscord)}{' '}
-            <a className="link-btn" href="/api/auth/discord?return=profile">
+            <button type="button" className="link-btn" disabled={busy} onClick={() => onRefresh(false)}>
               {missing || stale ? 'Récupérer maintenant' : 'Mettre à jour'}
-            </a>
+            </button>
           </>
         ) : (
           <button type="button" className="btn" disabled={busy} onClick={() => file.current?.click()}>
@@ -227,6 +233,26 @@ function ProfilePanel({ user, onChange }: { user: User; onChange: () => void }) 
     }
   }
 
+  // With the instance's Discord bot, the profile is read at once; without, through Discord sign-in, which
+  // comes back here. A silent refresh (a picture that no longer loads) only uses the bot.
+  const refreshed = useRef(false)
+  function refreshDiscord(silent: boolean) {
+    if (silent) {
+      if (!refreshed.current) api.refreshMyDiscord().then(onChange, () => {})
+      refreshed.current = true
+      return
+    }
+    run(async () => {
+      try {
+        await api.refreshMyDiscord()
+      } catch (err) {
+        if (!(err instanceof ApiError && err.status === 409)) throw err
+        window.location.href = '/api/auth/discord?return=profile'
+        await new Promise(() => {}) // the page is leaving
+      }
+    }, 'Profil Discord mis à jour.')
+  }
+
   function save(e: FormEvent) {
     e.preventDefault()
     run(() => api.saveProfile({ displayName: name, nameFromDiscord: followDiscord, bio, email, showApps, showEmail }), 'Profil enregistré.')
@@ -265,10 +291,11 @@ function ProfilePanel({ user, onChange }: { user: User; onChange: () => void }) 
           user={user}
           custom={user.customAvatar}
           url={user.avatarUrl}
-          fromDiscord="Votre photo Discord, mise à jour à chaque connexion."
+          fromDiscord="Votre photo Discord."
           missing={user.avatarUrl ? '' : 'Forgeyard n’a pas encore votre photo Discord.'}
           busy={busy}
           onUpload={(f) => setCropping({ file: f, kind: 'avatar' })}
+          onRefresh={refreshDiscord}
           onReset={() => run(() => api.deleteAvatar(), discord ? 'Photo Discord reprise.' : 'Photo retirée.')}
         />
         <ImageSource
@@ -276,10 +303,11 @@ function ProfilePanel({ user, onChange }: { user: User; onChange: () => void }) 
           user={user}
           custom={user.customBanner}
           url={user.bannerUrl}
-          fromDiscord={user.bannerUrl ? 'Votre bannière Discord, mise à jour à chaque connexion.' : 'Pas de bannière sur Discord : la couleur de votre profil Discord est utilisée.'}
+          fromDiscord={user.bannerUrl ? 'Votre bannière Discord.' : 'Pas de bannière sur Discord : la couleur de votre profil Discord est utilisée.'}
           missing={user.bannerUrl || user.accentColor ? '' : 'Forgeyard n’a pas encore votre bannière Discord.'}
           busy={busy}
           onUpload={(f) => setCropping({ file: f, kind: 'banner' })}
+          onRefresh={refreshDiscord}
           onReset={() => run(() => api.deleteBanner(), discord ? 'Bannière Discord reprise.' : 'Bannière retirée.')}
         />
         <small className="muted">PNG, JPEG, WebP ou GIF : vous cadrez l’image avant de l’enregistrer.</small>

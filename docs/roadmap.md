@@ -21,7 +21,8 @@
 - [ ] Création directe de comptes, transfert du superadmin
 - [x] Clés SSH dans le profil
 - [ ] Jetons d'API (onglet « bientôt » du profil)
-- [ ] Bot Discord : messages privés, photos et bannières à jour sans reconnexion
+- [x] Bot Discord : photos, bannières et noms à jour sans reconnexion ([connexion](auth/README.md#bot-discord))
+- [ ] Bot Discord : messages privés
 - [x] Notifications Discord (webhook) : salon des admins, salon support facultatif et webhook personnel
 - [x] Onglet Support : demandes d'aide aux admins (général, app, infra) avec fil de réponses
 - [x] Métriques et graphiques par app, journal d'événements
@@ -73,7 +74,7 @@
 ## Limites actuelles
 - Une app ne peut pas être renommée.
 - Le déploiement sans coupure ne vaut que pour les apps web (avec un domaine) : une app publiée sur un port du node change de port à chaque version.
-- Les photos Discord ne se mettent à jour qu'à la connexion Discord (pas de bot).
+- Sans bot Discord, les photos Discord ne se mettent à jour qu'à la connexion Discord.
 - Les logos Docker Hub viennent d'une API non documentée : sans logo, l'initiale.
 - L'historique CPU / mémoire n'est gardé qu'en mémoire : il repart de zéro quand le server redémarre.
 - Changer de domaine ne supprime pas les anciens enregistrements DNS.

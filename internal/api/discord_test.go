@@ -18,12 +18,13 @@ import (
 // fakeDiscord approves every consent immediately, signing in as whichever user is set with as().
 type fakeDiscord struct {
 	*httptest.Server
-	mu   sync.Mutex
-	next discord.User
+	mu       sync.Mutex
+	next     discord.User
+	profiles map[string]discord.User
 }
 
 func newFakeDiscord(t *testing.T) *fakeDiscord {
-	f := &fakeDiscord{}
+	f := &fakeDiscord{profiles: map[string]discord.User{}}
 	users := map[string]discord.User{}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /authorize", func(w http.ResponseWriter, r *http.Request) {
@@ -55,9 +56,34 @@ func newFakeDiscord(t *testing.T) *fakeDiscord {
 		}
 		json.NewEncoder(w).Encode(u)
 	})
+	// The bot reads profiles by ID, as Discord has them now.
+	mux.HandleFunc("GET /users/{id}", func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") != "Bot bot-token" {
+			http.Error(w, "401: Unauthorized", http.StatusUnauthorized)
+			return
+		}
+		f.mu.Lock()
+		u, ok := f.profiles[r.PathValue("id")]
+		f.mu.Unlock()
+		if r.PathValue("id") == "@me" {
+			u, ok = discord.User{ID: "bot", Username: "Forgeyard"}, true
+		}
+		if !ok {
+			http.NotFound(w, r)
+			return
+		}
+		json.NewEncoder(w).Encode(u)
+	})
 	f.Server = httptest.NewServer(mux)
 	t.Cleanup(f.Close)
 	return f
+}
+
+// profile sets what Discord says of a user when a bot asks.
+func (f *fakeDiscord) profile(u discord.User) {
+	f.mu.Lock()
+	f.profiles[u.ID] = u
+	f.mu.Unlock()
 }
 
 func (f *fakeDiscord) as(id, name string) {
@@ -202,4 +228,62 @@ func TestDiscordCallbackRejectsForeignState(t *testing.T) {
 
 func itoa(n int64) string {
 	return strconv.FormatInt(n, 10)
+}
+
+func TestDiscordBotRefreshesProfiles(t *testing.T) {
+	ts, server := newTestServerWithHandle(t)
+	fd := newFakeDiscord(t)
+	server.discord = &discord.Client{HTTP: http.DefaultClient, Endpoints: discord.Endpoints{
+		Authorize: fd.URL + "/authorize", Token: fd.URL + "/token", User: fd.URL + "/user", Users: fd.URL + "/users/",
+	}}
+	owner := newClient()
+	fd.as("1", "thomas")
+	b, _ := json.Marshal(setupDiscordRequest{Token: testToken, InstanceName: "Forge", ClientID: "client", ClientSecret: "secret"})
+	resp, err := owner.Post(ts.URL+"/api/setup/discord", "application/json", strings.NewReader(string(b)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var setup struct{ AuthorizeURL string }
+	json.NewDecoder(resp.Body).Decode(&setup)
+	resp.Body.Close()
+	if resp, err = owner.Get(setup.AuthorizeURL); err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+
+	// Without a bot, the page has to go through Discord sign-in.
+	if code := post(t, owner, ts.URL+"/api/me/discord/refresh", struct{}{}).StatusCode; code != http.StatusConflict {
+		t.Fatalf("refresh without a bot: %d", code)
+	}
+	if code := putJSON(t, owner, ts.URL+"/api/admin/settings/discord/bot", map[string]string{"token": "wrong"}, nil); code != http.StatusBadRequest {
+		t.Fatalf("refused token: %d", code)
+	}
+	var bot discordBotResponse
+	if code := putJSON(t, owner, ts.URL+"/api/admin/settings/discord/bot", map[string]string{"token": "Bot bot-token"}, &bot); code != http.StatusOK || !bot.Set || bot.Name != "Forgeyard" {
+		t.Fatalf("bot: %d %+v", code, bot)
+	}
+	stored, _ := server.store.GetSetting(context.Background(), settingDiscordBotToken)
+	if strings.Contains(stored, "bot-token") {
+		t.Fatal("bot token stored in clear")
+	}
+
+	// The user changed their picture and name on Discord.
+	fd.profile(discord.User{ID: "1", Username: "thomas", GlobalName: "Thomas B", Avatar: "newhash"})
+	var me userResponse
+	resp = post(t, owner, ts.URL+"/api/me/discord/refresh", struct{}{})
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("refresh: %d", resp.StatusCode)
+	}
+	get(t, owner, ts.URL+"/api/auth/me", &me)
+	if !strings.Contains(me.AvatarURL, "/newhash.png") || me.DisplayName != "Thomas B" || me.Email != "thomas@example.com" {
+		t.Fatalf("after refresh: %+v", me)
+	}
+
+	// The daily pass does it for everyone.
+	fd.profile(discord.User{ID: "1", Username: "thomas", Avatar: "again"})
+	server.refreshDiscordProfiles(context.Background())
+	get(t, owner, ts.URL+"/api/auth/me", &me)
+	if !strings.Contains(me.AvatarURL, "/again.png") {
+		t.Fatalf("after the daily pass: %s", me.AvatarURL)
+	}
 }

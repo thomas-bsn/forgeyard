@@ -1,13 +1,16 @@
-// Package discord implements the Discord OAuth2 authorization code flow used for "Sign in with Discord".
+// Package discord implements the Discord OAuth2 authorization code flow used for "Sign in with Discord",
+// and reads members' profiles with the instance's bot, when it has one.
 package discord
 
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -17,6 +20,7 @@ type Endpoints struct {
 	Authorize string
 	Token     string
 	User      string
+	Users     string // a user by ID, read by a bot: Users + id
 }
 
 // DefaultEndpoints are Discord's production endpoints.
@@ -24,6 +28,7 @@ var DefaultEndpoints = Endpoints{
 	Authorize: "https://discord.com/oauth2/authorize",
 	Token:     "https://discord.com/api/oauth2/token",
 	User:      "https://discord.com/api/users/@me",
+	Users:     "https://discord.com/api/v10/users/",
 }
 
 // Config identifies a Discord application registered by the instance installer.
@@ -128,6 +133,46 @@ func (c *Client) Authenticate(ctx context.Context, cfg Config, code string) (Use
 		return User{}, fmt.Errorf("fetch user: empty id")
 	}
 	return user, nil
+}
+
+// ErrBotToken means Discord refused the bot's token.
+var ErrBotToken = errors.New("le token du bot est refusé par Discord")
+
+// Bot reads a user's profile (name, avatar, banner, colour; no email) with a bot's token: "@me" is the bot
+// itself. A bot needs no permission nor server for it. When Discord asks to slow down, it waits once.
+func (c *Client) Bot(ctx context.Context, token, id string) (User, error) {
+	for attempt := 0; ; attempt++ {
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.Endpoints.Users+url.PathEscape(id), nil)
+		if err != nil {
+			return User{}, err
+		}
+		req.Header.Set("Authorization", "Bot "+token)
+		resp, err := c.HTTP.Do(req)
+		if err != nil {
+			return User{}, err
+		}
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+		resp.Body.Close()
+		switch {
+		case resp.StatusCode == http.StatusOK:
+			var u User
+			if err := json.Unmarshal(body, &u); err != nil {
+				return User{}, err
+			}
+			return u, nil
+		case resp.StatusCode == http.StatusUnauthorized:
+			return User{}, ErrBotToken
+		case resp.StatusCode == http.StatusTooManyRequests && attempt == 0:
+			wait, _ := strconv.ParseFloat(resp.Header.Get("Retry-After"), 64)
+			select {
+			case <-ctx.Done():
+				return User{}, ctx.Err()
+			case <-time.After(time.Duration(min(max(wait, 1), 30) * float64(time.Second))):
+			}
+			continue
+		}
+		return User{}, fmt.Errorf("discord returned %d: %s", resp.StatusCode, body)
+	}
 }
 
 func (c *Client) do(req *http.Request, out any) error {

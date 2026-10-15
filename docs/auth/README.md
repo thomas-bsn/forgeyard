@@ -65,7 +65,7 @@ Le superadmin et son propre compte ne sont jamais modifiables depuis cet écran.
 
 Le menu sous la photo, en haut à droite, mène à « Mon profil » (et aux réglages de l'instance pour les admins), au thème, à la documentation et à la déconnexion.
 
-- **Photo** : celle de Discord, mise à jour à chaque connexion (« Mettre à jour depuis Discord » refait la connexion Discord pour la récupérer tout de suite) ; ou une photo envoyée, que l'on cadre avant l'enregistrement (glisser, zoom ; le navigateur n'envoie que la zone choisie, en 256×256 ; la bannière en 1500×500) (PNG, JPEG, WebP ou GIF, 512 Ko au plus, jamais de SVG) ; sinon l'initiale.
+- **Photo** : celle de Discord, mise à jour à chaque connexion et chaque jour avec le [bot](#bot-discord) (« Mettre à jour » la relit tout de suite : par le bot, sinon en refaisant la connexion Discord ; une photo changée sur Discord, qui ne charge plus, est signalée et relue toute seule avec le bot) ; ou une photo envoyée, que l'on cadre avant l'enregistrement (glisser, zoom ; le navigateur n'envoie que la zone choisie, en 256×256 ; la bannière en 1500×500) (PNG, JPEG, WebP ou GIF, 512 Ko au plus, jamais de SVG) ; sinon l'initiale.
 - **Nom affiché** : celui de Discord (suivi à chaque connexion) ou un nom choisi. L'identifiant des comptes locaux ne change pas.
 - **Description** (280 caractères) et **email** (prérempli avec celui de Discord, pour les notifications à venir).
 - **Sécurité** : changer de mot de passe (comptes locaux ; déconnecte les autres appareils), liste des appareils connectés avec leur IP, déconnexion d'un appareil ou de tous les autres.
@@ -97,3 +97,14 @@ docker exec forgeyard forgeyard admin-login
 ```
 
 La commande affiche un lien de connexion admin **à usage unique**, valable **15 minutes** (seul son hash est stocké).
+
+## Bot Discord
+
+Discord supprime l'ancienne photo d'un compte quand elle change : sans rien d'autre, Forgeyard garderait l'adresse de l'ancienne jusqu'à la prochaine connexion Discord du membre, et afficherait son initiale entre-temps. Le **bot** de l'application Discord règle ça (facultatif, Réglages › Discord › Bot) :
+
+1. sur discord.com/developers/applications, la même application, onglet **Bot** : **Reset Token** ;
+2. coller le token dans Forgeyard. Il est vérifié auprès de Discord, puis chiffré ; jamais réaffiché.
+
+Le bot n'a besoin d'aucune permission ni d'être sur un serveur : il ne fait que lire les profils publics (`GET /users/{id}`). Forgeyard relit alors la photo, la bannière, la couleur et le nom Discord de chaque membre une fois par jour (et tout de suite après l'enregistrement du token), quelques comptes par seconde ; l'email ne change pas (le bot ne le voit pas). Dans Mon profil, « Mettre à jour » passe par le bot, et une photo qui ne charge plus est relue d'office.
+
+Code : `internal/api/discordbot.go`.

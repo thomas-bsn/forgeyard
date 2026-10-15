@@ -171,6 +171,7 @@ func run(addr, agentAddr, dataDir string, logger *slog.Logger) error {
 	go cleanExpired(ctx, st, logger)
 	go apiServer.AgentUpdates(ctx)
 	go apiServer.Backups(ctx)
+	go apiServer.DiscordProfiles(ctx)
 	if sshListener != nil {
 		hostKey, err := api.LoadSSHHostKey(filepath.Join(dataDir, "ssh_host_ed25519_key"))
 		if err != nil {
