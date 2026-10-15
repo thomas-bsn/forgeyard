@@ -1528,6 +1528,8 @@ button.row:hover {
   border-radius: 16px;
   overflow: hidden;
   background: #0f1115;
+  /* The panel is as dark as the page in the dark theme: the border shows where it ends. */
+  border: 1px solid #2a2f3a;
 }
 
 .logs-head {
@@ -3004,9 +3006,16 @@ a.link-btn {
   gap: 6px;
 }
 
+/* The padding is on the box, not on xterm's element: its fit addon sizes the rows from its parent's
+   height, and padding there would leave the last row half hidden. */
 .terminal-box {
   height: 480px;
   padding: 8px 10px;
+}
+
+.terminal-screen {
+  height: 100%;
+  overflow: hidden;
 }
 
 .terminal-ended {

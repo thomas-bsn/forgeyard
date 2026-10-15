@@ -89,7 +89,9 @@ export default function Terminal({ path }: { path: string }) {
         )}
       </div>
       {ended && <div className="terminal-ended">{ended}</div>}
-      <div className="terminal-box" ref={box} />
+      <div className="terminal-box">
+        <div className="terminal-screen" ref={box} />
+      </div>
     </section>
   )
 }
