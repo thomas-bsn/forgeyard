@@ -116,6 +116,7 @@ function ImageSource({
   busy,
   onUpload,
   onReset,
+  url,
 }: {
   label: string
   user: User
@@ -125,9 +126,19 @@ function ImageSource({
   busy: boolean
   onUpload: (f: File) => void
   onReset: () => void
+  // url: the Discord picture, checked here: Discord deletes the old one when it changes.
+  url?: string
 }) {
   const file = useRef<HTMLInputElement>(null)
   const discord = user.method === 'discord'
+  const [stale, setStale] = useState(false)
+  useEffect(() => {
+    setStale(false)
+    if (!discord || custom || !url) return
+    const img = new Image()
+    img.onerror = () => setStale(true)
+    img.src = url
+  }, [discord, custom, url])
   return (
     <div className="image-source">
       <div className="image-source-head">
@@ -160,16 +171,12 @@ function ImageSource({
             )}
           </>
         ) : discord ? (
-          missing ? (
-            <>
-              {missing}{' '}
-              <a className="link-btn" href="/api/auth/discord?return=profile">
-                Récupérer maintenant
-              </a>
-            </>
-          ) : (
-            fromDiscord
-          )
+          <>
+            {missing || (stale ? 'Elle a changé sur Discord depuis votre dernière connexion.' : fromDiscord)}{' '}
+            <a className="link-btn" href="/api/auth/discord?return=profile">
+              {missing || stale ? 'Récupérer maintenant' : 'Mettre à jour'}
+            </a>
+          </>
         ) : (
           <button type="button" className="btn" disabled={busy} onClick={() => file.current?.click()}>
             Choisir une image
@@ -257,6 +264,7 @@ function ProfilePanel({ user, onChange }: { user: User; onChange: () => void }) 
           label="Photo"
           user={user}
           custom={user.customAvatar}
+          url={user.avatarUrl}
           fromDiscord="Votre photo Discord, mise à jour à chaque connexion."
           missing={user.avatarUrl ? '' : 'Forgeyard n’a pas encore votre photo Discord.'}
           busy={busy}
@@ -267,6 +275,7 @@ function ProfilePanel({ user, onChange }: { user: User; onChange: () => void }) 
           label="Bannière"
           user={user}
           custom={user.customBanner}
+          url={user.bannerUrl}
           fromDiscord={user.bannerUrl ? 'Votre bannière Discord, mise à jour à chaque connexion.' : 'Pas de bannière sur Discord : la couleur de votre profil Discord est utilisée.'}
           missing={user.bannerUrl || user.accentColor ? '' : 'Forgeyard n’a pas encore votre bannière Discord.'}
           busy={busy}
