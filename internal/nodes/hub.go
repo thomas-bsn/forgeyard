@@ -165,6 +165,13 @@ type Hub struct {
 	logStreams map[string]chan *agentpb.LogLine       // by stream ID
 	execs      map[string]*execStream                 // terminals, by session ID
 	tunnels    map[string]*tunnelWaiter               // tunnels asked for, until their agent opens them
+	backups    map[string]pendingBackup               // backup jobs waiting for their result, by job ID
+}
+
+// pendingBackup is a backup job sent to a node, waiting for its result.
+type pendingBackup struct {
+	nodeID int64
+	ch     chan *agentpb.BackupResult
 }
 
 // NewHub returns an empty Hub.
@@ -173,7 +180,7 @@ func NewHub(st *store.Store, logger *slog.Logger) *Hub {
 		store: st, logger: logger, sessions: make(map[int64]*session),
 		statuses: make(map[int64]AppStatus), usage: make(map[int64][]UsageSample), extUsage: make(map[string][]UsageSample),
 		externals: make(map[int64][]*agentpb.ExternalContainer), logStreams: make(map[string]chan *agentpb.LogLine),
-		execs: make(map[string]*execStream), tunnels: make(map[string]*tunnelWaiter),
+		execs: make(map[string]*execStream), tunnels: make(map[string]*tunnelWaiter), backups: make(map[string]pendingBackup),
 	}
 }
 
@@ -409,6 +416,36 @@ func (h *Hub) DropAppData(appID int64) {
 	}
 }
 
+// BackupJob runs a backup, a listing of snapshots or a restore on a node, and waits for its result. The
+// job's ID is set here.
+func (h *Hub) BackupJob(ctx context.Context, nodeID int64, job *agentpb.BackupJob) (*agentpb.BackupResult, error) {
+	job.Id = randomID()
+	ch := make(chan *agentpb.BackupResult, 1)
+	h.mu.Lock()
+	h.backups[job.Id] = pendingBackup{nodeID: nodeID, ch: ch}
+	h.mu.Unlock()
+	defer func() {
+		h.mu.Lock()
+		delete(h.backups, job.Id)
+		h.mu.Unlock()
+	}()
+	if !h.send(nodeID, &agentpb.ServerMessage{Msg: &agentpb.ServerMessage_BackupJob{BackupJob: job}}) {
+		return nil, ErrOffline
+	}
+	select {
+	case res := <-ch:
+		return res, nil
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+}
+
+// DropStack asks a node to delete what a deleted stack left on it: its network, and its volumes when
+// volumes is set. An offline node keeps them.
+func (h *Hub) DropStack(nodeID, stackID int64, volumes bool) {
+	h.send(nodeID, &agentpb.ServerMessage{Msg: &agentpb.ServerMessage_DropStack{DropStack: &agentpb.DropStack{StackId: stackID, Volumes: volumes}}})
+}
+
 // Disconnect closes the stream of a node, if connected. Used when a node is removed.
 func (h *Hub) Disconnect(nodeID int64) {
 	h.mu.Lock()
@@ -542,6 +579,14 @@ func (h *Hub) Connect(stream agentpb.AgentService_ConnectServer) error {
 					}
 				}
 				h.mu.Unlock()
+			case *agentpb.AgentMessage_BackupResult:
+				h.mu.Lock()
+				p, ok := h.backups[m.BackupResult.GetId()]
+				delete(h.backups, m.BackupResult.GetId())
+				h.mu.Unlock()
+				if ok {
+					p.ch <- m.BackupResult
+				}
 			case *agentpb.AgentMessage_Topology:
 				h.mu.Lock()
 				sess.topology = m.Topology
@@ -615,6 +660,13 @@ func (h *Hub) unregister(nodeID int64, s *session) bool {
 	}
 	delete(h.sessions, nodeID)
 	delete(h.externals, nodeID)
+	// Its backup jobs will not answer: they fail now rather than when they time out.
+	for id, p := range h.backups {
+		if p.nodeID == nodeID {
+			p.ch <- &agentpb.BackupResult{Id: id, Error: "le node s'est déconnecté pendant la sauvegarde"}
+			delete(h.backups, id)
+		}
+	}
 	return true
 }
 

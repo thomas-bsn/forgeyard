@@ -10,13 +10,13 @@ import (
 )
 
 // When a node is removed, its agent deletes what Forgeyard put on the machine: the apps' containers and
-// volumes, Traefik and the forgeyard network. Then a short-lived container of its image deletes the
-// agent's own container and identity volume, as a container cannot delete itself. The containers
-// Forgeyard did not create (Pi-hole, a compose project…) are left alone.
+// volumes, Traefik, the forgeyard network, and the stacks' networks and volumes. Then a short-lived
+// container of its image deletes the agent's own container and identity volume, as a container cannot
+// delete itself. The containers Forgeyard did not create (Pi-hole, a compose project…) are left alone.
 
 const removerName = "forgeyard-agent-remover"
 
-// uninstall deletes the apps, their data, Traefik and the network of the node.
+// uninstall deletes the apps, their data, Traefik and the networks of the node.
 func uninstall(ctx context.Context, dc *docker.Client) error {
 	var errs []error
 	apps, err := dc.ListByLabel(ctx, labelApp)
@@ -36,7 +36,11 @@ func uninstall(ctx context.Context, dc *docker.Client) error {
 	if err != nil {
 		return err
 	}
-	for _, v := range append(vols, sandboxes...) {
+	stacks, err := dc.ListVolumes(ctx, "label", labelStack)
+	if err != nil {
+		return err
+	}
+	for _, v := range append(append(vols, sandboxes...), stacks...) {
 		if err := dc.RemoveVolume(ctx, v.Name); err != nil {
 			errs = append(errs, fmt.Errorf("volume %s : %w", v.Name, err))
 		}
@@ -45,8 +49,16 @@ func uninstall(ctx context.Context, dc *docker.Client) error {
 	if self, err := selfContainer(ctx, dc); err == nil {
 		dc.DisconnectNetwork(ctx, networkName, self.ID)
 	}
-	if err := dc.RemoveNetwork(ctx, networkName); err != nil {
-		errs = append(errs, fmt.Errorf("réseau %s : %w", networkName, err))
+	nets, err := dc.ListNetworks(ctx)
+	if err != nil {
+		return err
+	}
+	for _, n := range nets {
+		if n.Name == networkName || strings.HasPrefix(n.Name, stackNetPrefix) {
+			if err := dc.RemoveNetwork(ctx, n.Name); err != nil {
+				errs = append(errs, fmt.Errorf("réseau %s : %w", n.Name, err))
+			}
+		}
 	}
 	return errors.Join(errs...)
 }

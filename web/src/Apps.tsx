@@ -21,17 +21,21 @@ const stateLabels: Record<AppState, { label: string; tone: 'up' | 'warn' | 'down
   exited: { label: 'Plantée', tone: 'down' },
   error: { label: 'Erreur', tone: 'down' },
   'node-offline': { label: 'Node hors ligne', tone: 'down' },
+  waiting: { label: 'En attente de ses dépendances', tone: 'warn' },
+  blocked: { label: 'Bloquée', tone: 'down' },
+  completed: { label: 'Job terminé', tone: 'up' },
+  failed: { label: 'Job en échec', tone: 'down' },
 }
 
-function appTone(a: App): 'up' | 'warn' | 'down' | '' {
+export function appTone(a: App): 'up' | 'warn' | 'down' | '' {
   if (a.crashSuspended && !a.running) return 'down'
   return stateLabels[a.state]?.tone ?? ''
 }
 
-function stateText(a: App): string {
+export function stateText(a: App): string {
   if (a.crashSuspended && !a.running) return 'Suspendue (crashs)'
   const base = stateLabels[a.state]?.label ?? a.state
-  if (a.state === 'exited' || a.state === 'restarting') {
+  if (a.state === 'exited' || a.state === 'restarting' || a.state === 'failed') {
     if (a.oomKilled) return `${base} : manque de mémoire`
     if (a.exitCode) return `${base} (code ${a.exitCode})`
   }
@@ -57,7 +61,7 @@ const containerLabels: Record<string, string> = {
   dead: 'Mort',
 }
 
-function Dot({ tone }: { tone: string }) {
+export function Dot({ tone }: { tone: string }) {
   return <span className={`dot ${tone ? `dot-${tone}` : ''}`} />
 }
 
@@ -157,7 +161,7 @@ function toItems(apps: App[], containers: Container[]): Item[] {
   return [
     ...apps.map((a) => {
       const tone = appTone(a)
-      return { key: `a${a.id}`, name: a.name, tone, group: group(tone, a.state === 'running' || tone === 'warn'), external: false, app: a }
+      return { key: `a${a.id}`, name: a.name, tone, group: group(tone, a.state === 'running' || a.state === 'completed' || tone === 'warn'), external: false, app: a }
     }),
     ...containers.map((c) => {
       const tone = containerTone(c)
@@ -572,7 +576,12 @@ function WithMenu({ item, admin, onChange, place, children }: { item: Item; admi
           <button type="button" role="menuitem" disabled={app.suspended} onClick={act(() => api.appAction(app.id, 'redeploy'))}>
             Redéployer
           </button>
-          {admin && (
+          {app.stackId ? (
+            <a role="menuitem" href={`#/stacks/${app.stackId}`} onClick={() => setOpen(false)}>
+              Voir sa stack
+            </a>
+          ) : null}
+          {admin && !app.stackId && (
             <button
               type="button"
               role="menuitem"
@@ -585,17 +594,19 @@ function WithMenu({ item, admin, onChange, place, children }: { item: Item; admi
               Changer de node…
             </button>
           )}
-          <button
-            type="button"
-            role="menuitem"
-            className="danger"
-            onClick={() => {
-              if (window.confirm(deleteQuestion(app))) act(() => api.deleteApp(app.id))()
-              else setOpen(false)
-            }}
-          >
-            Supprimer
-          </button>
+          {!app.stackId && (
+            <button
+              type="button"
+              role="menuitem"
+              className="danger"
+              onClick={() => {
+                if (window.confirm(deleteQuestion(app))) act(() => api.deleteApp(app.id))()
+                else setOpen(false)
+              }}
+            >
+              Supprimer
+            </button>
+          )}
         </div>
       )}
       {moving && (
@@ -617,7 +628,9 @@ function AppCard({ item: i, admin }: { item: Item; admin: boolean }) {
   const address =
     i.app?.kind === 'sandbox'
       ? 'sandbox · accès SSH'
-      : (i.app?.url?.replace(/^https?:\/\//, '') ?? (i.container?.ports.length ? i.container.ports.join(' · ') : ''))
+      : i.app?.kind === 'service' || i.app?.kind === 'job'
+        ? `${i.app.kind === 'job' ? 'job' : 'service'} ${i.app.service} · stack, sans adresse`
+        : (i.app?.url?.replace(/^https?:\/\//, '') ?? (i.container?.ports.length ? i.container.ports.join(' · ') : ''))
   return (
     <a href={itemHref(i)} className={`app-card ${i.tone === 'down' ? 'app-card-down' : ''} ${i.external ? 'app-card-external' : ''}`}>
       <span className="app-card-head">
@@ -1231,7 +1244,22 @@ function AppDetail({
           </div>
         </div>
 
-        {app.kind === 'sandbox' ? (
+        {app.stackId ? (
+          <div className="banner">
+            <span>
+              Service <strong>{app.service}</strong> de la <a href={`#/stacks/${app.stackId}`}>stack</a>
+              {app.kind === 'job' ? ' : un job, lancé une fois par version' : ''}. Sa configuration vient du docker-compose.yml de la stack.
+            </span>
+          </div>
+        ) : null}
+        {app.waitingFor ? (
+          <div className="banner banner-warn">
+            <span className="dot dot-warn" />
+            <span>{app.state === 'waiting' ? 'Attend : ' : 'La nouvelle version attend : '}{app.waitingFor}</span>
+          </div>
+        ) : null}
+
+        {app.kind === 'service' || app.kind === 'job' ? null : app.kind === 'sandbox' ? (
           <div className="ssh-box">
             <span className="muted">Se connecter en SSH</span>
             {app.ssh ? <CopyField value={app.ssh} /> : <span>Passerelle SSH désactivée : utilisez l’onglet Terminal.</span>}
@@ -1264,7 +1292,7 @@ function AppDetail({
             <small className="muted">Tourne sur</small>
             <strong>{app.nodeName}</strong>
           </span>
-          {admin && (
+          {admin && !app.stackId && (
             <button type="button" className="btn btn-small" disabled={busy || !!app.movingFrom} onClick={() => setMoving(true)} title="Changer de node">
               Changer
             </button>
@@ -1281,7 +1309,7 @@ function AppDetail({
           </div>
         ) : null}
         {/* The app listens elsewhere than its setting says: visitors get Bad Gateway until the port is fixed. */}
-        {app.kind !== 'sandbox' && app.state === 'running' && app.listeningPorts?.length && !app.listeningPorts.includes(app.port) ? (
+        {app.kind === 'web' && app.state === 'running' && app.listeningPorts?.length && !app.listeningPorts.includes(app.port) ? (
           <div className="banner banner-warn">
             <span className="dot dot-warn" />
             <span>
@@ -1334,7 +1362,7 @@ function AppDetail({
         <dl className="kv">
           <dt>Image</dt>
           <dd className="mono">{app.image}</dd>
-          {app.kind !== 'sandbox' && (
+          {app.kind === 'web' && (
             <>
               <dt>Port</dt>
               <dd>{app.port}</dd>
@@ -1352,7 +1380,9 @@ function AppDetail({
           <dd>{app.memoryMb} Mo max.</dd>
           <dt>Données</dt>
           <dd>
-            {app.volumes.length ? (
+            {app.stackId ? (
+              <a href={`#/stacks/${app.stackId}`}>volumes de la stack</a>
+            ) : app.volumes.length ? (
               <span className="volume-list">
                 {app.volumes.map((v) => (
                   <span key={v.path}>
@@ -1403,12 +1433,19 @@ function AppDetail({
               Démarrer
             </button>
           )}
-          <button type="button" className="btn detail-actions-wide" disabled={busy || !full} onClick={() => setEditing(true)}>
-            Configuration
-          </button>
+          {app.stackId ? (
+            <a className="btn detail-actions-wide" href={`#/stacks/${app.stackId}`}>
+              Configuration de la stack
+            </a>
+          ) : (
+            <button type="button" className="btn detail-actions-wide" disabled={busy || !full} onClick={() => setEditing(true)}>
+              Configuration
+            </button>
+          )}
         </div>
         <button
           type="button"
+          hidden={!!app.stackId}
           className="link-button danger-link"
           disabled={busy}
           onClick={() => {
@@ -1581,7 +1618,7 @@ function Observability({ m }: { m: Measures }) {
   )
 }
 
-function Events({ eventsKey, load }: { eventsKey: string; load: () => Promise<AppEvent[]> }) {
+export function Events({ eventsKey, load }: { eventsKey: string; load: () => Promise<AppEvent[]> }) {
   const [events, setEvents] = useState<AppEvent[] | null>(null)
   const [error, setError] = useState('')
 

@@ -46,6 +46,9 @@ type App struct {
 	Kind           string
 	PortSource     string
 	Volumes        string
+	StackID        int64
+	Service        string
+	ServiceSpec    string
 }
 
 type AppEvent struct {
@@ -66,6 +69,31 @@ type Avatar struct {
 	UserID      int64
 	ContentType string
 	Data        []byte
+}
+
+type BackupPolicy struct {
+	ID           int64
+	StackID      int64
+	Volume       string
+	Schedule     string
+	Hour         int64
+	Keep         int64
+	Enabled      int64
+	LastRunAt    int64
+	LastStatus   string
+	LastError    string
+	LastSnapshot string
+	CreatedAt    int64
+}
+
+type BackupRestore struct {
+	ID        int64
+	PolicyID  int64
+	Snapshot  string
+	Volume    string
+	Status    string
+	Error     string
+	CreatedAt int64
 }
 
 type Banner struct {
@@ -153,6 +181,18 @@ type SshKey struct {
 	Fingerprint string
 	CreatedAt   int64
 	LastUsedAt  int64
+}
+
+type Stack struct {
+	ID              int64
+	Name            string
+	OwnerID         int64
+	NodeID          int64
+	Compose         string
+	EnvSealed       string
+	VolumeOverrides string
+	CreatedAt       int64
+	UpdatedAt       int64
 }
 
 type SupportMessage struct {

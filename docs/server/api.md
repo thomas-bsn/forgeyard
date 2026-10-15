@@ -51,7 +51,17 @@ Toutes les écritures sont en JSON. Les routes sont déclarées dans `internal/a
 | `POST /api/apps/{id}/network/test` | Demander l'adresse de l'app depuis la machine de Forgeyard |
 | `GET /api/apps/{id}/terminal` (WebSocket) | Shell dans le conteneur : binaire = frappes et sortie, texte = `resize` et `exit` |
 
-Les routes d'app vérifient que l'utilisateur est le propriétaire ou un admin.
+| `GET`, `POST /api/stacks` | Lister, créer une stack (`name`, `compose`, `env`, `nodeId` facultatif, admins seulement) ; un compose refusé répond 400 avec `errors: [{line, message}]` |
+| `POST /api/stacks/validate` | Vérifier un compose sans rien enregistrer : services dans l'ordre de démarrage, volumes, erreurs |
+| `GET`, `PUT`, `DELETE /api/stacks/{id}` | Voir (avec compose et variables), modifier (seuls les services changés sont redéployés), supprimer (`?volumes=1` supprime aussi les volumes) |
+| `POST /api/stacks/{id}/{start\|stop\|redeploy}` | Actions sur tous les services |
+| `PUT`, `DELETE /api/stacks/{id}/backups/{volume}` | Planning de sauvegarde d'un volume (`schedule` `daily` ou `hourly`, `hour`, `keep`, `enabled`) |
+| `POST /api/stacks/{id}/backups/{volume}/run` | Sauvegarder maintenant (202) |
+| `GET /api/stacks/{id}/backups/{volume}/snapshots` | Sauvegardes du volume, les plus récentes d'abord |
+| `POST /api/stacks/{id}/backups/{volume}/restore` | Restaurer une sauvegarde (`snapshot`) dans un volume neuf (202) |
+| `POST /api/stacks/{id}/backups/{volume}/restores/{restore}/use` | Mettre le volume restauré à la place de celui de la stack (`confirm: true`) |
+
+Les routes d'app et de stack vérifient que l'utilisateur est le propriétaire ou un admin. Un service de stack ne se modifie, ne se supprime ni ne change de node comme une app (409) : on passe par le compose.
 
 ## Admin
 
@@ -71,13 +81,14 @@ Les routes d'app vérifient que l'utilisateur est le propriétaire ou un admin.
 | `POST /api/admin/nodes/{id}/update-agent` | Mettre à jour l'agent d'un node vers la version du server |
 | `GET`, `PUT /api/admin/settings/agents` | Mise à jour automatique des agents, version du server |
 | `POST /api/admin/apps/{id}/move` | Déplacer une app vers un autre node (`{nodeId}` ; `leaveData: true` pour une app avec des volumes, qui repart vide) |
+| `GET`, `PUT /api/admin/settings/backups`, `POST …/test` | Stockage S3 des sauvegardes et mot de passe du dépôt restic ; ouvrir le dépôt depuis un node |
 | `GET`, `PUT /api/admin/settings/notifications`, `POST …/test`, `POST …/test-support` | Webhooks du salon des admins et du salon support, types d'alertes, messages de test |
 | `GET /api/admin/containers` | Conteneurs externes de tous les nodes en ligne |
 | `GET /api/admin/nodes/{node}/containers/{id}/usage` | CPU et mémoire d'un conteneur externe, dernière heure |
 | `GET /api/admin/nodes/{node}/containers/{id}/events` | Derniers événements d'un conteneur externe |
 | `GET /api/admin/users` | Comptes, avec leur nombre d'apps |
 | `PUT /api/admin/users/{id}` | Rôle, désactivé, apps suspendues (jamais le superadmin ni soi-même) |
-| `DELETE /api/admin/users/{id}` | Supprimer un compte et ses apps |
+| `DELETE /api/admin/users/{id}` | Supprimer un compte, ses apps et ses stacks (avec leurs volumes) |
 
 ## Superadmin
 

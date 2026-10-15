@@ -15,7 +15,6 @@ import (
 	"net/http"
 	"net/url"
 	"os"
-	"strconv"
 	"strings"
 	"time"
 )
@@ -158,6 +157,18 @@ func (c *Client) EnsureNetwork(ctx context.Context, name string) error {
 	return c.call(ctx, http.MethodPost, "/networks/create", map[string]any{
 		"Name": name, "Driver": "bridge", "CheckDuplicate": true,
 	}, nil)
+}
+
+// ConnectNetwork adds a container to a network, where the other containers reach it by its aliases.
+func (c *Client) ConnectNetwork(ctx context.Context, network, container string, aliases ...string) error {
+	return c.call(ctx, http.MethodPost, "/networks/"+url.PathEscape(network)+"/connect", map[string]any{
+		"Container": container, "EndpointConfig": map[string]any{"Aliases": aliases},
+	}, nil)
+}
+
+// CreateVolume creates a named volume with labels; an existing one is kept as it is.
+func (c *Client) CreateVolume(ctx context.Context, name string, labels map[string]string) error {
+	return c.call(ctx, http.MethodPost, "/volumes/create", map[string]any{"Name": name, "Labels": labels}, nil)
 }
 
 // Pull downloads an image, e.g. "nginx:1.27" or "ghcr.io/org/app:main". It returns once the pull is over.
@@ -380,12 +391,6 @@ type Network struct {
 	} `json:"IPAM"`
 }
 
-// RemoveNetwork deletes a network; a missing one is not an error.
-// ConnectNetwork attaches a container to a network.
-func (c *Client) ConnectNetwork(ctx context.Context, network, container string) error {
-	return c.call(ctx, http.MethodPost, "/networks/"+url.PathEscape(network)+"/connect", map[string]any{"Container": container}, nil)
-}
-
 // DisconnectNetwork detaches a container from a network; a missing network is not an error.
 func (c *Client) DisconnectNetwork(ctx context.Context, network, container string) error {
 	err := c.call(ctx, http.MethodPost, "/networks/"+url.PathEscape(network)+"/disconnect", map[string]any{"Container": container, "Force": true}, nil)
@@ -395,6 +400,7 @@ func (c *Client) DisconnectNetwork(ctx context.Context, network, container strin
 	return err
 }
 
+// RemoveNetwork deletes a network; a missing one is not an error.
 func (c *Client) RemoveNetwork(ctx context.Context, name string) error {
 	err := c.call(ctx, http.MethodDelete, "/networks/"+url.PathEscape(name), nil, nil)
 	if errors.Is(err, ErrNotFound) {
@@ -659,9 +665,7 @@ func (e *Exec) ExitCode(ctx context.Context) (int, error) {
 	return info.ExitCode, err
 }
 
-// StartExec runs cmd in a container with a TTY and returns the session. Docker hands over the raw
-// connection after a 101 Switching Protocols answer, which net/http's client does not support, so the
-// request is written by hand on a dedicated connection.
+// StartExec runs cmd in a container with a TTY and returns the session.
 func (c *Client) StartExec(ctx context.Context, container string, cmd []string, cols, rows uint32) (*Exec, error) {
 	var created struct {
 		ID string `json:"Id"`
@@ -673,28 +677,9 @@ func (c *Client) StartExec(ctx context.Context, container string, cmd []string, 
 	}, &created); err != nil {
 		return nil, err
 	}
-	var d net.Dialer
-	conn, err := d.DialContext(ctx, "unix", c.path)
+	conn, err := c.hijack(ctx, "/exec/"+created.ID+"/start", `{"Detach":false,"Tty":true}`)
 	if err != nil {
 		return nil, err
 	}
-	body := `{"Detach":false,"Tty":true}`
-	req := "POST /exec/" + created.ID + "/start HTTP/1.1\r\nHost: docker\r\nContent-Type: application/json\r\n" +
-		"Connection: Upgrade\r\nUpgrade: tcp\r\nContent-Length: " + strconv.Itoa(len(body)) + "\r\n\r\n" + body
-	if _, err := io.WriteString(conn, req); err != nil {
-		conn.Close()
-		return nil, err
-	}
-	br := bufio.NewReader(conn)
-	resp, err := http.ReadResponse(br, nil)
-	if err != nil {
-		conn.Close()
-		return nil, err
-	}
-	if resp.StatusCode != http.StatusSwitchingProtocols && resp.StatusCode != http.StatusOK {
-		raw, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
-		conn.Close()
-		return nil, fmt.Errorf("docker exec: %d %s", resp.StatusCode, strings.TrimSpace(string(raw)))
-	}
-	return &Exec{c: c, id: created.ID, conn: conn, r: br}, nil
+	return &Exec{c: c, id: created.ID, conn: conn.Conn, r: conn.r}, nil
 }

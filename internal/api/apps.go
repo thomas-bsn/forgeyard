@@ -166,9 +166,10 @@ func (s *Server) reservedNames(ctx context.Context, r *http.Request, c dnsConfig
 	return reserved
 }
 
-// webHost is the domain an app is served at: none for a sandbox, reached over SSH.
+// webHost is the domain an app is served at: none for a sandbox, reached over SSH, nor for a service of a
+// stack that only the stack reaches.
 func webHost(c dnsConfig, a db.App) string {
-	if a.Kind == kindSandbox {
+	if a.Kind != kindWeb {
 		return ""
 	}
 	return appHostname(c, a.Name)
@@ -227,6 +228,10 @@ func (s *Server) desiredState(ctx context.Context, nodeID int64) (*agentpb.Desir
 	if err != nil {
 		return nil, err
 	}
+	stacks, err := s.stackSpecs(ctx, apps)
+	if err != nil {
+		return nil, err
+	}
 	d := &agentpb.DesiredState{Ingress: &agentpb.Ingress{Mode: node.IngressMode, HttpPort: int32(node.IngressHttpPort)}}
 	if node.Relayed == relayTunnel {
 		d.Ingress.Mode = "tunnel"
@@ -240,7 +245,7 @@ func (s *Server) desiredState(ctx context.Context, nodeID int64) (*agentpb.Desir
 			Id: a.ID, Name: a.Name, Image: a.Image, Port: int32(a.Port), Env: env,
 			Hostname: webHost(c, a), Running: a.Running != 0,
 			MemoryBytes: a.MemoryMb << 20, Generation: a.Generation, Leaving: a.MovingFrom == nodeID,
-			Dockerfile: a.Dockerfile, Sandbox: a.Kind == kindSandbox, Volumes: appVolumes(a),
+			Dockerfile: a.Dockerfile, Sandbox: a.Kind == kindSandbox, Volumes: appVolumes(a), Stack: stacks[a.ID],
 		})
 	}
 	if node.IsLocal != 0 {
@@ -459,9 +464,12 @@ type appResponse struct {
 	UpdatedAt      int64             `json:"updatedAt"`
 	Env            map[string]string `json:"env,omitempty"`
 	Dockerfile     string            `json:"dockerfile,omitempty"` // with the env, for the app's owner
-	Kind           string            `json:"kind"`                 // web or sandbox
+	Kind           string            `json:"kind"`                 // web, sandbox, or service and job in a stack
 	Volumes        []appVolume       `json:"volumes"`
 	SSH            string            `json:"ssh,omitempty"` // the command reaching it through the SSH gateway
+	StackID        int64             `json:"stackId,omitempty"`
+	Service        string            `json:"service,omitempty"`    // its name in its stack's compose file
+	WaitingFor     string            `json:"waitingFor,omitempty"` // what a service of a stack waits for to start
 }
 
 // toAppResponse describes an app. localHost is the host Forgeyard is reached at, used as the address of its
@@ -469,7 +477,7 @@ type appResponse struct {
 func (s *Server) toAppResponse(a db.App, ownerName string, ownerSuspended bool, nodeName string, c dnsConfig, node *db.Node, localHost string) appResponse {
 	resp := appResponse{
 		ID: a.ID, Name: a.Name, OwnerID: a.OwnerID, OwnerName: ownerName, NodeID: a.NodeID, NodeName: nodeName,
-		Image: a.Image, Port: a.Port, MemoryMB: a.MemoryMb, Running: a.Running != 0, UpdatedAt: a.UpdatedAt,
+		Image: a.Image, Port: a.Port, MemoryMB: a.MemoryMb, Running: a.Running != 0, UpdatedAt: a.UpdatedAt, StackID: a.StackID, Service: a.Service,
 		State: "pending", Suspended: ownerSuspended, Public: a.Public != 0, Logo: toAppLogo(a), CrashSuspended: a.CrashSuspended != 0, MovingFrom: a.MovingFrom,
 	}
 	if host := webHost(c, a); host != "" {
@@ -493,7 +501,7 @@ func (s *Server) toAppResponse(a db.App, ownerName string, ownerSuspended bool, 
 		}
 		resp.Error, resp.ExitCode, resp.OOMKilled = st.Status.GetError(), st.Status.GetExitCode(), st.Status.GetOomKilled()
 		resp.RestartCount, resp.StartedAt = st.Status.GetRestartCount(), st.Status.GetStartedAt()
-		resp.HostPort = st.Status.GetHostPort()
+		resp.HostPort, resp.WaitingFor = st.Status.GetHostPort(), st.Status.GetWaitingFor()
 		if resp.State == "running" {
 			resp.CPUPercent, resp.MemoryUsed = st.Status.GetCpuPercent(), st.Status.GetMemoryUsedBytes()
 			resp.ListeningPorts = st.Status.GetListeningPorts()
@@ -705,6 +713,13 @@ func (s *Server) handleCreateApp(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusConflict, "ce nom est réservé, choisissez-en un autre")
 		return
 	}
+	if taken, err := s.store.NameTaken(ctx, in.Name); err != nil {
+		s.internalError(w, r, err)
+		return
+	} else if taken != 0 {
+		writeError(w, http.StatusConflict, "une app ou une stack porte déjà ce nom")
+		return
+	}
 	// A name already in the DNS zone belongs to another site: its record must not be overwritten.
 	if p, err := s.dnsProvider(c); err == nil && p != nil && in.Kind == kindWeb {
 		dctx, cancel := context.WithTimeout(ctx, 20*time.Second)
@@ -794,6 +809,10 @@ func (s *Server) failCreate(w http.ResponseWriter, r *http.Request, app db.App, 
 func (s *Server) handleUpdateApp(w http.ResponseWriter, r *http.Request) {
 	a, ok := s.appFromPath(w, r)
 	if !ok {
+		return
+	}
+	if a.StackID != 0 {
+		writeError(w, http.StatusConflict, errStackApp)
 		return
 	}
 	var in appInput
@@ -886,6 +905,10 @@ func (s *Server) handleAppAction(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleDeleteApp(w http.ResponseWriter, r *http.Request) {
 	a, ok := s.appFromPath(w, r)
 	if !ok {
+		return
+	}
+	if a.StackID != 0 {
+		writeError(w, http.StatusConflict, "ce service appartient à une stack : retirez-le de son docker-compose.yml, ou supprimez la stack")
 		return
 	}
 	if err := s.removeApp(r.Context(), a); err != nil {

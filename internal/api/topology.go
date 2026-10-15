@@ -127,6 +127,7 @@ var stateWords = map[string]string{
 	"pending": "en attente", "pulling": "téléchargement de l'image", "building": "construction de l'image",
 	"creating": "démarrage", "deploying": "mise à jour", "restarting": "redémarre en boucle", "stopped": "arrêtée",
 	"exited": "plantée", "error": "en erreur", "node-offline": "node hors ligne",
+	"waiting": "attend ses dépendances", "blocked": "bloquée", "completed": "job terminé", "failed": "job en échec",
 }
 
 // appPath checks every hop from a visitor to an app. withDNS also resolves its name, which takes time:
@@ -134,6 +135,9 @@ var stateWords = map[string]string{
 func (t *topoContext) appPath(ctx context.Context, a db.App, withDNS bool) ([]pathStep, []diagnosis) {
 	if a.Kind == kindSandbox {
 		return t.sandboxPath(a)
+	}
+	if a.Kind == kindService || a.Kind == kindJob {
+		return t.stackServicePath(a)
 	}
 	var steps []pathStep
 	var diags []diagnosis
@@ -287,6 +291,30 @@ func (t *topoContext) sandboxPath(a db.App) ([]pathStep, []diagnosis) {
 	if st, ok := t.statusOf(a.ID); a.Running == 0 || !ok || st.Status.GetState() != "running" {
 		ct.State, ct.Note = "error", "pas en ligne"
 		diags = append(diags, diagnosis{Level: "error", Message: "La sandbox n'est pas en ligne.", Help: "Démarrez-la depuis sa page."})
+	}
+	return append(steps, ct), diags
+}
+
+// stackServicePath is the way to a service of a stack that is not exposed: only the other services of its
+// stack reach it, by its name, on the stack's network.
+func (t *topoContext) stackServicePath(a db.App) ([]pathStep, []diagnosis) {
+	var diags []diagnosis
+	node := t.nodes[a.NodeID]
+	steps := []pathStep{{Key: "visitor", Title: "Services de la stack", Detail: a.Service, State: "info", Note: "par son nom, sans adresse publique"}}
+	ag := pathStep{Key: "node", Title: "Réseau · " + stackNetwork(a.StackID), Detail: node.Name, State: "ok", Note: "réseau de la stack"}
+	if _, ok := t.live[node.ID]; !ok {
+		ag.State, ag.Note = "error", "hors ligne"
+		diags = append(diags, diagnosis{Level: "error", Message: "Le node " + node.Name + " est hors ligne."})
+	}
+	steps = append(steps, ag)
+	ct := pathStep{Key: "container", Title: a.Service, Detail: a.Image, State: "ok", Note: "en ligne"}
+	st, ok := t.statusOf(a.ID)
+	switch {
+	case a.Kind == kindJob && ok && st.Status.GetState() == "completed":
+		ct.Note = "job terminé"
+	case a.Running == 0 || !ok || st.Status.GetState() != "running":
+		ct.State, ct.Note = "error", "pas en ligne"
+		diags = append(diags, diagnosis{Level: "error", Message: "Le service " + a.Service + " n'est pas en ligne.", Help: "Voir ses logs et ses événements."})
 	}
 	return append(steps, ct), diags
 }

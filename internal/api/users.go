@@ -170,6 +170,18 @@ func (s *Server) handleDeleteUser(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	// Its stacks go with their data: nobody else may see them.
+	stacks, err := s.store.ListStacksByOwnerID(ctx, u.ID)
+	if err != nil {
+		s.internalError(w, r, err)
+		return
+	}
+	for _, st := range stacks {
+		if err := s.removeStack(ctx, st, true); err != nil {
+			s.internalError(w, r, err)
+			return
+		}
+	}
 	apps, err := s.store.ListAppsByOwnerID(ctx, u.ID)
 	if err != nil {
 		s.internalError(w, r, err)

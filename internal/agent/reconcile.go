@@ -58,6 +58,7 @@ type Reconciler struct {
 	lastError  map[int64]string      // app → why its last deployment failed
 	cpuSeen    map[int64]cpuSample   // app → previous CPU counters, to compute use between two reports
 	failedOut  map[int64]string      // app → spec hash of a new version that did not start, not retried
+	waiting    map[int64]waitState   // service of a stack → why it has not started yet
 	relaysHash string                // the relays last written into Traefik's container
 	trigger    chan struct{}
 }
@@ -67,7 +68,7 @@ func NewReconciler(dc *docker.Client, logger *slog.Logger) *Reconciler {
 	return &Reconciler{
 		dc: dc, logger: logger, trigger: make(chan struct{}, 1),
 		progress: map[int64]string{}, lastError: map[int64]string{}, cpuSeen: map[int64]cpuSample{},
-		failedOut: map[int64]string{},
+		failedOut: map[int64]string{}, waiting: map[int64]waitState{},
 	}
 }
 
@@ -145,14 +146,29 @@ func (r *Reconciler) reconcile(ctx context.Context) {
 		}
 	}
 
+	r.ensureStackNetworks(ctx, d.GetApps())
 	wanted := map[string]bool{}
-	for _, app := range d.GetApps() {
+	waiting := false
+	for _, app := range orderApps(d.GetApps()) {
 		wanted[containerName(app.GetId())] = true
 		err := r.ensureApp(ctx, app, d.GetIngress().GetMode())
 		r.setError(app.GetId(), err)
 		if err != nil {
 			r.logger.Error("deploying app failed", "app", app.GetName(), "err", err)
 		}
+		r.mu.Lock()
+		w, ok := r.waiting[app.GetId()]
+		r.mu.Unlock()
+		waiting = waiting || (ok && !w.blocked)
+	}
+	if waiting {
+		// A service waits for another one: look again soon rather than at the next resync.
+		time.AfterFunc(waitRetry, func() {
+			select {
+			case r.trigger <- struct{}{}:
+			default:
+			}
+		})
 	}
 
 	existing, err := r.dc.ListByLabel(ctx, labelApp)
@@ -187,7 +203,18 @@ func appHash(app *agentpb.AppSpec, ingressMode string) string {
 	slices.Sort(env)
 	return specHash(app.GetImage(), strconv.Itoa(int(app.GetPort())), strings.Join(env, "\n"), app.GetHostname(),
 		strconv.FormatInt(app.GetMemoryBytes(), 10), strconv.FormatInt(app.GetGeneration(), 10), ingressMode,
-		strconv.FormatBool(app.GetSandbox()), strings.Join(app.GetVolumes(), "\n"))
+		strconv.FormatBool(app.GetSandbox()), strings.Join(app.GetVolumes(), "\n"), stackHash(app.GetStack()))
+}
+
+// stackHash covers how a service of a stack runs; its dependencies only order its start.
+func stackHash(st *agentpb.StackService) string {
+	if st == nil {
+		return ""
+	}
+	st = proto.Clone(st).(*agentpb.StackService)
+	st.DependsOn = nil
+	raw, _ := proto.MarshalOptions{Deterministic: true}.Marshal(st)
+	return string(raw)
 }
 
 func (r *Reconciler) ensureApp(ctx context.Context, app *agentpb.AppSpec, ingressMode string) error {
@@ -199,10 +226,25 @@ func (r *Reconciler) ensureApp(ctx context.Context, app *agentpb.AppSpec, ingres
 	if err != nil && !errors.Is(err, docker.ErrNotFound) {
 		return err
 	}
+	// A service of a stack starts once the services it depends on are ready; until then, its previous
+	// version, if any, keeps running.
+	if app.GetRunning() && (!exists || ct.Config.Labels[labelSpec] != hash) && len(app.GetStack().GetDependsOn()) > 0 {
+		w, err := r.waitFor(ctx, app)
+		if err != nil {
+			return err
+		}
+		r.setWaiting(app.GetId(), w)
+		if w.reason != "" {
+			return nil
+		}
+	} else {
+		r.setWaiting(app.GetId(), waitState{})
+	}
 	if exists && ct.Config.Labels[labelSpec] != hash {
 		// Without data of its own, the next version starts next to the running one. With volumes, two
-		// versions must not write the same files: the running one stops first.
-		if app.GetRunning() && ct.State.Running && len(app.GetVolumes()) == 0 && !app.GetSandbox() {
+		// versions must not write the same files: the running one stops first. A job runs anew.
+		if app.GetRunning() && ct.State.Running && len(app.GetVolumes()) == 0 && len(app.GetStack().GetVolumes()) == 0 &&
+			!app.GetSandbox() && !app.GetStack().GetJob() {
 			return r.rollOut(ctx, app, hash, ingressMode)
 		}
 		r.logger.Info("app changed, recreating its container", "app", app.GetName())
@@ -224,8 +266,8 @@ func (r *Reconciler) ensureApp(ctx context.Context, app *agentpb.AppSpec, ingres
 			return err
 		}
 		r.setProgress(app.GetId(), "creating")
-		if err := r.dc.Create(ctx, name, appContainerConfig(app, hash, ingressMode)); err != nil {
-			return fmt.Errorf("création du conteneur : %w", err)
+		if err := r.createContainer(ctx, name, app, hash, ingressMode); err != nil {
+			return err
 		}
 		if ct, err = r.dc.Inspect(ctx, name); err != nil {
 			return err
@@ -272,6 +314,14 @@ func (r *Reconciler) fetchImage(ctx context.Context, app *agentpb.AppSpec) error
 }
 
 func appContainerConfig(app *agentpb.AppSpec, hash, ingressMode string) map[string]any {
+	config := appContainer(app, hash, ingressMode)
+	if app.GetStack() != nil {
+		stackConfig(app, config, config["HostConfig"].(map[string]any), config["Labels"].(map[string]string))
+	}
+	return config
+}
+
+func appContainer(app *agentpb.AppSpec, hash, ingressMode string) map[string]any {
 	port := strconv.Itoa(int(app.GetPort())) + "/tcp"
 	env := make([]string, 0, len(app.GetEnv()))
 	for k, v := range app.GetEnv() {
@@ -331,19 +381,23 @@ func appContainerConfig(app *agentpb.AppSpec, hash, ingressMode string) map[stri
 		} else {
 			labels["traefik.http.routers."+router+".entrypoints"] = "web"
 		}
-	} else {
-		// No domain: publish the port on a free port of the node.
+	} else if app.GetPort() > 0 {
+		// No domain: publish the port on a free port of the node. A service of a stack without a port is
+		// only reached by the stack.
 		hostConfig["PortBindings"] = map[string]any{port: []map[string]string{{"HostPort": ""}}}
 	}
-	return map[string]any{
-		"Image":        app.GetImage(),
-		"Env":          env,
-		"Labels":       labels,
-		"ExposedPorts": map[string]any{port: map[string]any{}},
-		"HostConfig":   hostConfig,
+	config := map[string]any{
+		"Image":      app.GetImage(),
+		"Env":        env,
+		"Labels":     labels,
+		"HostConfig": hostConfig,
 		// The other containers of the node reach it by its app name, e.g. http://grafana:3000.
 		"NetworkingConfig": map[string]any{"EndpointsConfig": map[string]any{networkName: map[string]any{"Aliases": []string{app.GetName()}}}},
 	}
+	if app.GetPort() > 0 {
+		config["ExposedPorts"] = map[string]any{port: map[string]any{}}
+	}
+	return config
 }
 
 // ensureTraefik runs the ingress proxy that routes app domains to containers, and removes it when it is not
@@ -536,12 +590,17 @@ func (r *Reconciler) Statuses(ctx context.Context) []*agentpb.AppStatus {
 		st := &agentpb.AppStatus{AppId: app.GetId()}
 		r.mu.Lock()
 		progress, lastErr := r.progress[app.GetId()], r.lastError[app.GetId()]
+		wait, waiting := r.waiting[app.GetId()]
 		r.mu.Unlock()
 
 		ct, err := r.dc.Inspect(ctx, containerName(app.GetId()))
 		switch {
 		case progress != "":
 			st.State = progress
+		case waiting && wait.blocked && (err != nil || !ct.State.Running):
+			st.State, st.Error = "blocked", wait.reason
+		case waiting && (err != nil || !ct.State.Running):
+			st.State, st.WaitingFor = "waiting", wait.reason
 		// A failed deployment with the previous version still running is reported with the version that
 		// runs, and the error alongside.
 		case lastErr != "" && (err != nil || !ct.State.Running):
@@ -555,6 +614,10 @@ func (r *Reconciler) Statuses(ctx context.Context) []*agentpb.AppStatus {
 			st.State, st.Error = "error", err.Error()
 		default:
 			st.Error = lastErr
+			if waiting {
+				// The running version stays until the next one can start.
+				st.WaitingFor = wait.reason
+			}
 			st.ExitCode = int32(ct.State.ExitCode)
 			st.OomKilled = ct.State.OOMKilled
 			st.RestartCount = int32(ct.RestartCount)
@@ -579,6 +642,8 @@ func (r *Reconciler) Statuses(ctx context.Context) []*agentpb.AppStatus {
 				st.State = "exited"
 				if !app.GetRunning() {
 					st.State = "stopped"
+				} else if app.GetStack().GetJob() {
+					st.State = jobState(ct)
 				}
 			}
 		}
@@ -628,8 +693,8 @@ func (r *Reconciler) rollOut(ctx context.Context, app *agentpb.AppSpec, hash, in
 		return err
 	}
 	r.setProgress(app.GetId(), "deploying")
-	if err := r.dc.Create(ctx, next, appContainerConfig(app, hash, ingressMode)); err != nil {
-		return fmt.Errorf("création du conteneur : %w", err)
+	if err := r.createContainer(ctx, next, app, hash, ingressMode); err != nil {
+		return err
 	}
 	if err := r.dc.Start(ctx, next); err != nil {
 		r.dc.Remove(ctx, next)

@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent } from 'react'
-import { api, errorMessage, type DiscordSettings, type Instance, type NotifySettings } from './api'
+import { api, errorMessage, type BackupSettings, type DiscordSettings, type Instance, type NotifySettings } from './api'
 import { CopyField, DiscordAppSteps, Switch, WebhookForm, WebhookSteps } from './ui'
 import DomainPanel from './Domain'
 import { IconPicker } from './Cropper'
@@ -80,7 +80,7 @@ function DiscordSettingsPanel() {
   )
 }
 
-type Section = 'general' | 'domain' | 'login' | 'discord' | 'notifications'
+type Section = 'general' | 'domain' | 'login' | 'discord' | 'notifications' | 'backups'
 
 const sections: { id: Section; label: string; superadmin: boolean }[] = [
   { id: 'general', label: 'Général', superadmin: true },
@@ -88,6 +88,7 @@ const sections: { id: Section; label: string; superadmin: boolean }[] = [
   { id: 'login', label: 'Connexion', superadmin: true },
   { id: 'discord', label: 'Discord', superadmin: false },
   { id: 'notifications', label: 'Notifications', superadmin: false },
+  { id: 'backups', label: 'Sauvegardes', superadmin: false },
 ]
 
 const intros: Record<Section, string> = {
@@ -96,6 +97,7 @@ const intros: Record<Section, string> = {
   login: 'Comment les comptes se connectent.',
   discord: 'L’application Discord qui permet de se connecter avec Discord.',
   notifications: 'Les alertes envoyées aux admins dans un salon Discord.',
+  backups: 'Où vont les sauvegardes des volumes des stacks : un stockage compatible S3, hors des nodes, chiffré par restic.',
 }
 
 export default function Settings({ superadmin, section, onRenamed }: { superadmin: boolean; section?: string; onRenamed: () => void }) {
@@ -121,6 +123,7 @@ export default function Settings({ superadmin, section, onRenamed }: { superadmi
         {current.id === 'login' && <LoginSettingsPanel />}
         {current.id === 'discord' && <DiscordSettingsPanel />}
         {current.id === 'notifications' && <NotifyPanel />}
+        {current.id === 'backups' && <BackupsPanel />}
       </div>
     </div>
   )
@@ -131,6 +134,7 @@ const notifyKinds: { key: keyof NotifySettings['events']; title: string; text: s
   { key: 'support', title: 'Support', text: 'Une demande d’aide, ou un nouveau message d’un membre sur la sienne.' },
   { key: 'crashes', title: 'Apps suspendues', text: 'Une app plante 3 fois en 5 minutes : Forgeyard l’arrête.' },
   { key: 'nodes', title: 'Nodes hors ligne', text: 'Un node ne répond plus depuis une minute, puis quand il revient.' },
+  { key: 'backups', title: 'Sauvegardes en échec', text: 'La sauvegarde planifiée d’un volume n’a pas abouti.' },
 ]
 
 /** Admins: the Discord channel that receives the instance's alerts. */
@@ -190,6 +194,139 @@ function NotifyPanel() {
         ))}
         <p className="muted">Chaque membre peut aussi recevoir les alertes de ses propres apps : Mon profil › Notifications.</p>
         {error && <p className="error">{error}</p>}
+      </section>
+    </>
+  )
+}
+
+/** Admins: the S3-compatible storage the volumes' backups go to, and the password that encrypts them. */
+function BackupsPanel() {
+  const [settings, setSettings] = useState<BackupSettings | null>(null)
+  const [form, setForm] = useState({ endpoint: '', bucket: '', prefix: 'forgeyard', region: '', accessKey: '', secretKey: '', password: '' })
+  const [showPassword, setShowPassword] = useState(false)
+  const [test, setTest] = useState<{ ok: boolean; error?: string; log?: string } | null>(null)
+  const [error, setError] = useState('')
+  const [busy, setBusy] = useState(false)
+
+  function loaded(s: BackupSettings) {
+    setSettings(s)
+    setForm({ endpoint: s.endpoint, bucket: s.bucket, prefix: s.prefix || (s.configured ? '' : 'forgeyard'), region: s.region, accessKey: s.accessKey, secretKey: '', password: s.password ?? '' })
+  }
+  useEffect(() => {
+    api.backupSettings().then(loaded, (err) => setError(errorMessage(err)))
+  }, [])
+
+  async function save(e: FormEvent) {
+    e.preventDefault()
+    setBusy(true)
+    setError('')
+    setTest(null)
+    try {
+      loaded(await api.saveBackupSettings(form))
+    } catch (err) {
+      setError(errorMessage(err))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function runTest() {
+    setBusy(true)
+    setTest(null)
+    setError('')
+    try {
+      setTest(await api.testBackupSettings())
+    } catch (err) {
+      setError(errorMessage(err))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  if (!settings) return error ? <p className="error">{error}</p> : null
+  const field = (key: keyof typeof form, label: string, extra: { placeholder?: string; type?: string; required?: boolean; help?: string } = {}) => (
+    <label className="field">
+      <span>{label}</span>
+      <input
+        type={extra.type ?? 'text'}
+        value={form[key]}
+        onChange={(e) => setForm({ ...form, [key]: e.target.value })}
+        placeholder={extra.placeholder}
+        required={extra.required}
+        autoComplete="off"
+      />
+      {extra.help && <small>{extra.help}</small>}
+    </label>
+  )
+  return (
+    <>
+      <form className="panel" onSubmit={save}>
+        <h2>Stockage</h2>
+        <p className="muted">
+          Un bucket chez un fournisseur compatible S3 (Scaleway, OVHcloud, Backblaze B2, AWS, Cloudflare R2, un MinIO ailleurs…). Les
+          sauvegardes ne restent jamais sur les nodes : un disque qui lâche ne les emporte pas.
+        </p>
+        <div className="form-row">
+          {field('endpoint', 'Adresse', { placeholder: 'https://s3.fr-par.scw.cloud', required: true })}
+          {field('region', 'Région', { placeholder: 'fr-par (si demandée)' })}
+        </div>
+        <div className="form-row">
+          {field('bucket', 'Bucket', { placeholder: 'mes-sauvegardes', required: true })}
+          {field('prefix', 'Dossier', { placeholder: 'forgeyard' })}
+        </div>
+        <div className="form-row">
+          {field('accessKey', 'Clé d’accès', { required: true })}
+          {field('secretKey', 'Clé secrète', { type: 'password', required: !settings.secretSet, placeholder: settings.secretSet ? 'enregistrée : laisser vide pour la garder' : '' })}
+        </div>
+        <label className="field">
+          <span>Mot de passe du dépôt</span>
+          <span className="password-row">
+            <input
+              type={showPassword ? 'text' : 'password'}
+              className="mono"
+              value={form.password}
+              onChange={(e) => setForm({ ...form, password: e.target.value })}
+              placeholder="créé à l’enregistrement"
+              autoComplete="off"
+            />
+            <button type="button" className="btn btn-small" onClick={() => setShowPassword(!showPassword)}>
+              {showPassword ? 'Masquer' : 'Afficher'}
+            </button>
+          </span>
+          <small>
+            restic chiffre les sauvegardes avec ce mot de passe. Gardez-en une copie hors de Forgeyard : sans lui, elles sont illisibles. Le
+            changer ne rend pas lisibles celles déjà faites avec l’ancien.
+          </small>
+        </label>
+        {error && <p className="error">{error}</p>}
+        <div className="panel-footer">
+          <button type="submit" className="btn btn-primary" disabled={busy}>
+            Enregistrer
+          </button>
+          <button type="button" className="btn" disabled={busy || !settings.configured} onClick={runTest}>
+            Tester
+          </button>
+        </div>
+        {test &&
+          (test.ok ? (
+            <p className="state-up">Le dépôt répond : les sauvegardes peuvent y aller.</p>
+          ) : (
+            <div className="banner banner-down">
+              <span className="dot dot-down" />
+              <span>
+                {test.error}
+                {test.log && <pre className="mono test-log">{test.log}</pre>}
+              </span>
+            </div>
+          ))}
+      </form>
+      <section className="panel">
+        <h2>Ce qui est sauvegardé</h2>
+        <p className="muted">
+          Les volumes nommés des stacks, volume par volume, depuis la page de la stack (onglet Volumes et sauvegardes) : tous les jours ou toutes
+          les heures, en gardant les N dernières. Un volume utilisé par un service marqué <span className="mono">x-forgeyard: {'{ backup: { type: postgres } }'}</span>{' '}
+          est sauvegardé avec pg_dump, une copie cohérente de la base. Une restauration va toujours dans un volume neuf.
+        </p>
       </section>
     </>
   )

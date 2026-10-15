@@ -55,7 +55,7 @@ func volumeMounts(app *agentpb.AppSpec) []map[string]any {
 func dropAppData(ctx context.Context, dc *docker.Client, appID int64) error {
 	id := strconv.FormatInt(appID, 10)
 	for _, name := range []string{containerName(appID), containerName(appID) + "-next"} {
-		if err := dc.Remove(ctx, name); err != nil {
+		if err := removeContainer(ctx, dc, name); err != nil {
 			return err
 		}
 	}
@@ -97,6 +97,14 @@ func (v *volumeSizes) get(ctx context.Context, dc *docker.Client) []*agentpb.Vol
 	}
 	var out []*agentpb.VolumeUsage
 	for _, vol := range vols {
+		if stackID, err := strconv.ParseInt(vol.Labels[labelStack], 10, 64); err == nil {
+			size := int64(-1)
+			if vol.UsageData != nil {
+				size = vol.UsageData.Size
+			}
+			out = append(out, &agentpb.VolumeUsage{Name: vol.Name, StackId: stackID, Volume: vol.Labels[labelVolumeName], SizeBytes: size})
+			continue
+		}
 		appID, err := strconv.ParseInt(vol.Labels[labelApp], 10, 64)
 		if err != nil {
 			if !strings.HasPrefix(vol.Name, "forgeyard-sandbox-") {

@@ -58,6 +58,18 @@ func (s *Server) onAppStateChange(appID int64, from, to *agentpb.AppStatus) {
 		}
 	case "error":
 		s.appEvent(appID, eventError, "Erreur : "+to.GetError())
+	case "waiting":
+		s.appEvent(appID, eventInfo, "En attente : "+to.GetWaitingFor())
+	case "blocked":
+		s.appEvent(appID, eventError, "Bloquée : "+to.GetError())
+	case "completed":
+		s.appEvent(appID, eventSuccess, "Job terminé")
+	case "failed":
+		msg := fmt.Sprintf("Job en échec (code %d) : la stack attend qu'il réussisse", to.GetExitCode())
+		if to.GetOomKilled() {
+			msg = "Job en échec : manque de mémoire"
+		}
+		s.appEvent(appID, eventError, msg)
 	}
 }
 

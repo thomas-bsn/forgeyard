@@ -248,6 +248,33 @@ func session(ctx context.Context, client agentpb.AgentServiceClient, dc *docker.
 					logger.Info("deleted app's data removed", "app_id", appID)
 				}(m.DropAppData.GetAppId())
 			}
+		case *agentpb.ServerMessage_BackupJob:
+			go func(job *agentpb.BackupJob) {
+				bctx, cancel := context.WithTimeout(ctx, 6*time.Hour)
+				defer cancel()
+				if dc == nil {
+					send(&agentpb.AgentMessage{Msg: &agentpb.AgentMessage_BackupResult{BackupResult: &agentpb.BackupResult{Id: job.GetId(), Error: "Docker n'est pas joignable sur ce node"}}})
+					return
+				}
+				logger.Info("backup job", "op", job.GetOp(), "volume", job.GetVolume(), "tag", job.GetTag())
+				res := runBackupJob(bctx, dc, job)
+				if res.GetError() != "" {
+					logger.Warn("backup job failed", "op", job.GetOp(), "tag", job.GetTag(), "err", res.GetError())
+				}
+				send(&agentpb.AgentMessage{Msg: &agentpb.AgentMessage_BackupResult{BackupResult: res}})
+			}(m.BackupJob)
+		case *agentpb.ServerMessage_DropStack:
+			if dc != nil {
+				go func(m *agentpb.DropStack) {
+					dctx, cancel := context.WithTimeout(ctx, time.Minute)
+					defer cancel()
+					if err := dropStack(dctx, dc, m.GetStackId(), m.GetVolumes()); err != nil {
+						logger.Warn("deleting a deleted stack's containers failed", "stack_id", m.GetStackId(), "err", err)
+						return
+					}
+					logger.Info("deleted stack removed", "stack_id", m.GetStackId(), "volumes", m.GetVolumes())
+				}(m.DropStack)
+			}
 		case *agentpb.ServerMessage_UpdateAgent:
 			go func(image string) {
 				logger.Info("updating the agent", "image", image)

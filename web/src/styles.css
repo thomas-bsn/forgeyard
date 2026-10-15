@@ -4763,3 +4763,230 @@ a.link-btn {
     transform: rotate(360deg);
   }
 }
+
+/* --- Stacks ------------------------------------------------------------------ */
+
+.stacks {
+  display: grid;
+  gap: 16px;
+}
+
+.stack-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 12px;
+}
+
+.stack-dots {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  margin: 6px 0 2px;
+  font-size: 0.82rem;
+  color: var(--muted);
+}
+
+.stack-dots > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.compose-editor {
+  min-height: 320px;
+  tab-size: 2;
+  white-space: pre;
+  overflow-x: auto;
+}
+
+.compose-errors {
+  margin: 0;
+  padding: 12px 14px;
+  list-style: none;
+  display: grid;
+  gap: 6px;
+  border-radius: 12px;
+  font-size: 0.88rem;
+  background: color-mix(in srgb, var(--down) 8%, var(--card));
+  border: 1px solid color-mix(in srgb, var(--down) 35%, var(--border));
+}
+
+.compose-errors li {
+  display: flex;
+  gap: 10px;
+  align-items: baseline;
+}
+
+.compose-errors .link-button {
+  flex: none;
+  font-variant-numeric: tabular-nums;
+  color: var(--down);
+}
+
+.stack-preview {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 10px;
+}
+
+.stack-preview li,
+.stack-service-main {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  font-size: 0.86rem;
+}
+
+.stack-preview-head {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.stack-services {
+  margin: 0;
+  padding: 8px 18px;
+  list-style: none;
+  gap: 0;
+}
+
+.stack-services li {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 0;
+}
+
+.stack-services li + li {
+  border-top: 1px solid var(--border);
+}
+
+.stack-service-state {
+  font-size: 0.85rem;
+  font-weight: 600;
+  text-align: right;
+}
+
+.compose-view pre {
+  margin: 0;
+  white-space: pre;
+  overflow-x: auto;
+}
+
+.volume-cards {
+  display: grid;
+  gap: 14px;
+}
+
+.volume-card {
+  gap: 12px;
+  padding: 18px;
+}
+
+.volume-card-head {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.volume-card-head .header-title {
+  flex: 1;
+  min-width: 0;
+}
+
+.backup-form {
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+}
+
+.backup-status {
+  margin: 0;
+  font-size: 0.86rem;
+}
+
+.volume-card-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.restore-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 8px;
+  font-size: 0.85rem;
+}
+
+.restore-list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 8px 12px;
+  border-radius: 10px;
+  background: var(--bg);
+}
+
+.snapshot-list {
+  display: grid;
+  gap: 6px;
+  max-height: 320px;
+  overflow-y: auto;
+}
+
+.snapshot {
+  display: grid;
+  grid-template-columns: auto 1fr auto auto;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  font-size: 0.9rem;
+  cursor: pointer;
+}
+
+.snapshot.on {
+  border-color: var(--accent);
+}
+
+.snapshot input {
+  accent-color: var(--accent);
+}
+
+@media (max-width: 560px) {
+  .stack-services li {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .stack-service-state {
+    grid-column: 2;
+    text-align: left;
+  }
+}
+
+.password-row {
+  display: flex;
+  gap: 8px;
+}
+
+.password-row input {
+  flex: 1;
+  min-width: 0;
+}
+
+.test-log {
+  margin: 8px 0 0;
+  max-height: 160px;
+  overflow: auto;
+  white-space: pre-wrap;
+  font-size: 0.78rem;
+}

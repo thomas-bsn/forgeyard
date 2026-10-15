@@ -31,6 +31,7 @@ message AgentMessage {
     Topology topology = 8;
     UpdateProgress update_progress = 9;
     Uninstalled uninstalled = 10;
+    BackupResult backup_result = 11;
   }
 }
 
@@ -58,6 +59,8 @@ message VolumeUsage {
   int64 app_id = 2;
   string path = 3; // where it is mounted in the app's container
   int64 size_bytes = 4; // -1 when not measured yet
+  int64 stack_id = 5; // a named volume of a stack, app_id 0
+  string volume = 6;  // its name in the stack's compose file
 }
 
 message DockerNetwork {
@@ -115,12 +118,74 @@ message ServerMessage {
     DropAppData drop_app_data = 11;
     Uninstall uninstall = 12;
     TunnelOpen tunnel_open = 13;
+    DropStack drop_stack = 14;
+    BackupJob backup_job = 15;
   }
 }
 
 // TunnelOpen asks the agent to open a Tunnel stream for this ID and connect it to the node's Traefik.
 message TunnelOpen {
   string tunnel_id = 1;
+}
+
+// DropStack deletes what a deleted stack left on the node: its containers, if still there, and its network;
+// its volumes too when the deletion said so.
+message DropStack {
+  int64 stack_id = 1;
+  bool volumes = 2;
+}
+
+// BackupJob asks the agent to back up a volume to the restic repository, list its snapshots, or restore one
+// into a new volume. It answers with a BackupResult of the same id.
+message BackupJob {
+  string id = 1;
+  string op = 2; // backup, snapshots, restore
+  Restic restic = 3;
+  // The volume backed up: its files, or the database of the container that uses it when postgres is set.
+  string volume = 4;
+  string tag = 5; // the policy's tag on its snapshots: forget, list and restore stay within it
+  int32 keep = 6; // backup: the snapshots kept
+  Postgres postgres = 7;
+  string snapshot = 8;       // restore: the snapshot
+  string target_volume = 9;  // restore: the new volume, created by the agent
+  map<string, string> target_labels = 10;
+}
+
+// Restic is where the snapshots go: a repository on an S3-compatible storage.
+message Restic {
+  string repository = 1; // s3:https://host/bucket/prefix
+  string password = 2;
+  string access_key = 3;
+  string secret_key = 4;
+  string region = 5;
+  string network = 6; // the Docker network the restic container joins, empty for the default one
+}
+
+// Postgres backs up a database with pg_dump run in its container, and restores it with pg_restore in a
+// short-lived container of the same image.
+message Postgres {
+  string container = 1;
+  string user = 2;
+  string database = 3;
+  string password = 4;
+  string image = 5;
+  string data_path = 6; // where its data volume is mounted: the restore container mounts the new volume there
+  string pgdata = 7;    // its PGDATA, when the service sets one
+}
+
+message BackupResult {
+  string id = 1;
+  string error = 2;
+  string snapshot = 3;    // backup: the new snapshot
+  int64 size_bytes = 4;   // backup: what it added
+  repeated Snapshot snapshots = 5;
+  string log = 6;         // the end of the tools' output, when it failed
+}
+
+message Snapshot {
+  string id = 1;
+  int64 time = 2;
+  int64 size_bytes = 3;
 }
 
 // Uninstall: the node is being removed. The agent deletes what Forgeyard put on it (the apps' containers
@@ -211,6 +276,45 @@ message AppSpec {
   // after the app and the path. An app with volumes is stopped before its next version starts: two
   // versions must not write the same files.
   repeated string volumes = 13;
+  // stack: the app is a service of a compose stack.
+  StackService stack = 14;
+}
+
+// StackService is how a service of a stack runs: on the stack's own network, reached there by its service
+// name, after the services it depends on.
+message StackService {
+  int64 stack_id = 1;
+  string network = 2;
+  string service = 3;
+  repeated string command = 4;    // empty: the image's own
+  repeated string entrypoint = 5; // empty: the image's own
+  Healthcheck healthcheck = 6;
+  string restart = 7; // no, always, on-failure[:N], unless-stopped; empty: unless-stopped
+  // job: another service waits for it to complete. It runs once per version, and is not restarted.
+  bool job = 8;
+  repeated Dependency depends_on = 9;
+  repeated NamedVolume volumes = 10;
+}
+
+message Healthcheck {
+  repeated string test = 1;
+  int64 interval_ns = 2;
+  int64 timeout_ns = 3;
+  int64 start_period_ns = 4;
+  int32 retries = 5;
+}
+
+message Dependency {
+  int64 app_id = 1;
+  string service = 2;
+  string condition = 3; // service_started, service_healthy, service_completed_successfully
+}
+
+message NamedVolume {
+  string name = 1;   // the Docker volume
+  string target = 2;
+  bool read_only = 3;
+  string volume = 4; // its name in the compose file
 }
 
 message Ingress {
@@ -228,7 +332,8 @@ message AppStatuses {
 
 message AppStatus {
   int64 app_id = 1;
-  // pulling, building, creating, deploying, running, restarting, stopped, exited, error
+  // pulling, building, creating, deploying, running, restarting, stopped, exited, error; for a service of a
+  // stack also waiting (for its dependencies), blocked (one failed), and completed or failed for a job
   string state = 2;
   int32 exit_code = 3;
   bool oom_killed = 4;
@@ -241,6 +346,8 @@ message AppStatus {
   uint64 memory_used_bytes = 10;
   // The TCP ports the running container listens on (not on loopback), to spot a wrong port setting.
   repeated int32 listening_ports = 11;
+  // waiting_for: what a service of a stack waits for before it starts (state "waiting").
+  string waiting_for = 12;
 }
 
 message StartLogs {

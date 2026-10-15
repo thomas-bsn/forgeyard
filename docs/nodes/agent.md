@@ -36,6 +36,8 @@ Pour chaque app :
 
 Réglages de chaque conteneur : réseau Docker `forgeyard`, redémarrage `unless-stopped`, limite mémoire (512 Mo par défaut) sans swap, pas de mode privilégié, `no-new-privileges`, logs limités à 3 × 10 Mo.
 
+Un service de [stack](../apps/stacks.md) porte en plus le label `forgeyard.stack` : il est sur le réseau `forgeyard-stack-<id>` (alias : son nom de service ; le service exposé rejoint aussi `forgeyard`), avec sa commande, son healthcheck, sa politique de redémarrage et les volumes nommés de la stack. L'agent traite les services après ce dont ils dépendent, et n'en crée un que quand ses dépendances sont prêtes (démarrée, `healthy` ou job terminé avec succès) ; sinon il le note en attente et revient 2 s plus tard, sans bloquer les autres apps. Un job (`restart: no`) n'est jamais relancé dans la même version. Les réseaux de stacks qui ne servent plus sont supprimés ; à la suppression d'une stack, l'ordre `DropStack` enlève ses conteneurs, son réseau, et ses volumes si demandé.
+
 L'agent gère aussi le conteneur **Traefik** du node (voir [routing](../network/routing.md)) : créé dès que le node est ajouté (même sans app), recréé si le mode réseau change, supprimé avec le node.
 
 ## Infos et métriques
@@ -45,6 +47,10 @@ Taille de la machine via Docker (`/info`) et gopsutil ; disque mesuré sur `FORG
 ## Volumes des apps
 
 L'agent monte les volumes d'une app (un volume Docker nommé par app et par chemin, étiqueté `forgeyard.app`), arrête l'app avant de lancer sa version suivante quand elle en a, et mesure leur taille environ une fois par minute (`/system/df`), envoyée avec la topologie. Il ne supprime les volumes d'une app que sur l'ordre `DropAppData` du server, envoyé à tous les nodes en ligne quand l'app est supprimée.
+
+## Sauvegardes
+
+À l'ordre `BackupJob` du server, l'agent lance restic dans un conteneur éphémère (sauvegarde, liste ou restauration dans un volume neuf), avec `pg_dump` / `pg_restore` pour une base postgres, et répond `BackupResult`. Voir [sauvegardes](../apps/backups.md).
 
 ## Mise à jour
 

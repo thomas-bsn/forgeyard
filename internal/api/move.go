@@ -30,6 +30,10 @@ func (s *Server) handleMoveApp(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSON(w, r, &body) {
 		return
 	}
+	if a.StackID != 0 {
+		writeError(w, http.StatusConflict, "les services d'une stack tournent tous sur le même node : ils ne changent pas de node un par un")
+		return
+	}
 	if a.MovingFrom != 0 {
 		writeError(w, http.StatusConflict, "cette app est déjà en train de changer de node")
 		return

@@ -88,6 +88,9 @@ type Server struct {
 
 	tunnelMu      sync.RWMutex
 	tunneledHosts map[string]int64 // tunneled apps' domains, by their nodes
+
+	// backupMu runs one backup job at a time: restic's pruning locks the repository.
+	backupMu sync.Mutex
 }
 
 // NewServer returns a Server. setupToken must be non-empty while the setup wizard has not been completed.
@@ -229,6 +232,22 @@ func (s *Server) Handler(webFS fs.FS) http.Handler {
 	mux.HandleFunc("GET /api/admin/settings/domain", s.requireSuperadmin(s.handleGetDomainSettings))
 	mux.HandleFunc("PUT /api/admin/settings/domain", s.requireSuperadmin(s.handlePutDomainSettings))
 	mux.HandleFunc("POST /api/admin/settings/domain/check", s.requireSuperadmin(s.handleCheckDomain))
+	mux.HandleFunc("GET /api/stacks", s.requireUser(s.handleListStacks))
+	mux.HandleFunc("POST /api/stacks", s.requireUser(s.handleCreateStack))
+	mux.HandleFunc("POST /api/stacks/validate", s.requireUser(s.handleValidateStack))
+	mux.HandleFunc("GET /api/stacks/{id}", s.requireUser(s.handleGetStack))
+	mux.HandleFunc("PUT /api/stacks/{id}", s.requireUser(s.handleUpdateStack))
+	mux.HandleFunc("POST /api/stacks/{id}/{action}", s.requireUser(s.handleStackAction))
+	mux.HandleFunc("DELETE /api/stacks/{id}", s.requireUser(s.handleDeleteStack))
+	mux.HandleFunc("PUT /api/stacks/{id}/backups/{volume}", s.requireUser(s.handlePutBackupPolicy))
+	mux.HandleFunc("DELETE /api/stacks/{id}/backups/{volume}", s.requireUser(s.handleDeleteBackupPolicy))
+	mux.HandleFunc("POST /api/stacks/{id}/backups/{volume}/run", s.requireUser(s.handleRunBackup))
+	mux.HandleFunc("GET /api/stacks/{id}/backups/{volume}/snapshots", s.requireUser(s.handleListSnapshots))
+	mux.HandleFunc("POST /api/stacks/{id}/backups/{volume}/restore", s.requireUser(s.handleRestoreBackup))
+	mux.HandleFunc("POST /api/stacks/{id}/backups/{volume}/restores/{restore}/use", s.requireUser(s.handleUseRestore))
+	mux.HandleFunc("GET /api/admin/settings/backups", s.requireAdmin(s.handleGetBackupSettings))
+	mux.HandleFunc("PUT /api/admin/settings/backups", s.requireAdmin(s.handlePutBackupSettings))
+	mux.HandleFunc("POST /api/admin/settings/backups/test", s.requireAdmin(s.handleTestBackupSettings))
 	mux.HandleFunc("GET /api/admin/settings/login", s.requireSuperadmin(s.handleGetLoginSettings))
 	mux.HandleFunc("PUT /api/admin/settings/login", s.requireSuperadmin(s.handlePutLoginSettings))
 	mux.Handle("/", spaHandler(webFS))

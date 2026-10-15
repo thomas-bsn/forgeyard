@@ -44,7 +44,7 @@ export type MemberProfile = Member & {
 export type NotifySettings = {
   webhookSet: boolean
   supportWebhookSet: boolean
-  events: { requests: boolean; support: boolean; crashes: boolean; nodes: boolean }
+  events: { requests: boolean; support: boolean; crashes: boolean; nodes: boolean; backups: boolean }
 }
 
 export type PathStep = {
@@ -225,6 +225,11 @@ export type AppState =
   | 'exited'
   | 'error'
   | 'node-offline'
+  // Services of a stack: waiting for their dependencies, blocked by one that failed; a job completed or failed.
+  | 'waiting'
+  | 'blocked'
+  | 'completed'
+  | 'failed'
 
 export type App = {
   id: number
@@ -252,7 +257,10 @@ export type App = {
   crashSuspended?: boolean
   movingFrom?: number
   listeningPorts?: number[] // what it really listens on, while running
-  kind: 'web' | 'sandbox'
+  kind: 'web' | 'sandbox' | 'service' | 'job' // service and job: in a stack, not exposed
+  stackId?: number
+  service?: string // its name in its stack's compose file
+  waitingFor?: string // what a service of a stack waits for to start
   ssh?: string // the command reaching it through the SSH gateway
   // Paths kept across redeployments, with their size (-1 not measured yet); builtin: a sandbox's /root.
   volumes: { path: string; sizeBytes: number; builtin?: boolean }[]
@@ -260,6 +268,73 @@ export type App = {
   updatedAt: number
   env?: Record<string, string>
   dockerfile?: string
+}
+
+export type ComposeError = { line: number; message: string }
+
+export type BackupRestore = { id: number; snapshot: string; volume: string; status: 'running' | 'ok' | 'error'; error?: string; createdAt: number; inUse: boolean }
+
+export type BackupPolicy = {
+  id: number
+  volume: string
+  schedule: 'hourly' | 'daily'
+  hour: number
+  keep: number
+  enabled: boolean
+  lastRunAt?: number
+  lastStatus?: 'running' | 'ok' | 'error'
+  lastError?: string
+  lastSnapshot?: string
+  nextRunAt?: number
+  restores: BackupRestore[]
+}
+
+export type StackVolume = {
+  name: string
+  docker: string
+  sizeBytes: number
+  services: string[]
+  postgres?: string // the postgres service using it: saved with pg_dump
+  restored?: boolean
+  backup?: BackupPolicy
+}
+
+export type StackState = 'pending' | 'running' | 'deploying' | 'stopped' | 'error' | 'blocked' | 'node-offline'
+
+export type Stack = {
+  id: number
+  name: string
+  ownerId: number
+  ownerName: string
+  nodeId: number
+  nodeName: string
+  url?: string
+  state: StackState
+  services: App[]
+  volumes: StackVolume[]
+  updatedAt: number
+  compose?: string
+  env?: Record<string, string>
+}
+
+export type StackPreview = {
+  services: { name: string; app: string; image: string; kind: App['kind']; port?: number; dependsOn: { service: string; condition: string }[]; backup?: string }[]
+  volumes: string[]
+  errors: ComposeError[]
+  error?: string
+}
+
+export type Snapshot = { id: string; time: number; sizeBytes: number }
+
+export type BackupSettings = {
+  endpoint: string
+  bucket: string
+  prefix: string
+  region: string
+  accessKey: string
+  secretSet: boolean
+  password?: string
+  configured: boolean
 }
 
 export type AppEvent = { at: number; kind: 'info' | 'success' | 'warning' | 'error'; message: string }
@@ -374,6 +449,8 @@ export class ApiError extends Error {
   constructor(
     public status: number,
     message: string,
+    // The problems of a compose file, with their lines, when it was refused.
+    public composeErrors?: ComposeError[],
   ) {
     super(message)
   }
@@ -387,7 +464,7 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
   })
   if (!res.ok) {
     const data = await res.json().catch(() => null)
-    throw new ApiError(res.status, data?.error ?? `Erreur ${res.status}`)
+    throw new ApiError(res.status, data?.error ?? `Erreur ${res.status}`, data?.errors)
   }
   // Some answers have no body (204, or 202 for an action the node carries out later).
   const text = await res.text()
@@ -510,6 +587,26 @@ export const api = {
   }) =>
     request<DomainSettings>('PUT', '/api/admin/settings/domain', body),
   checkDomain: () => request<DomainCheck>('POST', '/api/admin/settings/domain/check', {}),
+  stacks: () => request<Stack[]>('GET', '/api/stacks'),
+  stack: (id: number) => request<Stack>('GET', `/api/stacks/${id}`),
+  validateStack: (body: { name: string; compose: string; env: Record<string, string> }) => request<StackPreview>('POST', '/api/stacks/validate', body),
+  createStack: (body: { name: string; compose: string; env: Record<string, string>; nodeId?: number }) => request<Stack>('POST', '/api/stacks', body),
+  updateStack: (id: number, body: { compose: string; env: Record<string, string> }) => request<Stack>('PUT', `/api/stacks/${id}`, body),
+  stackAction: (id: number, action: 'start' | 'stop' | 'redeploy') => request<Stack>('POST', `/api/stacks/${id}/${action}`, {}),
+  deleteStack: (id: number, volumes: boolean) => request<void>('DELETE', `/api/stacks/${id}${volumes ? '?volumes=1' : ''}`, {}),
+  saveBackupPolicy: (id: number, volume: string, body: { schedule: BackupPolicy['schedule']; hour: number; keep: number; enabled: boolean }) =>
+    request<BackupPolicy>('PUT', `/api/stacks/${id}/backups/${encodeURIComponent(volume)}`, body),
+  deleteBackupPolicy: (id: number, volume: string) => request<void>('DELETE', `/api/stacks/${id}/backups/${encodeURIComponent(volume)}`, {}),
+  runBackup: (id: number, volume: string) => request<void>('POST', `/api/stacks/${id}/backups/${encodeURIComponent(volume)}/run`, {}),
+  snapshots: (id: number, volume: string) => request<Snapshot[]>('GET', `/api/stacks/${id}/backups/${encodeURIComponent(volume)}/snapshots`),
+  restoreBackup: (id: number, volume: string, snapshot: string) =>
+    request<BackupRestore>('POST', `/api/stacks/${id}/backups/${encodeURIComponent(volume)}/restore`, { snapshot }),
+  useRestore: (id: number, volume: string, restore: number) =>
+    request<Stack>('POST', `/api/stacks/${id}/backups/${encodeURIComponent(volume)}/restores/${restore}/use`, { confirm: true }),
+  backupSettings: () => request<BackupSettings>('GET', '/api/admin/settings/backups'),
+  saveBackupSettings: (body: { endpoint: string; bucket: string; prefix: string; region: string; accessKey: string; secretKey: string; password: string }) =>
+    request<BackupSettings>('PUT', '/api/admin/settings/backups', body),
+  testBackupSettings: () => request<{ ok: boolean; error?: string; log?: string }>('POST', '/api/admin/settings/backups/test', {}),
   loginSettings: () => request<{ passwordLogin: boolean }>('GET', '/api/admin/settings/login'),
   saveLoginSettings: (passwordLogin: boolean) =>
     request<{ passwordLogin: boolean }>('PUT', '/api/admin/settings/login', { passwordLogin }),

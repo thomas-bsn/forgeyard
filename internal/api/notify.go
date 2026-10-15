@@ -32,7 +32,7 @@ const (
 	nodeOfflineGrace = time.Minute
 )
 
-var notifyEventKinds = []string{"requests", "support", "crashes", "nodes"}
+var notifyEventKinds = []string{"requests", "support", "crashes", "nodes", "backups"}
 
 // firstEventKinds are the kinds settings saved before "-kind" existed list when on; a kind added since
 // is on until turned off.
