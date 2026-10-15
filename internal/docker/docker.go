@@ -15,6 +15,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -284,9 +285,7 @@ type Container struct {
 		} `json:"Health"`
 	} `json:"State"`
 	RestartCount int `json:"RestartCount"`
-	HostConfig   struct {
-		Binds []string `json:"Binds"`
-	} `json:"HostConfig"`
+	HostConfig   HostConfig `json:"HostConfig"`
 	NetworkSettings struct {
 		Ports map[string][]struct {
 			HostPort string `json:"HostPort"`
@@ -297,6 +296,45 @@ type Container struct {
 			DNSNames  []string `json:"DNSNames"`
 		} `json:"Networks"`
 	} `json:"NetworkSettings"`
+}
+
+// HostConfig is the part of a container's settings the agent reads: its mounts and its CPU limits.
+type HostConfig struct {
+	Binds      []string `json:"Binds"`
+	NanoCpus   int64    `json:"NanoCpus"`   // --cpus, in billionths of a core
+	CpuQuota   int64    `json:"CpuQuota"`   // µs of CPU per CpuPeriod
+	CpuPeriod  int64    `json:"CpuPeriod"`  // µs, 100000 when 0
+	CpusetCpus string   `json:"CpusetCpus"` // the cores it may run on, e.g. "0-3,6"
+}
+
+// CPULimit is how many cores a container may use, 0 without a limit: --cpus, else its quota, else the
+// number of cores it is pinned to.
+func (h HostConfig) CPULimit() float64 {
+	switch {
+	case h.NanoCpus > 0:
+		return float64(h.NanoCpus) / 1e9
+	case h.CpuQuota > 0:
+		period := h.CpuPeriod
+		if period <= 0 {
+			period = 100000
+		}
+		return float64(h.CpuQuota) / float64(period)
+	case h.CpusetCpus != "":
+		n := 0
+		for _, part := range strings.Split(h.CpusetCpus, ",") {
+			lo, hi, isRange := strings.Cut(strings.TrimSpace(part), "-")
+			a, err1 := strconv.Atoi(lo)
+			b, err2 := strconv.Atoi(hi)
+			switch {
+			case !isRange && err1 == nil:
+				n++
+			case isRange && err1 == nil && err2 == nil && b >= a:
+				n += b - a + 1
+			}
+		}
+		return float64(n)
+	}
+	return 0
 }
 
 // Inspect returns a container by name or ID.

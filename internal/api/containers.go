@@ -27,7 +27,9 @@ type containerResponse struct {
 	Status         string   `json:"status"`
 	CreatedAt      int64    `json:"createdAt"`
 	Ports          []string `json:"ports"`
-	CPUPercent     float64  `json:"cpuPercent,omitempty"`
+	CPUPercent     float64  `json:"cpuPercent,omitempty"` // in percent of one core
+	CPUCores       float64  `json:"cpuCores,omitempty"`   // the node's cores
+	CPULimit       float64  `json:"cpuLimit,omitempty"`   // the container's CPU limit in cores, if any
 	MemoryUsed     uint64   `json:"memoryUsedBytes,omitempty"`
 	ComposeProject string   `json:"composeProject,omitempty"`
 	OwnerName      string   `json:"ownerName"`
@@ -60,7 +62,7 @@ func (s *Server) handleListContainers(w http.ResponseWriter, r *http.Request) {
 			out = append(out, containerResponse{
 				NodeID: nodeID, NodeName: names[nodeID], ID: c.GetId(), Name: c.GetName(), Image: c.GetImage(),
 				State: c.GetState(), Status: c.GetStatus(), CreatedAt: c.GetCreatedAt(), Ports: ports,
-				CPUPercent: c.GetCpuPercent(), MemoryUsed: c.GetMemoryUsedBytes(), ComposeProject: c.GetComposeProject(),
+				CPUPercent: c.GetCpuPercent(), CPUCores: c.GetCpuCores(), CPULimit: c.GetCpuLimit(), MemoryUsed: c.GetMemoryUsedBytes(), ComposeProject: c.GetComposeProject(),
 				OwnerName: owner.DisplayName, LogoURL: imageLogoURL(c.GetImage()),
 			})
 		}

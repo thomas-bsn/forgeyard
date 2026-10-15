@@ -348,6 +348,10 @@ message AppStatus {
   repeated int32 listening_ports = 11;
   // waiting_for: what a service of a stack waits for before it starts (state "waiting").
   string waiting_for = 12;
+  // What the container may use, for cpu_percent (in percent of one core): the node's cores as Docker sees
+  // them, and the container's own CPU limit in cores (0 without one).
+  double cpu_cores = 13;
+  double cpu_limit = 14;
 }
 
 message StartLogs {
@@ -375,6 +379,8 @@ message ExternalContainer {
   double cpu_percent = 8;
   uint64 memory_used_bytes = 9;
   string compose_project = 10;
+  double cpu_cores = 11; // as in AppStatus
+  double cpu_limit = 12;
 }
 
 // ContainerAction starts, stops or restarts an external container.

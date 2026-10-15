@@ -613,7 +613,7 @@ function NodeCard({
           />
           {/* Offline, the same meters stay in place, empty, so cards keep the same layout. */}
           <div className={`meters-row ${m ? '' : 'meters-off'}`}>
-            <Meter label="CPU" pct={m?.cpuPercent ?? 0} text={m ? `${m.cpuPercent.toFixed(0)} %` : '–'} />
+            <Meter label="CPU" pct={m?.cpuPercent ?? 0} text={m ? `${m.cpuPercent.toFixed(0)} % de ${node.cpus} cœurs` : '–'} />
             <Meter label="RAM" used={m?.memoryUsedBytes ?? 0} total={node.memoryBytes} text={m ? undefined : '–'} />
             <Meter label="Disque" used={m?.diskUsedBytes ?? 0} total={node.diskBytes} text={m ? undefined : '–'} />
           </div>

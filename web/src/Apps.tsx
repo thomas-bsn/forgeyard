@@ -514,7 +514,7 @@ function AppList({
           ))}
           {node?.metrics && (
             <div className="node-nav-meters">
-              <MiniMeter label="CPU" text={`${node.metrics.cpuPercent.toFixed(0)} %`} pct={node.metrics.cpuPercent} />
+              <MiniMeter label="CPU" text={`${node.metrics.cpuPercent.toFixed(0)} % de ${node.cpus} cœurs`} pct={node.metrics.cpuPercent} />
               <MiniMeter
                 label="RAM"
                 text={`${formatBytes(node.metrics.memoryUsedBytes)} / ${formatBytes(node.memoryBytes)}`}
@@ -1646,6 +1646,8 @@ function AppDetail({
               load: () => api.appUsage(app.id),
               running: app.state === 'running',
               cpuPercent: app.cpuPercent,
+              cpuCores: app.cpuCores,
+              cpuLimit: app.cpuLimit,
               memoryUsedBytes: app.memoryUsedBytes,
               memoryLimitBytes: app.memoryMb * 1024 * 1024,
               lifecycle: true,
@@ -1709,13 +1711,27 @@ type Measures = {
   key: string
   load: () => Promise<AppUsage>
   running: boolean
-  cpuPercent?: number
+  cpuPercent?: number // in percent of one core
+  cpuCores?: number // the node's cores
+  cpuLimit?: number // the container's limit in cores, 0 or none without one
   memoryUsedBytes?: number
   memoryLimitBytes?: number
   // Restarts and start time are known for Forgeyard's apps only.
   lifecycle?: boolean
   restartCount?: number
   startedAt?: number
+}
+
+const cores = (n: number) => `${n.toLocaleString('fr-FR', { maximumFractionDigits: n < 10 ? 2 : 1 })} cœur${n >= 2 ? 's' : ''}`
+
+/**
+ * CPU is measured in percent of one core, as docker stats shows it: 908 % is 9.08 cores busy. It is shown in
+ * cores, with what the container may use: its CPU limit, or else the whole machine (Forgeyard sets no limit).
+ */
+function cpuCapacity(m: Measures): { cores: number; of: string } | null {
+  if (m.cpuLimit) return { cores: m.cpuLimit, of: `de sa limite (${cores(m.cpuLimit)})` }
+  if (m.cpuCores) return { cores: m.cpuCores, of: `de la machine (${cores(m.cpuCores)})` }
+  return null
 }
 
 const timeFormat = (t: number) => new Date(t * 1000).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
@@ -1735,13 +1751,20 @@ function Observability({ m }: { m: Measures }) {
   const limit = usage?.memoryLimitBytes || m.memoryLimitBytes || 0
   const samples = usage?.samples ?? []
   const times = samples.map((s) => s.t)
+  const capacity = cpuCapacity(m)
 
   return (
     <>
       <div className="tiles">
         <div className="tile">
           <div className="k">CPU</div>
-          <div className="v">{measured ? `${(m.cpuPercent ?? 0).toFixed(1)} %` : '–'}</div>
+          <div className="v">{measured ? cores((m.cpuPercent ?? 0) / 100) : '–'}</div>
+          {measured && (
+            <small className="tile-sub" title="Comme docker stats : 100 % = un cœur entier">
+              {(m.cpuPercent ?? 0).toFixed(0)} % d’un cœur
+              {capacity && ` · ${Math.round((m.cpuPercent ?? 0) / capacity.cores)} % ${capacity.of}`}
+            </small>
+          )}
         </div>
         <div className="tile">
           <div className="k">Mémoire</div>
@@ -1771,9 +1794,19 @@ function Observability({ m }: { m: Measures }) {
       <section className="panel chart-panel">
         <div className="chart-head">
           <h2>CPU</h2>
-          <span className="muted">dernière heure · en % d’un cœur</span>
+          <span className="muted">
+            dernière heure · en cœurs (moyenne par 15 s){capacity ? ` · capacité ${cores(capacity.cores)}` : ''}
+          </span>
         </div>
-        <AreaChart values={samples.map((s) => s.cpu)} times={times} format={(v) => `${v.toFixed(2)} %`} max={5} label="CPU sur la dernière heure" timeFormat={timeFormat} />
+        <AreaChart
+          values={samples.map((s) => s.cpu / 100)}
+          times={times}
+          format={(v) => cores(v) + (capacity ? ` (${Math.round((v / capacity.cores) * 100)} % ${capacity.of})` : '')}
+          max={0.05}
+          reference={capacity ? { value: capacity.cores, label: cores(capacity.cores) } : undefined}
+          label="CPU sur la dernière heure"
+          timeFormat={timeFormat}
+        />
       </section>
       <section className="panel chart-panel">
         <div className="chart-head">
@@ -1952,6 +1985,8 @@ function ContainerDetail({ container: c, superadmin, onChange, go }: { container
               load: () => api.containerUsage(c),
               running: c.state === 'running',
               cpuPercent: c.cpuPercent,
+              cpuCores: c.cpuCores,
+              cpuLimit: c.cpuLimit,
               memoryUsedBytes: c.memoryUsedBytes,
             }}
           />

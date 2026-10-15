@@ -453,7 +453,9 @@ type appResponse struct {
 	RestartCount   int32             `json:"restartCount,omitempty"`
 	StartedAt      int64             `json:"startedAt,omitempty"`
 	HostPort       int32             `json:"hostPort,omitempty"`
-	CPUPercent     float64           `json:"cpuPercent,omitempty"`
+	CPUPercent     float64           `json:"cpuPercent,omitempty"` // in percent of one core: 250 is 2.5 cores busy
+	CPUCores       float64           `json:"cpuCores,omitempty"`   // the node's cores, as its Docker sees them
+	CPULimit       float64           `json:"cpuLimit,omitempty"`   // the container's CPU limit in cores, 0 without one
 	MemoryUsed     uint64            `json:"memoryUsedBytes,omitempty"`
 	Suspended      bool              `json:"suspended,omitempty"`
 	Public         bool              `json:"public"`
@@ -504,6 +506,7 @@ func (s *Server) toAppResponse(a db.App, ownerName string, ownerSuspended bool, 
 		resp.HostPort, resp.WaitingFor = st.Status.GetHostPort(), st.Status.GetWaitingFor()
 		if resp.State == "running" {
 			resp.CPUPercent, resp.MemoryUsed = st.Status.GetCpuPercent(), st.Status.GetMemoryUsedBytes()
+			resp.CPUCores, resp.CPULimit = st.Status.GetCpuCores(), st.Status.GetCpuLimit()
 			resp.ListeningPorts = st.Status.GetListeningPorts()
 		}
 		if resp.URL == "" && resp.HostPort > 0 && node != nil {

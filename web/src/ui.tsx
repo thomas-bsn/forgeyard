@@ -476,6 +476,7 @@ export function AreaChart({
   format,
   timeFormat,
   max,
+  reference,
   color = 'var(--accent)',
   label,
 }: {
@@ -484,6 +485,8 @@ export function AreaChart({
   format: (v: number) => string
   timeFormat: (t: number) => string
   max?: number
+  // reference: a level drawn as a dashed line (a capacity), shown once the curve comes within half of it.
+  reference?: { value: number; label: string }
   color?: string
   label: string
 }) {
@@ -493,7 +496,9 @@ export function AreaChart({
   if (values.length < 2) {
     return <div className="chart-empty muted">Pas encore assez de mesures : elles arrivent toutes les 15 s.</div>
   }
-  const top = Math.max(max ?? 0, ...values, 1e-9)
+  const peakValue = Math.max(...values)
+  const showRef = !!reference && peakValue >= reference.value / 2
+  const top = Math.max(max ?? 0, ...values, showRef ? reference!.value * 1.08 : 0, 1e-9)
   const x = (i: number) => (i / (values.length - 1)) * W
   const y = (v: number) => H - (v / top) * (H - 4)
   const pts = values.map((v, i) => `${x(i).toFixed(1)},${y(v).toFixed(1)}`)
@@ -511,9 +516,15 @@ export function AreaChart({
       <div className="chart-area" onMouseMove={pick} onMouseLeave={() => setHover(null)}>
         <svg className="chart" viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" role="img" aria-label={`${label} : moyenne ${format(avg)}, pic ${format(peak)}`}>
           <line x1="0" y1={H / 2} x2={W} y2={H / 2} className="chart-grid" />
+          {showRef && <line x1="0" y1={y(reference!.value)} x2={W} y2={y(reference!.value)} className="chart-ref" vectorEffect="non-scaling-stroke" />}
           <polygon points={`0,${H} ${pts.join(' ')} ${W},${H}`} fill={color} opacity="0.12" />
           <polyline points={pts.join(' ')} fill="none" stroke={color} strokeWidth="2" vectorEffect="non-scaling-stroke" />
         </svg>
+        {showRef && (
+          <span className="chart-ref-label" style={{ top: `${(y(reference!.value) / H) * 100}%` }}>
+            {reference!.label}
+          </span>
+        )}
         {hover !== null && (
           <>
             <div className="chart-cursor" style={{ left: `${pct}%` }} />

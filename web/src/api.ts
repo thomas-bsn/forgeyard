@@ -250,7 +250,9 @@ export type App = {
   restartCount?: number
   startedAt?: number
   hostPort?: number
-  cpuPercent?: number
+  cpuPercent?: number // in percent of one core: 250 is 2.5 cores busy
+  cpuCores?: number // the node's cores
+  cpuLimit?: number // the container's CPU limit in cores, when it has one
   memoryUsedBytes?: number
   suspended?: boolean
   public: boolean
@@ -355,7 +357,9 @@ export type Container = {
   status: string
   createdAt: number
   ports: string[]
-  cpuPercent?: number
+  cpuPercent?: number // in percent of one core: 250 is 2.5 cores busy
+  cpuCores?: number // the node's cores
+  cpuLimit?: number // the container's CPU limit in cores, when it has one
   memoryUsedBytes?: number
   composeProject?: string
   ownerName: string

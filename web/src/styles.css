@@ -1053,6 +1053,14 @@ button.row:hover {
   font-variant-numeric: tabular-nums;
 }
 
+.tile-sub {
+  display: block;
+  margin-top: 2px;
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-variant-numeric: tabular-nums;
+}
+
 .tile .v small {
   color: var(--muted);
   font-size: 0.8rem;
@@ -1495,6 +1503,22 @@ button.row:hover {
   stroke: var(--border);
   stroke-dasharray: 4 4;
   vector-effect: non-scaling-stroke;
+}
+
+/* A capacity (the CPU cores a container may use): the curve touching it is saturation. */
+.chart-ref {
+  stroke: var(--down);
+  stroke-dasharray: 6 4;
+  opacity: 0.7;
+}
+
+.chart-ref-label {
+  position: absolute;
+  right: 4px;
+  transform: translateY(-115%);
+  font-size: 0.72rem;
+  color: var(--down);
+  pointer-events: none;
 }
 
 .chart-empty {

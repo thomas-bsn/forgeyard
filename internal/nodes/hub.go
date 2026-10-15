@@ -34,11 +34,13 @@ const (
 	usageLen   = 240
 )
 
-// UsageSample is an app's resource use at one moment.
+// UsageSample is an app's resource use over usageEvery, starting at At: the average of the agent's reports
+// in that time (one every 3 s), so that a short peak between two points still counts.
 type UsageSample struct {
 	At              int64   `json:"t"`
-	CPUPercent      float64 `json:"cpu"`
+	CPUPercent      float64 `json:"cpu"` // in percent of one core
 	MemoryUsedBytes uint64  `json:"mem"`
+	reports         int     // how many reports the averages hold
 }
 
 // ExternalChangeFunc is told when an external container of a node changes state.
@@ -59,9 +61,14 @@ func (h *Hub) ExternalUsage(nodeID int64, name string) []UsageSample {
 
 func addSample(samples []UsageSample, now time.Time, cpu float64, mem uint64) []UsageSample {
 	if n := len(samples); n > 0 && now.Unix()-samples[n-1].At < int64(usageEvery/time.Second) {
+		last := &samples[n-1]
+		k := float64(last.reports)
+		last.CPUPercent = (last.CPUPercent*k + cpu) / (k + 1)
+		last.MemoryUsedBytes = uint64((float64(last.MemoryUsedBytes)*k + float64(mem)) / (k + 1))
+		last.reports++
 		return samples
 	}
-	samples = append(samples, UsageSample{At: now.Unix(), CPUPercent: cpu, MemoryUsedBytes: mem})
+	samples = append(samples, UsageSample{At: now.Unix(), CPUPercent: cpu, MemoryUsedBytes: mem, reports: 1})
 	if len(samples) > usageLen {
 		samples = samples[len(samples)-usageLen:]
 	}

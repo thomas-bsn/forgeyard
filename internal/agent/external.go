@@ -89,14 +89,17 @@ func (e *externals) sampleUsage(ctx context.Context, ec *agentpb.ExternalContain
 		return
 	}
 	ec.MemoryUsedBytes = stats.MemoryUsed()
+	ec.CpuCores = float64(max(stats.CPUStats.OnlineCPUs, 1))
+	if ct, err := e.dc.Inspect(ctx, ec.Id); err == nil {
+		ec.CpuLimit = ct.HostConfig.CPULimit()
+	}
 	cur := cpuSample{total: stats.CPUStats.CPUUsage.TotalUsage, system: stats.CPUStats.SystemUsage}
 	e.mu.Lock()
 	prev, ok := e.cpuSeen[ec.Id]
 	e.cpuSeen[ec.Id] = cur
 	e.mu.Unlock()
 	if ok && cur.total >= prev.total && cur.system > prev.system {
-		cpus := max(stats.CPUStats.OnlineCPUs, 1)
-		ec.CpuPercent = float64(cur.total-prev.total) / float64(cur.system-prev.system) * float64(cpus) * 100
+		ec.CpuPercent = cpuPercent(cur, prev, stats.CPUStats.OnlineCPUs)
 	}
 }
 

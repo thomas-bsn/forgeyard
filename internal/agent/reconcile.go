@@ -557,22 +557,29 @@ type cpuSample struct {
 	total, system uint64
 }
 
-// sampleUsage fills the CPU and memory use of an app's running container. CPU use needs a previous
-// sample, so the first report after a (re)start has none.
-func (r *Reconciler) sampleUsage(ctx context.Context, appID int64, st *agentpb.AppStatus) {
+// cpuPercent is a container's CPU use between two samples, in percent of one core, as docker stats shows
+// it: the container's CPU time over the whole machine's (all its cores), times the number of cores. 908 %
+// is a bit more than 9 cores busy; it can reach 100 % per core of the machine, and is never capped.
+func cpuPercent(cur, prev cpuSample, onlineCPUs int) float64 {
+	return float64(cur.total-prev.total) / float64(cur.system-prev.system) * float64(max(onlineCPUs, 1)) * 100
+}
+
+// sampleUsage fills the CPU and memory use of an app's running container, and what CPU it may use. CPU use
+// needs a previous sample, so the first report after a (re)start has none.
+func (r *Reconciler) sampleUsage(ctx context.Context, appID int64, ct docker.Container, st *agentpb.AppStatus) {
 	stats, err := r.dc.Stats(ctx, containerName(appID))
 	if err != nil {
 		return
 	}
 	st.MemoryUsedBytes = stats.MemoryUsed()
+	st.CpuCores, st.CpuLimit = float64(max(stats.CPUStats.OnlineCPUs, 1)), ct.HostConfig.CPULimit()
 	cur := cpuSample{total: stats.CPUStats.CPUUsage.TotalUsage, system: stats.CPUStats.SystemUsage}
 	r.mu.Lock()
 	prev, ok := r.cpuSeen[appID]
 	r.cpuSeen[appID] = cur
 	r.mu.Unlock()
 	if ok && cur.total >= prev.total && cur.system > prev.system {
-		cpus := max(stats.CPUStats.OnlineCPUs, 1)
-		st.CpuPercent = float64(cur.total-prev.total) / float64(cur.system-prev.system) * float64(cpus) * 100
+		st.CpuPercent = cpuPercent(cur, prev, stats.CPUStats.OnlineCPUs)
 	}
 }
 
@@ -632,7 +639,7 @@ func (r *Reconciler) Statuses(ctx context.Context) []*agentpb.AppStatus {
 			switch ct.State.Status {
 			case "running":
 				st.State = "running"
-				r.sampleUsage(ctx, app.GetId(), st)
+				r.sampleUsage(ctx, app.GetId(), ct, st)
 				st.ListeningPorts = listeningPorts(ct.State.Pid)
 			case "restarting":
 				st.State = "restarting"
