@@ -201,9 +201,24 @@ func appHash(app *agentpb.AppSpec, ingressMode string) string {
 		env = append(env, k+"="+v)
 	}
 	slices.Sort(env)
-	return specHash(app.GetImage(), strconv.Itoa(int(app.GetPort())), strings.Join(env, "\n"), app.GetHostname(),
+	parts := []string{app.GetImage(), strconv.Itoa(int(app.GetPort())), strings.Join(env, "\n"), app.GetHostname(),
 		strconv.FormatInt(app.GetMemoryBytes(), 10), strconv.FormatInt(app.GetGeneration(), 10), ingressMode,
-		strconv.FormatBool(app.GetSandbox()), strings.Join(app.GetVolumes(), "\n"), stackHash(app.GetStack()))
+		strconv.FormatBool(app.GetSandbox()), strings.Join(app.GetVolumes(), "\n"), stackHash(app.GetStack())}
+	// Only a GPU request adds a part: the containers of apps without one keep their hash, and are not
+	// recreated when the agent is updated.
+	if g := gpuHash(app.GetGpu()); g != "" {
+		parts = append(parts, g)
+	}
+	return specHash(parts...)
+}
+
+// gpuHash covers an app's GPU request: changing it makes a new container. None adds nothing, so the
+// containers of apps without GPUs keep their hash.
+func gpuHash(g *agentpb.GpuRequest) string {
+	if g == nil {
+		return ""
+	}
+	return "gpu:" + g.GetVendor() + ":" + strconv.FormatBool(g.GetAll()) + ":" + strings.Join(g.GetDeviceIds(), ",")
 }
 
 // stackHash covers how a service of a stack runs; its dependencies only order its start.
@@ -279,7 +294,12 @@ func (r *Reconciler) ensureApp(ctx context.Context, app *agentpb.AppSpec, ingres
 	// Only a fresh container is started here: one that exited is a crash (Docker restarts it itself under
 	// the unless-stopped policy) or was stopped on purpose; starting again goes through a new generation.
 	case app.GetRunning() && ct.State.Status == "created":
-		return r.dc.Start(ctx, name)
+		if err := r.dc.Start(ctx, name); err != nil {
+			if app.GetGpu() != nil {
+				err = gpuStartError(err)
+			}
+			return err
+		}
 	case !app.GetRunning() && (ct.State.Running || ct.State.Status == "restarting"):
 		return r.dc.Stop(ctx, name)
 	}
@@ -317,6 +337,10 @@ func appContainerConfig(app *agentpb.AppSpec, hash, ingressMode string) map[stri
 	config := appContainer(app, hash, ingressMode)
 	if app.GetStack() != nil {
 		stackConfig(app, config, config["HostConfig"].(map[string]any), config["Labels"].(map[string]string))
+	}
+	// Without a GPU request, the container is created exactly as before: no DeviceRequests.
+	if g := app.GetGpu(); g != nil {
+		config["HostConfig"].(map[string]any)["DeviceRequests"] = gpuDeviceRequests(g)
 	}
 	return config
 }
@@ -705,6 +729,9 @@ func (r *Reconciler) rollOut(ctx context.Context, app *agentpb.AppSpec, hash, in
 	}
 	if err := r.dc.Start(ctx, next); err != nil {
 		r.dc.Remove(ctx, next)
+		if app.GetGpu() != nil {
+			err = gpuStartError(err)
+		}
 		return fmt.Errorf("démarrage de la nouvelle version : %w", err)
 	}
 	if err := r.waitReady(ctx, next); err != nil {

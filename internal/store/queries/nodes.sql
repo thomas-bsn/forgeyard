@@ -39,3 +39,6 @@ SELECT * FROM nodes WHERE is_local = 1 LIMIT 1;
 
 -- name: SetNodeLAN :exec
 UPDATE nodes SET lan = ? WHERE id = ?;
+
+-- name: SetNodeGpus :exec
+UPDATE nodes SET gpus = ?, gpu_status = ?, gpu_error = ? WHERE id = ?;

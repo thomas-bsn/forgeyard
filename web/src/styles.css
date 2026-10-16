@@ -5055,3 +5055,52 @@ a.link-btn {
   white-space: pre-wrap;
   font-size: 0.78rem;
 }
+
+/* --- GPUs ------------------------------------------------------------------- */
+
+.gpu-none {
+  display: grid;
+  gap: 4px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: var(--bg);
+  font-size: 0.86rem;
+}
+
+.gpu-none small {
+  color: var(--muted);
+}
+
+.gpu-choice {
+  display: grid;
+  gap: 6px;
+}
+
+/* Inside a form field, the radios keep their own size and the text its left alignment. */
+.gpu-choice .check {
+  text-align: left;
+}
+
+.gpu-choice .check input {
+  width: auto;
+  flex: none;
+  padding: 0;
+}
+
+.gpu-choice .check span {
+  flex: 1;
+  min-width: 0;
+}
+
+.check.on {
+  border-color: var(--accent);
+}
+
+.gpu-line {
+  margin: 0;
+  font-size: 0.86rem;
+}
+
+.gpu-line strong {
+  margin-right: 6px;
+}

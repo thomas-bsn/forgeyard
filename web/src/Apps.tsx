@@ -1,5 +1,5 @@
 import { lazy, Suspense, useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react'
-import { api, errorMessage, type App, type AppEvent, type AppInput, type AppState, type AppUsage, type Container, type Node, type NodeChoice, type Stack } from './api'
+import { api, errorMessage, type App, type AppEvent, type AppInput, type AppState, type AppUsage, type Container, type GpuRequest, type Node, type NodeChoice, type NodeGpus, type Stack } from './api'
 import { AppLogo, AreaChart, CopyField, formatBytes, LOGO_COLORS, Modal, since, Switch, upFor } from './ui'
 import { ImageCropper } from './Cropper'
 import { ProjectCard, ProjectDetail, ProjectFormModal, ProjectLogo, projectStates } from './Projects'
@@ -1025,6 +1025,7 @@ function AppFormModal({
     setVolumesTouched(true)
   }
   const keptCount = volumes.filter((v) => v.trim()).length
+  const [gpu, setGpu] = useState<GpuRequest | undefined>(initial?.gpu)
   const [envOpen, setEnvOpen] = useState(env.length > 0)
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
@@ -1047,6 +1048,7 @@ function AppFormModal({
           env: vars,
           volumes: volumes.map((v) => v.trim()).filter(Boolean),
           nodeId: nodeId || undefined,
+          gpu,
         },
         logo || undefined,
       )
@@ -1322,6 +1324,7 @@ function AppFormModal({
           </small>
         </div>
       </details>
+      <GpuSection value={gpu} onChange={setGpu} nodeId={initial?.nodeId ?? (nodeId || undefined)} disabled={busy} />
       <input
         ref={logoFile}
         type="file"
@@ -1507,6 +1510,8 @@ function AppDetail({
                             port: p,
                             memoryMb: full.memoryMb,
                             env: full.env ?? {},
+                            volumes: full.volumes.filter((v) => !v.builtin).map((v) => v.path),
+                            gpu: full.gpu,
                           }),
                         ),
                       )
@@ -1554,6 +1559,12 @@ function AppDetail({
           )}
           <dt>Mémoire</dt>
           <dd>{app.memoryMb} Mo max.</dd>
+          {app.gpu && (
+            <>
+              <dt>GPU</dt>
+              <dd>{app.gpuNames?.length ? app.gpuNames.join(', ') : app.gpu.all ? 'tous les GPU du node' : app.gpu.ids?.join(', ')}</dd>
+            </>
+          )}
           <dt>Données</dt>
           <dd>
             {app.stackId ? (
@@ -1703,6 +1714,92 @@ function AppDetail({
         />
       )}
     </div>
+  )
+}
+
+/** A GPU's name and memory, e.g. "#0 NVIDIA GeForce RTX 4070 SUPER · 12 Go". */
+function gpuLabel(g: { index: number; name: string; memoryBytes?: number }): string {
+  return `#${g.index} ${g.name}${g.memoryBytes ? ` · ${formatBytes(g.memoryBytes)}` : ''}`
+}
+
+/**
+ * Ressources matérielles: whether the app may use GPUs of its node, all or one. The node is the app's own,
+ * the one an admin picked, or else the first node that can give GPUs (where the app will then go).
+ */
+function GpuSection({ value, onChange, nodeId, disabled }: { value?: GpuRequest; onChange: (g?: GpuRequest) => void; nodeId?: number; disabled?: boolean }) {
+  const [nodesGpus, setNodesGpus] = useState<(NodeGpus & { nodeId: number; nodeName: string })[] | null>(null)
+  const [open, setOpen] = useState(!!value)
+  useEffect(() => {
+    if (open) api.gpus().then(setNodesGpus, () => setNodesGpus([]))
+  }, [open])
+  const node = nodeId ? nodesGpus?.find((n) => n.nodeId === nodeId) : (nodesGpus?.find((n) => n.status === 'ok') ?? nodesGpus?.[0])
+  const usable = node?.status === 'ok'
+  const choice = !value ? '' : value.all ? 'all' : (value.ids?.[0] ?? '')
+  const summary = !value ? 'aucun GPU' : value.all ? 'tous les GPU du node' : '1 GPU'
+
+  let state: ReactNode = null
+  if (nodesGpus && !usable) {
+    const why = (n: NodeGpus & { nodeName: string }) =>
+      n.status === '' ? 'vérification en cours' : n.status === 'unsupported' ? n.error || 'Docker ne donne pas de GPU aux conteneurs' : `vérification impossible : ${n.error}`
+    state = (
+      <div className="gpu-none">
+        <strong>{nodeId ? `Le node ${node?.nodeName ?? ''} ne peut pas donner de GPU à ses conteneurs.` : 'Aucun node en ligne ne peut donner de GPU à ses conteneurs.'}</strong>
+        {(nodeId ? (node ? [node] : []) : nodesGpus).map((n) => (
+          <small key={n.nodeId}>
+            {n.nodeName} : {why(n)}
+          </small>
+        ))}
+        <small>Il faut un GPU NVIDIA, son pilote et le NVIDIA Container Toolkit (inclus dans Docker Desktop avec WSL2). Nodes › Vérifier relance la détection.</small>
+      </div>
+    )
+  }
+
+  return (
+    <details className="field" open={open} onToggle={(e) => setOpen(e.currentTarget.open)}>
+      <summary>
+        Ressources matérielles <span className="muted">· {summary}</span>
+      </summary>
+      <div className="env-list">
+        <div className="setting-row small-setting">
+          <span className="header-title">
+            <strong>Utiliser un GPU</strong>
+            <span className="muted"> NVIDIA</span>
+          </span>
+          <Switch
+            checked={!!value}
+            disabled={disabled || (!value && !usable)}
+            onChange={(on) => onChange(on ? { vendor: 'nvidia', all: true } : undefined)}
+            label="Utiliser un GPU"
+          />
+        </div>
+        {!nodesGpus && open && <small className="muted">Lecture des GPU des nodes…</small>}
+        {state}
+        {value && usable && node && (
+          <div className="gpu-choice" role="radiogroup" aria-label="GPU">
+            <label className={`check ${choice === 'all' ? 'on' : ''}`}>
+              <input type="radio" name="gpu" checked={choice === 'all'} onChange={() => onChange({ vendor: 'nvidia', all: true })} disabled={disabled} />
+              <span>
+                Tous les GPU du node {node.nodeName}
+                <small>{node.gpus.length ? node.gpus.map(gpuLabel).join(' · ') : 'le node n’a pas pu les lister'}</small>
+              </span>
+            </label>
+            {node.gpus.map((g) => (
+              <label key={g.id} className={`check ${choice === g.id ? 'on' : ''}`}>
+                <input type="radio" name="gpu" checked={choice === g.id} onChange={() => onChange({ vendor: 'nvidia', all: false, ids: [g.id] })} disabled={disabled} />
+                <span>
+                  {gpuLabel(g)}
+                  <small className="mono">{g.id}</small>
+                </span>
+              </label>
+            ))}
+          </div>
+        )}
+        <small>
+          Un accès, pas une réservation : d’autres apps peuvent utiliser le même GPU et sa mémoire en même temps.
+          {value && !nodeId && node && usable ? ` L’app ira sur le node ${node.nodeName}, qui a ce GPU.` : ''}
+        </small>
+      </div>
+    </details>
   )
 }
 

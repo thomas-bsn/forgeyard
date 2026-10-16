@@ -28,6 +28,8 @@
 - [x] Métriques et graphiques par app, journal d'événements
 - [x] Placement sur la machine qui a le plus de mémoire libre, choix du node par les admins, déplacement d'une app entre nodes sans coupure
 - [ ] Capacité : réservations de CPU et de RAM par app
+- [x] GPU NVIDIA par app : détection par node, tous ou un GPU, gardé aux redéploiements ([apps](apps/README.md#gpu))
+- [ ] GPU : réservations et capacité par node, autres fabricants, GPU dans un projet docker-compose
 - [x] Gestion des crashs et suspension (3 crashs en 5 minutes)
 - [x] Conteneurs externes : détection, logs, démarrer / arrêter / redémarrer
 - [ ] Conteneurs externes : adoption (en faire une vraie app Forgeyard)

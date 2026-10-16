@@ -37,6 +37,7 @@ Toutes les écritures sont en JSON. Les routes sont déclarées dans `internal/a
 | `PUT /api/me/notifications`, `POST /api/me/notifications/test` | Webhook personnel, message de test |
 | `GET`, `POST /api/me/ssh-keys`, `DELETE /api/me/ssh-keys/{id}` | Clés SSH de la passerelle |
 | `GET /api/me/sessions`, `DELETE /api/me/sessions/{id\|others}` | Appareils connectés, en déconnecter un ou tous les autres |
+| `GET /api/gpus` | GPU des nodes en ligne, tels que leur Docker les donne aux conteneurs (état, raison, liste) |
 | `GET /api/images/ports?image=` | Ports TCP et volumes qu'une image publique déclare, lus sur son registre |
 | `GET`, `POST /api/support/tickets` | Demandes d'aide (les siennes, toutes pour un admin) ; en créer une |
 | `GET /api/support/tickets/{id}` | Une demande et son fil |

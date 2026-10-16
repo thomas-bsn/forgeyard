@@ -100,6 +100,18 @@ Un admin déplace une app depuis sa page (ligne « Tourne sur … · Changer de 
 
 Derrière la même box, le relais de la machine de Forgeyard suit : son propre routeur pour l'app reste prioritaire tant qu'elle y tourne, puis le relais vers le nouveau node prend le relais. Les données ne suivent pas : une app qui a des volumes (ou une sandbox) repart vide sur le nouveau node, ses volumes restant sur l'ancien jusqu'à la suppression de l'app ; il faut le confirmer pour la déplacer. Une app arrêtée change simplement de node.
 
+## GPU
+
+Une app peut utiliser les **GPU NVIDIA** de son node (section **Ressources matérielles** du formulaire, à la création ou dans Configuration ; désactivé par défaut) : tous les GPU du node, ou un GPU précis.
+
+- **Détection** : à son démarrage (et à chaque « Vérifier » de la page Nodes), l'agent démarre un petit conteneur (`debian:bookworm-slim`) en demandant à Docker tous les GPU NVIDIA, comme `docker run --gpus all`, et y lance `nvidia-smi` pour les lister (index, UUID, nom, mémoire). Un GPU dans la machine ne suffit pas : il faut que Docker sache le donner à un conteneur (pilote NVIDIA et NVIDIA Container Toolkit ; Docker Desktop avec WSL2 les a). Le node est alors **ok** (avec ses GPU), **unsupported** (Docker refuse, avec la raison) ou **error** ; la carte du node l'affiche.
+- **Demande** : gardée avec l'app (`{vendor, all, ids}`), vérifiée par le server (le node doit être ok, les GPU choisis doivent être les siens), puis passée à Docker dans `HostConfig.DeviceRequests` à chaque création du conteneur : redéploiements, nouvelles versions et recréations la gardent. Sans demande, le conteneur est créé exactement comme avant (son hash ne change pas).
+- **Placement** : une app avec GPU va sur un node qui en a ; un admin qui choisit un node sans GPU, ou un déplacement vers un tel node, est refusé avec la raison.
+- Un conteneur que Docker ne peut pas démarrer avec son GPU affiche : « Docker de ce node ne peut pas donner de GPU aux conteneurs (pilote NVIDIA ou NVIDIA Container Toolkit absent) ».
+- C'est un **accès**, pas une réservation : d'autres apps peuvent utiliser le même GPU et sa mémoire. Pas encore : réservations et capacité GPU par node, autres fabricants, GPU dans un projet docker-compose.
+
+Code : `internal/agent/gpu.go`, `internal/api/gpus.go`.
+
 ## Volumes
 
 Les **volumes** gardent des dossiers du conteneur quand l'app est redéployée : une base de données, des fichiers envoyés, une configuration. Tout le reste du conteneur repart de zéro.

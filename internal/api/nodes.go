@@ -52,11 +52,12 @@ type nodeResponse struct {
 	Metrics       *nodeMetrics `json:"metrics,omitempty"`
 	CPUHistory    []float64    `json:"cpuHistory,omitempty"`
 	// The agent's version against the server's, and its updates.
-	AgentOutdated bool   `json:"agentOutdated,omitempty"`
-	SelfUpdate    bool   `json:"selfUpdate,omitempty"`
-	Updating      bool   `json:"updating,omitempty"`
-	UpdateStep    string `json:"updateStep,omitempty"` // download, restart
-	UpdateError   string `json:"updateError,omitempty"`
+	AgentOutdated bool     `json:"agentOutdated,omitempty"`
+	SelfUpdate    bool     `json:"selfUpdate,omitempty"`
+	Updating      bool     `json:"updating,omitempty"`
+	UpdateStep    string   `json:"updateStep,omitempty"` // download, restart
+	UpdateError   string   `json:"updateError,omitempty"`
+	GPUs          nodeGpus `json:"gpus"` // what Docker gives containers, as the agent last found
 }
 
 // nodes.relayed: how Forgeyard's machine passes a relayed node its visits.
@@ -84,6 +85,7 @@ func (s *Server) toNodeResponse(n db.Node) nodeResponse {
 		MemoryBytes: n.MemoryBytes, DiskBytes: n.DiskBytes, DockerVersion: n.DockerVersion,
 		AgentVersion: n.AgentVersion, LastSeenAt: n.LastSeenAt.Int64,
 		PublicIP: n.PublicIp, LocalIP: n.LocalIp, DockerError: n.DockerError, IngressMode: ingressMode(n), IngressPort: n.IngressHttpPort, IsLocal: n.IsLocal != 0, LAN: n.Lan != 0,
+		GPUs: gpusOf(n),
 	}
 	if n.Status != "active" {
 		return resp
@@ -595,6 +597,7 @@ func (s *Server) handleCheckNode(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	s.nodes.ProbeGpus(node.ID) // its GPUs too: the answer comes in the background
 	out := nodeCheck{Traefik: "unknown", Reach: "skip"}
 	live, online := s.nodes.Live(node.ID)
 	out.Connected = online

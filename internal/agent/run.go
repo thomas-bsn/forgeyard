@@ -49,9 +49,11 @@ func Run(ctx context.Context, st *State, dc *docker.Client, logger *slog.Logger)
 		go rec.Run(ctx)
 	}
 
+	// GPUs are checked once per agent, and again when the server asks: each connection sends the last check.
+	gpus := &gpuState{}
 	backoff := time.Second
 	for {
-		connected, err := session(ctx, client, dc, rec, logger)
+		connected, err := session(ctx, client, dc, rec, gpus, logger)
 		if ctx.Err() != nil {
 			return nil
 		}
@@ -72,7 +74,7 @@ func Run(ctx context.Context, st *State, dc *docker.Client, logger *slog.Logger)
 }
 
 // session runs one stream. connected reports whether the server accepted it, to reset the backoff.
-func session(ctx context.Context, client agentpb.AgentServiceClient, dc *docker.Client, rec *Reconciler, logger *slog.Logger) (connected bool, err error) {
+func session(ctx context.Context, client agentpb.AgentServiceClient, dc *docker.Client, rec *Reconciler, gpus *gpuState, logger *slog.Logger) (connected bool, err error) {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	stream, err := client.Connect(ctx)
@@ -115,6 +117,13 @@ func session(ctx context.Context, client agentpb.AgentServiceClient, dc *docker.
 		}
 	}
 
+	sendGpus := func(g *agentpb.NodeGpus) {
+		if g.GetStatus() == "ok" {
+			logger.Info("GPUs available to containers", "count", len(g.GetGpus()))
+		}
+		send(&agentpb.AgentMessage{Msg: &agentpb.AgentMessage_NodeGpus{NodeGpus: g}})
+	}
+
 	var ext *externals
 	if dc != nil {
 		ext = newExternals(dc)
@@ -155,6 +164,13 @@ func session(ctx context.Context, client agentpb.AgentServiceClient, dc *docker.
 		sendExternals()
 		sendTopology()
 		send(&agentpb.AgentMessage{Msg: &agentpb.AgentMessage_Metrics{Metrics: sampleMetrics(ctx, dc)}})
+		if dc != nil {
+			if last := gpus.get(); last != nil {
+				sendGpus(last)
+			} else {
+				go gpus.check(ctx, dc, sendGpus)
+			}
+		}
 		for {
 			select {
 			case <-ctx.Done():
@@ -247,6 +263,10 @@ func session(ctx context.Context, client agentpb.AgentServiceClient, dc *docker.
 					}
 					logger.Info("deleted app's data removed", "app_id", appID)
 				}(m.DropAppData.GetAppId())
+			}
+		case *agentpb.ServerMessage_ProbeGpus:
+			if dc != nil {
+				go gpus.check(ctx, dc, sendGpus)
 			}
 		case *agentpb.ServerMessage_BackupJob:
 			go func(job *agentpb.BackupJob) {

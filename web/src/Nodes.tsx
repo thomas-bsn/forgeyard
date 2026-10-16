@@ -617,6 +617,7 @@ function NodeCard({
             <Meter label="RAM" used={m?.memoryUsedBytes ?? 0} total={node.memoryBytes} text={m ? undefined : '–'} />
             <Meter label="Disque" used={m?.diskUsedBytes ?? 0} total={node.diskBytes} text={m ? undefined : '–'} />
           </div>
+          <GpuLine gpus={node.gpus} />
           <div className="tiles tiles-2">
             <div className="tile">
               <div className="k">Apps</div>
@@ -905,6 +906,24 @@ function AgentLine({ node, busy, onUpdate }: { node: Node; busy: boolean; onUpda
     <p className="agent-line muted">
       Agent {shortVersion(node.agentVersion)} · {status}
       {node.updateError && <span className="error agent-error">Échec de la mise à jour : {node.updateError}</span>}
+    </p>
+  )
+}
+
+/** What GPUs the node's Docker gives containers: their names, or why none. */
+function GpuLine({ gpus }: { gpus?: Node['gpus'] }) {
+  if (!gpus || gpus.status === '') return null
+  const text =
+    gpus.status === 'ok'
+      ? gpus.gpus.length
+        ? gpus.gpus.map((g) => `${g.name}${g.memoryBytes ? ` · ${formatBytes(g.memoryBytes)}` : ''}`).join(', ')
+        : 'disponibles (non listés)'
+      : gpus.status === 'unsupported'
+        ? 'aucun utilisable par Docker'
+        : 'vérification impossible'
+  return (
+    <p className={`gpu-line ${gpus.status === 'ok' ? '' : 'muted'}`} title={gpus.error}>
+      <strong>GPU</strong> {text}
     </p>
   )
 }

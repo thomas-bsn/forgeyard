@@ -49,6 +49,7 @@ type App struct {
 	StackID        int64
 	Service        string
 	ServiceSpec    string
+	Gpu            string
 }
 
 type AppEvent struct {
@@ -157,6 +158,9 @@ type Node struct {
 	DockerError     string
 	Relayed         int64
 	Lan             int64
+	Gpus            string
+	GpuStatus       string
+	GpuError        string
 }
 
 type Session struct {

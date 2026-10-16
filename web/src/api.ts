@@ -196,6 +196,7 @@ export type Node = {
   updating?: boolean
   updateStep?: 'download' | 'restart'
   updateError?: string
+  gpus: NodeGpus
   lastSeenAt?: number
   isLocal: boolean
   publicIp: string
@@ -261,6 +262,8 @@ export type App = {
   listeningPorts?: number[] // what it really listens on, while running
   kind: 'web' | 'sandbox' | 'service' | 'job' // service and job: in a stack, not exposed
   stackId?: number
+  gpu?: GpuRequest
+  gpuNames?: string[] // the GPUs it may use, as its node names them
   service?: string // its name in its stack's compose file
   waitingFor?: string // what a service of a stack waits for to start
   ssh?: string // the command reaching it through the SSH gateway
@@ -388,7 +391,16 @@ export type AppInput = {
   memoryMb: number
   env: Record<string, string>
   nodeId?: number
+  gpu?: GpuRequest
 }
+
+/** The GPUs of its node an app may use: all, or some by ID. Access only, not a reservation. */
+export type GpuRequest = { vendor: 'nvidia'; all: boolean; ids?: string[] }
+
+export type Gpu = { vendor: string; index: number; id: string; name: string; memoryBytes?: number }
+
+/** What a node's Docker gives containers: ok, unsupported (with why), error, or '' not checked yet. */
+export type NodeGpus = { status: '' | 'ok' | 'unsupported' | 'error'; error?: string; gpus: Gpu[] }
 
 export type NodeChoice = {
   id: number
@@ -515,6 +527,7 @@ export const api = {
   apps: () => request<App[]>('GET', '/api/apps'),
   app: (id: number) => request<App>('GET', `/api/apps/${id}`),
   createApp: (input: AppInput) => request<App>('POST', '/api/apps', input),
+  gpus: () => request<(NodeGpus & { nodeId: number; nodeName: string })[]>('GET', '/api/gpus'),
   imagePorts: (image: string) => request<{ ports: number[]; volumes: string[]; volumesFrom?: 'image' | 'known'; hub?: string; error?: string }>('GET', `/api/images/ports?image=${encodeURIComponent(image)}`),
   updateApp: (id: number, input: AppInput) => request<App>('PUT', `/api/apps/${id}`, input),
   appAction: (id: number, action: 'start' | 'stop' | 'redeploy') => request<App>('POST', `/api/apps/${id}/${action}`, {}),

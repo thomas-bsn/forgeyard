@@ -169,6 +169,7 @@ func (s *Server) Handler(webFS fs.FS) http.Handler {
 	mux.HandleFunc("GET /api/apps/{id}/logo", s.requireUser(s.handleGetAppLogo))
 	mux.HandleFunc("GET /api/logos", s.requireUser(s.handleImageLogo))
 	mux.HandleFunc("GET /api/images/ports", s.requireUser(s.handleImagePorts))
+	mux.HandleFunc("GET /api/gpus", s.requireUser(s.handleListGpus))
 	mux.HandleFunc("GET /api/support/tickets", s.requireUser(s.handleListTickets))
 	mux.HandleFunc("POST /api/support/tickets", s.requireUser(s.handleCreateTicket))
 	mux.HandleFunc("GET /api/support/tickets/{id}", s.requireUser(s.handleGetTicket))

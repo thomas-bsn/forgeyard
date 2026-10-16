@@ -32,7 +32,26 @@ message AgentMessage {
     UpdateProgress update_progress = 9;
     Uninstalled uninstalled = 10;
     BackupResult backup_result = 11;
+    NodeGpus node_gpus = 12;
   }
+}
+
+// NodeGpus is what the agent found when it asked Docker for a GPU: sent after each check (at start, and
+// on ProbeGpus). A GPU on the machine is not enough: Docker must be able to give it to a container.
+message NodeGpus {
+  // ok: Docker gives GPUs to containers; unsupported: it cannot (no NVIDIA driver nor NVIDIA Container
+  // Toolkit); error: the check itself failed.
+  string status = 1;
+  string error = 2; // why, for unsupported and error
+  repeated Gpu gpus = 3; // those listed, when status is ok (it may be ok with none listed)
+}
+
+message Gpu {
+  string vendor = 1; // nvidia
+  int32 index = 2;
+  string id = 3;     // what Docker selects it by: its UUID for NVIDIA
+  string name = 4;
+  int64 memory_bytes = 5;
 }
 
 // Uninstalled answers Uninstall: error is empty when everything was deleted.
@@ -120,8 +139,12 @@ message ServerMessage {
     TunnelOpen tunnel_open = 13;
     DropStack drop_stack = 14;
     BackupJob backup_job = 15;
+    ProbeGpus probe_gpus = 16;
   }
 }
+
+// ProbeGpus asks the agent to check its GPUs again; it answers with NodeGpus.
+message ProbeGpus {}
 
 // TunnelOpen asks the agent to open a Tunnel stream for this ID and connect it to the node's Traefik.
 message TunnelOpen {
@@ -278,6 +301,15 @@ message AppSpec {
   repeated string volumes = 13;
   // stack: the app is a service of a compose stack.
   StackService stack = 14;
+  // gpu: the app may use GPUs of the node; none without it. Access, not a reservation: other apps may use
+  // the same GPUs and their memory.
+  GpuRequest gpu = 15;
+}
+
+message GpuRequest {
+  string vendor = 1;                // nvidia
+  bool all = 2;                     // every GPU of the node
+  repeated string device_ids = 3;   // or these
 }
 
 // StackService is how a service of a stack runs: on the stack's own network, reached there by its service

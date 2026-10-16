@@ -42,6 +42,13 @@ func (s *Server) handleMoveApp(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusConflict, "les données de cette app (ses volumes) ne suivent pas encore un changement de node : elle repartirait vide sur le nouveau, ses données restant sur l'ancien. Confirmez pour la déplacer quand même")
 		return
 	}
+	if g := appGpu(a); g != nil {
+		if target, err := s.store.GetNode(ctx, body.NodeID); err == nil {
+			if writeGpuError(w, checkGpuNode(target, g)) {
+				return
+			}
+		}
+	}
 	if body.NodeID == a.NodeID {
 		writeError(w, http.StatusBadRequest, "l'app tourne déjà sur ce node")
 		return

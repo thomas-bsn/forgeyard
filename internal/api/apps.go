@@ -14,6 +14,7 @@ import (
 	"net/url"
 	"path"
 	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -52,6 +53,8 @@ type appInput struct {
 	NodeID     int64             `json:"nodeId"` // at creation: where it runs, 0 for the recommended node
 	// Volumes are the paths of the container kept across redeployments.
 	Volumes []string `json:"volumes"`
+	// GPU: the GPUs of its node the app may use; none without it.
+	GPU *gpuRequest `json:"gpu,omitempty"`
 }
 
 func (in *appInput) validate(creating bool) string {
@@ -115,6 +118,11 @@ func (in *appInput) validate(creating bool) string {
 	}
 	if in.Volumes == nil {
 		in.Volumes = []string{}
+	}
+	if in.GPU != nil {
+		if msg := in.GPU.validate(); msg != "" {
+			return msg
+		}
 	}
 	if len(in.Env) > 100 {
 		return "100 variables d'environnement au maximum"
@@ -245,7 +253,7 @@ func (s *Server) desiredState(ctx context.Context, nodeID int64) (*agentpb.Desir
 			Id: a.ID, Name: a.Name, Image: a.Image, Port: int32(a.Port), Env: env,
 			Hostname: webHost(c, a), Running: a.Running != 0,
 			MemoryBytes: a.MemoryMb << 20, Generation: a.Generation, Leaving: a.MovingFrom == nodeID,
-			Dockerfile: a.Dockerfile, Sandbox: a.Kind == kindSandbox, Volumes: appVolumes(a), Stack: stacks[a.ID],
+			Dockerfile: a.Dockerfile, Sandbox: a.Kind == kindSandbox, Volumes: appVolumes(a), Stack: stacks[a.ID], Gpu: appGpu(a).spec(),
 		})
 	}
 	if node.IsLocal != 0 {
@@ -469,6 +477,8 @@ type appResponse struct {
 	Kind           string            `json:"kind"`                 // web, sandbox, or service and job in a stack
 	Volumes        []appVolume       `json:"volumes"`
 	SSH            string            `json:"ssh,omitempty"` // the command reaching it through the SSH gateway
+	GPU            *gpuRequest       `json:"gpu,omitempty"`
+	GPUNames       []string          `json:"gpuNames,omitempty"` // the GPUs it may use, as its node names them
 	StackID        int64             `json:"stackId,omitempty"`
 	Service        string            `json:"service,omitempty"`    // its name in its stack's compose file
 	WaitingFor     string            `json:"waitingFor,omitempty"` // what a service of a stack waits for to start
@@ -486,6 +496,13 @@ func (s *Server) toAppResponse(a db.App, ownerName string, ownerSuspended bool, 
 		resp.URL = "https://" + host
 	}
 	resp.Kind, resp.SSH = a.Kind, s.sshCommand(c, a.Name, localHost)
+	if resp.GPU = appGpu(a); resp.GPU != nil && node != nil {
+		for _, g := range gpusOf(*node).GPUs {
+			if resp.GPU.All || slices.Contains(resp.GPU.IDs, g.ID) {
+				resp.GPUNames = append(resp.GPUNames, g.Name)
+			}
+		}
+	}
 	sizes := s.appVolumeSizes(a)
 	resp.Volumes = []appVolume{}
 	if a.Kind == kindSandbox {
@@ -742,7 +759,15 @@ func (s *Server) handleCreateApp(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusForbidden, "seul un admin choisit la machine d'une app")
 		return
 	}
-	node, err := s.pickNode(ctx, in.NodeID)
+	var node db.Node
+	if in.GPU != nil {
+		node, err = s.pickGpuNode(ctx, in.NodeID, in.GPU)
+	} else {
+		node, err = s.pickNode(ctx, in.NodeID)
+	}
+	if writeGpuError(w, err) {
+		return
+	}
 	if errors.Is(err, errNoNode) {
 		writeError(w, http.StatusServiceUnavailable, "aucun node en ligne pour accueillir l'app")
 		return
@@ -766,7 +791,7 @@ func (s *Server) handleCreateApp(w http.ResponseWriter, r *http.Request) {
 	now := time.Now().Unix()
 	app, err := s.store.CreateApp(ctx, db.CreateAppParams{
 		Name: in.Name, OwnerID: currentUser(r).ID, NodeID: node.ID, Kind: in.Kind, Image: in.Image, Dockerfile: in.Dockerfile, Port: int64(in.Port),
-		Volumes:   string(must(json.Marshal(in.Volumes))),
+		Volumes: string(must(json.Marshal(in.Volumes))), Gpu: sealGpu(in.GPU),
 		EnvSealed: sealed, MemoryMb: int64(in.MemoryMB), CreatedAt: now, UpdatedAt: now,
 	})
 	if err != nil && strings.Contains(err.Error(), "UNIQUE") {
@@ -827,6 +852,16 @@ func (s *Server) handleUpdateApp(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, msg)
 		return
 	}
+	if in.GPU != nil {
+		node, err := s.store.GetNode(r.Context(), a.NodeID)
+		if err != nil {
+			s.internalError(w, r, err)
+			return
+		}
+		if writeGpuError(w, checkGpuNode(node, in.GPU)) {
+			return
+		}
+	}
 	sealed, err := s.sealEnv(in.Env)
 	if err != nil {
 		s.internalError(w, r, err)
@@ -836,7 +871,7 @@ func (s *Server) handleUpdateApp(w http.ResponseWriter, r *http.Request) {
 		in.Image = builtImage(a.Name, in.Dockerfile)
 	}
 	a, err = s.store.UpdateAppConfig(r.Context(), db.UpdateAppConfigParams{
-		Volumes: string(must(json.Marshal(in.Volumes))), Image: in.Image, Dockerfile: in.Dockerfile, Port: int64(in.Port), EnvSealed: sealed, MemoryMb: int64(in.MemoryMB),
+		Volumes: string(must(json.Marshal(in.Volumes))), Gpu: sealGpu(in.GPU), Image: in.Image, Dockerfile: in.Dockerfile, Port: int64(in.Port), EnvSealed: sealed, MemoryMb: int64(in.MemoryMB),
 		UpdatedAt: time.Now().Unix(), ID: a.ID,
 	})
 	if err != nil {

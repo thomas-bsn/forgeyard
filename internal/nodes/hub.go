@@ -6,6 +6,7 @@ import (
 	"crypto/rand"
 	"database/sql"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"log/slog"
 	"net/netip"
@@ -447,6 +448,34 @@ func (h *Hub) BackupJob(ctx context.Context, nodeID int64, job *agentpb.BackupJo
 	}
 }
 
+// setGpus keeps what a node's agent found when it asked Docker for GPUs.
+func (h *Hub) setGpus(nodeID int64, g *agentpb.NodeGpus) {
+	list := []GPU{}
+	for _, x := range g.GetGpus() {
+		list = append(list, GPU{Vendor: x.GetVendor(), Index: int(x.GetIndex()), ID: x.GetId(), Name: x.GetName(), MemoryBytes: x.GetMemoryBytes()})
+	}
+	raw, _ := json.Marshal(list)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := h.store.SetNodeGpus(ctx, db.SetNodeGpusParams{Gpus: string(raw), GpuStatus: g.GetStatus(), GpuError: g.GetError(), ID: nodeID}); err != nil {
+		h.logger.Warn("saving a node's GPUs failed", "node_id", nodeID, "err", err)
+	}
+}
+
+// GPU is a GPU a node's Docker gives to containers.
+type GPU struct {
+	Vendor      string `json:"vendor"` // nvidia
+	Index       int    `json:"index"`
+	ID          string `json:"id"` // what an app's request names it by: its UUID for NVIDIA
+	Name        string `json:"name"`
+	MemoryBytes int64  `json:"memoryBytes,omitempty"`
+}
+
+// ProbeGpus asks a node's agent to check its GPUs again.
+func (h *Hub) ProbeGpus(nodeID int64) {
+	h.send(nodeID, &agentpb.ServerMessage{Msg: &agentpb.ServerMessage_ProbeGpus{ProbeGpus: &agentpb.ProbeGpus{}}})
+}
+
 // DropStack asks a node to delete what a deleted stack left on it: its network, and its volumes when
 // volumes is set. An offline node keeps them.
 func (h *Hub) DropStack(nodeID, stackID int64, volumes bool) {
@@ -594,6 +623,8 @@ func (h *Hub) Connect(stream agentpb.AgentService_ConnectServer) error {
 				if ok {
 					p.ch <- m.BackupResult
 				}
+			case *agentpb.AgentMessage_NodeGpus:
+				h.setGpus(node.ID, m.NodeGpus)
 			case *agentpb.AgentMessage_Topology:
 				h.mu.Lock()
 				sess.topology = m.Topology
