@@ -163,6 +163,8 @@ type Hub struct {
 	ExternalChanged ExternalChangeFunc
 	// NodeChanged, if set, is called when a node connects or disconnects. Set it before serving.
 	NodeChanged func(nodeID int64, online bool)
+	// Source serves the files of apps built from their git repository. Set it before serving.
+	Source SourceFunc
 
 	mu         sync.Mutex
 	sessions   map[int64]*session

@@ -9,6 +9,10 @@ web:
 build: web
 	go build -ldflags "$(LDFLAGS)" -o bin/forgeyard-server ./cmd/server
 	go build -ldflags "$(LDFLAGS)" -o bin/forgeyard-agent ./cmd/agent
+# Outside Linux, the agent copies this Linux build of itself into containers for SFTP.
+ifneq ($(shell go env GOOS),linux)
+	CGO_ENABLED=0 GOOS=linux go build -ldflags "$(LDFLAGS)" -o bin/forgeyard-agent-linux-$(shell go env GOARCH) ./cmd/agent
+endif
 
 run: build
 	./bin/forgeyard-server

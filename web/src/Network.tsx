@@ -81,7 +81,16 @@ function Issue({ d, onFix, busy }: { d: Diagnosis; onFix?: (port: number) => voi
 /** Sets an app's port, keeping the rest of its configuration. */
 async function setAppPort(appId: number, port: number) {
   const a = await api.app(appId)
-  await api.updateApp(appId, { image: a.dockerfile ? '' : a.image, dockerfile: a.dockerfile ?? '', port, memoryMb: a.memoryMb, env: a.env ?? {} })
+  await api.updateApp(appId, {
+    image: a.dockerfile || a.gitBranch ? '' : a.image,
+    dockerfile: a.dockerfile ?? '',
+    gitBranch: a.gitBranch ?? '',
+    port,
+    memoryMb: a.memoryMb,
+    env: a.env ?? {},
+    volumes: a.volumes.filter((v) => !v.builtin).map((v) => v.path),
+    gpu: a.gpu,
+  })
 }
 
 /** The app page's Réseau tab: the request path, its problems, and the app's place on its node's networks. */

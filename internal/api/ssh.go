@@ -27,7 +27,8 @@ import (
 // The SSH gateway: `ssh <app>@<forgeyard> -p 2222` opens a shell in the app's container, wherever its node
 // is, with no SSH server in the container and a single port to open: the connection ends here and goes on
 // over the agent's stream, like the web terminal. People sign in with the public keys of their profile;
-// the user name is the app's, which they must own (or be an admin).
+// the user name is the app's, which they must own (or be an admin). The same address serves SFTP (and scp)
+// in the container, and git push for an app deployed that way (see git.go).
 
 // LoadSSHHostKey reads the gateway's host key, creating it on first start: it must stay the same, or
 // clients warn that the host changed.
@@ -52,8 +53,8 @@ func LoadSSHHostKey(path string) (ssh.Signer, error) {
 	return ssh.ParsePrivateKey(raw)
 }
 
-// sshCommand is how an app's owner reaches it, or "" without a gateway.
-func (s *Server) sshCommand(c dnsConfig, name, localHost string) string {
+// sshAddress is the host the gateway is reached at, or "" without a gateway.
+func (s *Server) sshAddress(c dnsConfig, localHost string) string {
 	if s.sshPort == 0 {
 		return ""
 	}
@@ -64,6 +65,12 @@ func (s *Server) sshCommand(c dnsConfig, name, localHost string) string {
 	if host == "" {
 		host = localHost
 	}
+	return host
+}
+
+// sshCommand is how an app's owner reaches it, or "" without a gateway.
+func (s *Server) sshCommand(c dnsConfig, name, localHost string) string {
+	host := s.sshAddress(c, localHost)
 	if host == "" {
 		return ""
 	}
@@ -72,6 +79,19 @@ func (s *Server) sshCommand(c dnsConfig, name, localHost string) string {
 		cmd += " -p " + strconv.Itoa(s.sshPort)
 	}
 	return cmd
+}
+
+// sftpCommand is how an app's owner reaches its files over SFTP, or "" without a gateway.
+func (s *Server) sftpCommand(c dnsConfig, name, localHost string) string {
+	host := s.sshAddress(c, localHost)
+	if host == "" {
+		return ""
+	}
+	cmd := "sftp "
+	if s.sshPort != 22 {
+		cmd += "-P " + strconv.Itoa(s.sshPort) + " "
+	}
+	return cmd + name + "@" + host
 }
 
 // ServeSSH runs the gateway on l until ctx ends.
@@ -162,6 +182,7 @@ func (s *Server) sshSession(ctx context.Context, ch ssh.Channel, reqs <-chan *ss
 	defer ch.Close()
 	cols, rows := uint32(80), uint32(24)
 	var sess *nodes.ExecSession
+	started := false // a shell, a command, git or SFTP: one per session
 	fail := func(msg string) {
 		fmt.Fprintf(ch.Stderr(), "Forgeyard : %s\r\n", msg)
 		ch.SendRequest("exit-status", false, ssh.Marshal(struct{ Status uint32 }{1}))
@@ -180,8 +201,17 @@ func (s *Server) sshSession(ctx context.Context, ch ssh.Channel, reqs <-chan *ss
 			}
 		case "env":
 			req.Reply(true, nil) // accepted and ignored: the container has its own environment
+		case "subsystem":
+			var p struct{ Name string }
+			if started || ssh.Unmarshal(req.Payload, &p) != nil || p.Name != "sftp" {
+				req.Reply(false, nil)
+				continue
+			}
+			started = true
+			req.Reply(true, nil)
+			go s.sftpSession(ctx, ch, userID, appID, ip)
 		case "shell", "exec":
-			if sess != nil {
+			if started {
 				req.Reply(false, nil)
 				continue
 			}
@@ -194,7 +224,12 @@ func (s *Server) sshSession(ctx context.Context, ch ssh.Channel, reqs <-chan *ss
 				}
 				command = p.Command
 			}
+			started = true
 			req.Reply(true, nil)
+			if service, path, ok := gitCommand(command); ok {
+				go s.gitSession(ctx, ch, userID, appID, service, path)
+				continue
+			}
 			app, err := s.store.GetApp(ctx, appID)
 			if errors.Is(err, sql.ErrNoRows) {
 				fail("cette app n'existe plus")
@@ -262,10 +297,52 @@ func (s *Server) sshSession(ctx context.Context, ch ssh.Channel, reqs <-chan *ss
 			}()
 		default:
 			if req.WantReply {
-				req.Reply(false, nil) // sftp, port forwarding…: not offered
+				req.Reply(false, nil) // port forwarding, agent forwarding…: not offered
 			}
 		}
 	}
+}
+
+// sftpSession serves SFTP in an app's container: the agent of its node starts an SFTP server there, and
+// the session's bytes go to it over a Tunnel stream.
+func (s *Server) sftpSession(ctx context.Context, ch ssh.Channel, userID, appID int64, ip string) {
+	defer ch.Close()
+	status := uint32(1)
+	defer func() { ch.SendRequest("exit-status", false, ssh.Marshal(struct{ Status uint32 }{status})) }()
+	fail := func(msg string) {
+		fmt.Fprintf(ch.Stderr(), "Forgeyard : %s\r\n", msg)
+	}
+	app, err := s.store.GetApp(ctx, appID)
+	if err != nil {
+		fail("cette app n'existe plus")
+		return
+	}
+	if st, ok := s.nodes.AppStatus(app.ID); !ok || st.Status.GetState() != "running" {
+		fail("l'app « " + app.Name + " » n'est pas en ligne : démarrez-la depuis Forgeyard")
+		return
+	}
+	conn, err := s.nodes.DialSFTP(ctx, app.NodeID, app.ID)
+	if errors.Is(err, nodes.ErrOffline) {
+		fail("le node de cette app est hors ligne")
+		return
+	}
+	if err != nil {
+		fail(err.Error())
+		return
+	}
+	defer conn.Close()
+	name := "?"
+	if u, err := s.store.GetUserByID(ctx, userID); err == nil {
+		name = u.DisplayName
+	}
+	s.appEvent(app.ID, eventInfo, "Connexion SFTP de "+name)
+	s.logger.Info("sftp session", "app", app.Name, "by", name, "ip", ip)
+	go func() {
+		io.Copy(conn, ch) // the client's requests, until it hangs up
+		conn.Close()
+	}()
+	io.Copy(ch, conn) // the server's answers, until it exits
+	status = 0
 }
 
 // ptySize reads the terminal size of a pty-req: string term, uint32 columns, uint32 rows.

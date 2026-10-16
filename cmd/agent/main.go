@@ -24,6 +24,15 @@ import (
 )
 
 func main() {
+	// The SFTP server the agent copies into an app's container: its output is the SFTP session, so it
+	// must not log anything there.
+	if len(os.Args) == 2 && os.Args[1] == "sftp-server" {
+		if err := agent.ServeSFTP(); err != nil {
+			fmt.Fprintln(os.Stderr, "sftp:", err)
+			os.Exit(1)
+		}
+		return
+	}
 	// The agent's log goes to its output and to agent.Logs, which the Nodes page shows.
 	logger := slog.New(slog.NewTextHandler(io.MultiWriter(os.Stdout, agent.Logs), nil))
 	if len(os.Args) < 2 {

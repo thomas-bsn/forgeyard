@@ -145,6 +145,7 @@ func run(addr, agentAddr, dataDir string, logger *slog.Logger) error {
 		LocalServerURL: envOr("FORGEYARD_LOCAL_SERVER_URL", "http://forgeyard:8080"),
 		SSHPort:        sshPort,
 		SSHHost:        os.Getenv("FORGEYARD_SSH_HOST"),
+		RepoDir:        filepath.Join(dataDir, "repos"),
 	}, setupToken)
 	srv := &http.Server{
 		Addr:              addr,

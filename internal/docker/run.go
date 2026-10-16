@@ -146,6 +146,55 @@ func (c *Client) ExecStream(ctx context.Context, container string, cmd []string)
 	return pr, wait, nil
 }
 
+// Pipe is a command running in a container without a terminal, its standard input and output carried
+// as they are: what is written to it is the command's input, what is read from it its output.
+type Pipe struct {
+	conn   *bufferedConn
+	stdout *io.PipeReader
+	stderr tailBuffer
+}
+
+func (p *Pipe) Read(b []byte) (int, error)  { return p.stdout.Read(b) }
+func (p *Pipe) Write(b []byte) (int, error) { return p.conn.Write(b) }
+
+// CloseWrite ends the command's input.
+func (p *Pipe) CloseWrite() error { return p.conn.CloseWrite() }
+
+// Close ends the session.
+func (p *Pipe) Close() error {
+	p.stdout.Close()
+	return p.conn.Close()
+}
+
+// Stderr is the end of what the command wrote to its error output, once its output was read to the end.
+func (p *Pipe) Stderr() string { return p.stderr.String() }
+
+// ExecPipe runs a command in a running container without a terminal, with its standard input attached.
+func (c *Client) ExecPipe(ctx context.Context, container string, cmd []string) (*Pipe, error) {
+	var created struct {
+		ID string `json:"Id"`
+	}
+	if err := c.call(ctx, http.MethodPost, "/containers/"+url.PathEscape(container)+"/exec", map[string]any{
+		"AttachStdin": true, "AttachStdout": true, "AttachStderr": true, "Tty": false, "Cmd": cmd,
+	}, &created); err != nil {
+		return nil, err
+	}
+	conn, err := c.hijack(ctx, "/exec/"+created.ID+"/start", `{"Detach":false,"Tty":false}`)
+	if err != nil {
+		return nil, err
+	}
+	pr, pw := io.Pipe()
+	p := &Pipe{conn: conn, stdout: pr}
+	go func() {
+		err := demux(conn, pw, &p.stderr)
+		if errors.Is(err, io.EOF) {
+			err = nil
+		}
+		pw.CloseWithError(err)
+	}()
+	return p, nil
+}
+
 // ExecRun runs a command in a running container and returns its exit code and output.
 func (c *Client) ExecRun(ctx context.Context, container string, cmd []string) (int, string, error) {
 	stdout, wait, err := c.ExecStream(ctx, container, cmd)

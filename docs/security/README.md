@@ -41,7 +41,9 @@ TLS 1.3 mutuel avec la CA privée de Forgeyard, empreinte de la CA vérifiée av
 
 - Authentification par clé publique uniquement, vers les apps dont on est propriétaire (ou toutes pour un admin) ; comptes désactivés refusés. La clé présentée doit être exactement celle enregistrée (empreinte SHA256 puis comparaison complète).
 - Une connexion qui ne s'authentifie pas compte comme un échec pour son IP (même limite que la connexion web : 10 en 15 minutes), une seule fois même si le client essaie plusieurs clés. La poignée de main doit aboutir en 30 secondes.
-- Seuls les canaux de session sont ouverts : pas de redirection de ports, pas de sous-systèmes (SFTP). Chaque connexion est notée dans les événements de l'app, et la dernière utilisation de chaque clé est affichée.
+- Seuls les canaux de session sont ouverts : pas de redirection de ports. Le seul sous-système accepté est SFTP, qui tourne dans le conteneur de l'app avec son utilisateur, comme le shell. Chaque connexion est notée dans les événements de l'app, et la dernière utilisation de chaque clé est affichée.
+- Git push : les commandes acceptées sont `git-receive-pack` et `git-upload-pack`, dans le dépôt de l'app seulement (le chemin doit être le sien), exécutées par le `git` du server sans hooks. Une app dont le propriétaire est suspendu ne se déploie pas.
+- Un node ne reçoit les fichiers d'un dépôt que pour une app qu'il fait tourner, et seulement le commit qu'elle doit faire tourner.
 
 ## Conteneurs des apps
 

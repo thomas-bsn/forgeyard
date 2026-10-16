@@ -9,6 +9,7 @@ Plusieurs conteneurs qui vont ensemble (une base, un job de migration, une API, 
 La fenêtre de création (et de configuration) a le formulaire à gauche et, à droite, l'aperçu de l'app (logo, adresse, node) qui suit la saisie, avec les boutons. On choisit la source en haut :
 
 - **Image Docker** : une image publiée (Docker Hub, ghcr.io…), téléchargée par le node.
+- **Git push** : le code est poussé avec `git push` sur la passerelle SSH, et chaque push sur la branche de l'app (`main` par défaut) est construit sur le node avec le `Dockerfile` à la racine du dépôt (voir [Git push](#git-push)).
 - **Dockerfile** : collé dans le formulaire (64 Ko max., avec une ligne `FROM`), le node construit l'image (état « Construction de l'image… ») avec `pull=1`, pour reprendre les mises à jour de l'image de base. Le Dockerfile est seul, sans autres fichiers : `COPY` ne trouve rien, le code se récupère avec `RUN git clone` ou `ADD` d'une URL. L'image est nommée `forgeyard/<nom>:<empreinte du Dockerfile>` : un nouveau Dockerfile donne une nouvelle image, déployée sans coupure, et l'agent supprime l'ancienne une fois remplacée (et celle d'une app supprimée). Une construction ratée affiche l'erreur et ses dernières lignes. Le logo automatique est celui de l'image du premier `FROM`.
 - **Docker Compose** : un `docker-compose.yml`, déployé en [projet](projects.md) : une app par service.
 - **Sandbox** : une machine Linux sans adresse web, à laquelle on se connecte en SSH (voir [Sandbox et SSH](#sandbox-et-ssh)).
@@ -30,7 +31,53 @@ ssh monapp@<ip de Forgeyard> -p 2222 uname -a   # une commande, avec son code de
 - La connexion se termine sur le server (port `2222`), qui l'envoie à l'agent du node par sa connexion habituelle, comme le terminal web : aucun serveur SSH dans le conteneur, un seul port à ouvrir sur la box (vers la machine de Forgeyard), et ça marche pour tous les nodes, même derrière un NAT.
 - Le nom d'utilisateur est le **nom de l'app**. Sont acceptées les clés de son propriétaire (et des admins), ajoutées dans Mon profil › Clés SSH (ed25519, ECDSA, RSA de 2048 bits ou plus ; une clé n'appartient qu'à un compte). La clé d'hôte (`ssh_host_ed25519_key`, dans le dossier de données) est créée au premier démarrage.
 - La page de l'app donne la commande, avec l'IP publique de l'instance (Réglages › Domaine) ou `FORGEYARD_SSH_HOST` : un domaine derrière le proxy Cloudflare ne laisse pas passer SSH.
-- Pas encore : SFTP/`scp`, la redirection de ports. Une commande passe par un terminal (sa sortie arrive avec des `\r\n`). Ce qui est tapé avant que le shell soit prêt est gardé (64 Ko).
+- Pas encore : la redirection de ports, le `scp -O` des anciens clients (le `scp` actuel passe par SFTP). Une commande passe par un terminal (sa sortie arrive avec des `\r\n`). Ce qui est tapé avant que le shell soit prêt est gardé (64 Ko).
+
+### SFTP et scp
+
+La même adresse donne accès aux **fichiers du conteneur**, pour toutes les apps (pas seulement les sandbox) :
+
+```bash
+sftp -P 2222 monapp@<ip de Forgeyard>
+scp -P 2222 ./site.zip monapp@<ip de Forgeyard>:/var/www/
+```
+
+- Mêmes clés et mêmes droits que le shell ; l'app doit être en ligne. Chaque connexion est notée dans ses événements.
+- L'agent du node copie un petit serveur SFTP dans le conteneur (son propre binaire, statique, dans `/.forgeyard/sftp-server-<empreinte>`, une fois par version de l'agent) et le lance avec `docker exec`, sans terminal ; la session va du server à l'agent par un flux `Tunnel` dédié. Ça marche donc dans toutes les images, même sans shell (distroless, scratch).
+- Le serveur tourne avec l'utilisateur du conteneur et part de son `$HOME` : il voit les fichiers comme l'app, volumes compris. Ce qui est écrit hors d'un volume disparaît au redéploiement.
+- Un conteneur au système de fichiers en lecture seule refuse la copie du serveur : le client reçoit l'erreur.
+- Un agent lancé hors de Linux (un Mac de développement) a besoin d'un binaire Linux de l'agent : `forgeyard-agent-linux-<arch>` à côté de lui (`make build` le fait) ou `FORGEYARD_SFTP_HELPER`.
+
+Code : `internal/agent/sftp.go`, `internal/api/ssh.go`.
+
+## Git push
+
+Une app de source **Git push** se déploie en poussant son code sur Forgeyard, sans GitHub :
+
+```bash
+git remote add forgeyard ssh://monapp@<ip de Forgeyard>:2222/monapp.git
+git push forgeyard main
+```
+
+La page de l'app donne ces deux commandes. Le push affiche la construction, puis attend la mise en ligne :
+
+```
+Forgeyard : a1b2c3d « Corrige le menu » : construction sur le node nas…
+Step 1/6 : FROM node:22-alpine
+…
+Forgeyard : image construite, démarrage…
+Forgeyard : en ligne : https://monapp.example.com
+```
+
+- **Dépôt** : le server garde un dépôt nu par app, dans `repos/<id>.git` du dossier de données (il a besoin de `git`, présent dans son image), et y lance `git receive-pack` et `git upload-pack` : `git clone` et `git fetch` marchent aussi. Mêmes clés et mêmes droits que SSH ; le chemin doit être celui de l'app (`/monapp.git`). Le dépôt est supprimé avec l'app.
+- **Branche** : seule la branche de l'app (réglée dans le formulaire, `main` par défaut) est déployée ; les autres sont gardées. Pousser le commit qui tourne déjà ne fait rien (Redéployer le reconstruit) ; pousser à nouveau un commit qui n'a pas pu être déployé le réessaie.
+- **Construction** : le dernier commit de la branche devient la version de l'app (`forgeyard/<nom>:<12 premiers caractères du commit>`). Le node demande les fichiers de ce commit au server (`git archive`, par un flux `Tunnel` qu'il ouvre lui-même : le node n'a toujours aucun port ouvert), construit l'image avec le `Dockerfile` à la racine, et renvoie la sortie de la construction, que le push affiche. Puis déploiement sans coupure, comme une autre app. Une construction ratée n'est pas retentée toute seule : un nouveau push ou Redéployer.
+- **Port** : on peut le laisser vide à la création ; le premier push le lit dans l'`EXPOSE` du Dockerfile. Sans `EXPOSE`, le push le dit : réglez-le dans Configuration, puis poussez à nouveau.
+- **Sans Dockerfile** à la racine, le commit est gardé mais rien n'est déployé, et le push le dit.
+- Avant le premier push, l'app est « En attente d'un git push » et rien ne tourne sur le node. Un changement de node reconstruit l'app depuis le dépôt du server.
+- Pas encore : sous-modules git (non inclus par `git archive`), Dockerfile ailleurs qu'à la racine, construction sans Dockerfile (Railpack ou Nixpacks).
+
+Code : `internal/api/git.go`, `internal/agent/source.go`.
 
 ## Logo
 

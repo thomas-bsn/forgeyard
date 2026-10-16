@@ -37,6 +37,7 @@
 
 ## v0.3 : build et GitHub
 - [x] Build depuis un Dockerfile collé (sans autres fichiers)
+- [x] Git push sur la passerelle SSH : dépôt gardé par le server, construction sur le node, sortie dans le push ([apps](apps/README.md#git-push))
 - [ ] GitHub App (manifest flow), déploiement à chaque push
 - [ ] Railpack ou Nixpacks
 - [x] Déploiement sans coupure (l'ancienne version reste en ligne si la nouvelle ne démarre pas)
@@ -53,7 +54,8 @@
 - [ ] Sauvegardes des volumes des apps seules
 - [x] Réseau : chemin d'une requête vérifié (page d'une app), topologie et tableau de l'infrastructure (Nodes)
 - [ ] Trafic observé (métriques de Traefik) sur la topologie
-- [ ] SFTP / scp et redirection de ports par la passerelle SSH
+- [x] SFTP / scp par la passerelle SSH, dans toutes les images ([apps](apps/README.md#sftp-et-scp))
+- [ ] Redirection de ports par la passerelle SSH
 - [ ] Bases de données en un clic
 - [ ] Quotas utilisateurs
 - [ ] SMTP et emails

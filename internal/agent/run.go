@@ -46,6 +46,7 @@ func Run(ctx context.Context, st *State, dc *docker.Client, logger *slog.Logger)
 	var rec *Reconciler
 	if dc != nil {
 		rec = NewReconciler(dc, logger)
+		rec.client = client
 		go rec.Run(ctx)
 	}
 
@@ -259,7 +260,9 @@ func session(ctx context.Context, client agentpb.AgentServiceClient, dc *docker.
 				}()
 			}
 		case *agentpb.ServerMessage_TunnelOpen:
-			if dc != nil {
+			if dc != nil && m.TunnelOpen.GetSftpAppId() != 0 {
+				go openSFTP(ctx, client, dc, m.TunnelOpen.GetTunnelId(), m.TunnelOpen.GetSftpAppId(), logger)
+			} else if dc != nil {
 				go openTunnel(ctx, client, dc, m.TunnelOpen.GetTunnelId(), logger)
 			}
 		case *agentpb.ServerMessage_DropAppData:

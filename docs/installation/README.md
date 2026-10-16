@@ -72,7 +72,7 @@ Ne modifiez ni `docker-compose.yml` ni le `Dockerfile` : copiez-les dans des fic
 | `FORGEYARD_SSH_PORT` | le port d'écoute | Port affiché dans les commandes `ssh`, si la box redirige un autre port |
 | `FORGEYARD_SSH_HOST` | IP publique de l'instance | Hôte affiché dans les commandes `ssh` (un nom en DNS seul, pas derrière le proxy Cloudflare) |
 
-Contenu du dossier de données : `forgeyard.db` (SQLite), `secret.key`, `ca.key` et `ca.crt` (autorité de certification des agents), `ssh_host_ed25519_key` (clé d'hôte de la passerelle SSH). Sauvegardez-le en entier : sans `secret.key`, les secrets enregistrés sont illisibles.
+Contenu du dossier de données : `forgeyard.db` (SQLite), `secret.key`, `ca.key` et `ca.crt` (autorité de certification des agents), `ssh_host_ed25519_key` (clé d'hôte de la passerelle SSH), `repos/` (dépôts git des apps déployées par git push). Sauvegardez-le en entier : sans `secret.key`, les secrets enregistrés sont illisibles.
 
 ## Images publiées
 

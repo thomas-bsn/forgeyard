@@ -52,15 +52,25 @@ type Reconciler struct {
 	dc     *docker.Client
 	logger *slog.Logger
 
-	mu         sync.Mutex
-	desired    *agentpb.DesiredState // nil until the control plane sent one: nothing is removed before
-	progress   map[int64]string      // app → "pulling" or "creating" while it happens
-	lastError  map[int64]string      // app → why its last deployment failed
-	cpuSeen    map[int64]cpuSample   // app → previous CPU counters, to compute use between two reports
-	failedOut  map[int64]string      // app → spec hash of a new version that did not start, not retried
-	waiting    map[int64]waitState   // service of a stack → why it has not started yet
-	relaysHash string                // the relays last written into Traefik's container
-	trigger    chan struct{}
+	mu          sync.Mutex
+	desired     *agentpb.DesiredState // nil until the control plane sent one: nothing is removed before
+	progress    map[int64]string      // app → "pulling" or "creating" while it happens
+	lastError   map[int64]string      // app → why its last deployment failed
+	cpuSeen     map[int64]cpuSample   // app → previous CPU counters, to compute use between two reports
+	failedOut   map[int64]string      // app → spec hash of a new version that did not start, not retried
+	waiting     map[int64]waitState   // service of a stack → why it has not started yet
+	failedBuild map[int64]failedBuild // app → the build from its repository that failed, not retried
+	relaysHash  string                // the relays last written into Traefik's container
+	trigger     chan struct{}
+
+	// client gets the files of apps built from their git repository; nil, such apps cannot be built.
+	client agentpb.AgentServiceClient
+}
+
+// failedBuild is a build that failed: its image and the app's generation, and why.
+type failedBuild struct {
+	try string
+	err error
 }
 
 // NewReconciler returns a Reconciler; call Run to start it.
@@ -68,7 +78,7 @@ func NewReconciler(dc *docker.Client, logger *slog.Logger) *Reconciler {
 	return &Reconciler{
 		dc: dc, logger: logger, trigger: make(chan struct{}, 1),
 		progress: map[int64]string{}, lastError: map[int64]string{}, cpuSeen: map[int64]cpuSample{},
-		failedOut: map[int64]string{}, waiting: map[int64]waitState{},
+		failedOut: map[int64]string{}, waiting: map[int64]waitState{}, failedBuild: map[int64]failedBuild{},
 	}
 }
 
@@ -331,6 +341,30 @@ func (r *Reconciler) dropBuiltImage(ctx context.Context, image string) {
 
 // fetchImage gets an app's image on the node: built from its Dockerfile, or pulled.
 func (r *Reconciler) fetchImage(ctx context.Context, app *agentpb.AppSpec) error {
+	if app.GetGitCommit() != "" {
+		// A failed build is not tried again every resync: the same files fail the same way, until a new
+		// push or a redeployment.
+		try := app.GetImage() + "@" + strconv.FormatInt(app.GetGeneration(), 10)
+		r.mu.Lock()
+		failed, ok := r.failedBuild[app.GetId()]
+		r.mu.Unlock()
+		if ok && failed.try == try {
+			return failed.err
+		}
+		r.setProgress(app.GetId(), "building")
+		err := r.buildSource(ctx, app)
+		if err != nil {
+			err = fmt.Errorf("construction de l'image : %w", err)
+		}
+		r.mu.Lock()
+		if err != nil && ctx.Err() == nil {
+			r.failedBuild[app.GetId()] = failedBuild{try: try, err: err}
+		} else {
+			delete(r.failedBuild, app.GetId())
+		}
+		r.mu.Unlock()
+		return err
+	}
 	if app.GetDockerfile() != "" {
 		r.setProgress(app.GetId(), "building")
 		if err := r.dc.Build(ctx, app.GetImage(), app.GetDockerfile()); err != nil {
