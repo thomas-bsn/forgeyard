@@ -104,6 +104,36 @@ func TestAppGpus(t *testing.T) {
 		t.Fatalf("names: %v", app.GPUNames)
 	}
 
+	// Its observability has the GPU's use; an app without GPU has none.
+	if err := gpuNode.stream.Send(&agentpb.AgentMessage{Msg: &agentpb.AgentMessage_Metrics{Metrics: &agentpb.Metrics{
+		Gpus: []*agentpb.GpuMetric{{Id: rtx, UtilizationPercent: 87, MemoryUsedBytes: 7 << 30, MemoryTotalBytes: 12 << 30}}}}}); err != nil {
+		t.Fatal(err)
+	}
+	var usage struct {
+		Gpus []struct {
+			Name    string `json:"name"`
+			Samples []struct {
+				Util float64 `json:"util"`
+				Mem  int64   `json:"mem"`
+			} `json:"samples"`
+		} `json:"gpus"`
+	}
+	for range 100 {
+		get(t, admin, ts.URL+"/api/apps/"+itoa(app.ID)+"/usage", &usage)
+		if len(usage.Gpus) == 1 && len(usage.Gpus[0].Samples) == 1 {
+			break
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	if len(usage.Gpus) != 1 || usage.Gpus[0].Name != "NVIDIA GeForce RTX 4070 SUPER" || len(usage.Gpus[0].Samples) != 1 || usage.Gpus[0].Samples[0].Util != 87 {
+		t.Fatalf("GPU usage: %+v", usage)
+	}
+	usage.Gpus = nil
+	get(t, admin, ts.URL+"/api/apps/"+itoa(plain.ID)+"/usage", &usage)
+	if len(usage.Gpus) != 0 {
+		t.Fatalf("an app without GPU shows one: %+v", usage.Gpus)
+	}
+
 	// Redeploying keeps it: a new generation, the same request.
 	postJSON(t, admin, ts.URL+"/api/apps/"+itoa(app.ID)+"/redeploy", struct{}{}, nil)
 	spec = gpuNode.lastSpec(t, app.ID, func(a *agentpb.AppSpec) bool { return a.GetGeneration() > spec.GetGeneration() })

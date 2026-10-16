@@ -347,6 +347,8 @@ export type AppEvent = { at: number; kind: 'info' | 'success' | 'warning' | 'err
 export type AppUsage = {
   memoryLimitBytes: number
   samples: { t: number; cpu: number; mem: number }[]
+  // The GPUs the app may use, each as a whole (shared with the other apps using it), over the last hour.
+  gpus?: (Gpu & { samples: { t: number; util: number; mem: number; memTotal: number; temp?: number; power?: number }[] })[]
 }
 
 /** A container of a node that Forgeyard did not create, shown with the apps and owned by the superadmin. */

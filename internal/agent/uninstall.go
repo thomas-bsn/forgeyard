@@ -23,7 +23,7 @@ func uninstall(ctx context.Context, dc *docker.Client) error {
 	if err != nil {
 		return err
 	}
-	for _, name := range append(apps, traefikName, helperName, updaterName) {
+	for _, name := range append(apps, traefikName, helperName, updaterName, gpuMonitorName, gpuProbeName) {
 		if err := dc.Remove(ctx, name); err != nil {
 			errs = append(errs, fmt.Errorf("conteneur %s : %w", name, err))
 		}

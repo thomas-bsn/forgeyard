@@ -1717,6 +1717,50 @@ function AppDetail({
   )
 }
 
+/**
+ * A GPU the app may use: its use and its memory over the last hour. Docker does not measure GPUs per
+ * container: these are the whole GPU's, shared with the other apps that use it.
+ */
+function GpuPanel({ gpu }: { gpu: NonNullable<AppUsage['gpus']>[number] }) {
+  const last = gpu.samples[gpu.samples.length - 1]
+  const total = last?.memTotal || gpu.memoryBytes || 0
+  const times = gpu.samples.map((s) => s.t)
+  return (
+    <section className="panel chart-panel">
+      <div className="chart-head">
+        <h2>GPU</h2>
+        <span className="muted">
+          #{gpu.index} {gpu.name} · le GPU entier, partagé avec les autres apps qui l’utilisent
+        </span>
+      </div>
+      {last && gpu.samples.length >= 2 ? (
+        <p className="gpu-now">
+          <strong>{Math.round(last.util)} %</strong> d’utilisation · mémoire {formatBytes(last.mem)}
+          {total ? ` / ${formatBytes(total)}` : ''}
+          {last.temp ? ` · ${Math.round(last.temp)} °C` : ''}
+          {last.power ? ` · ${Math.round(last.power)} W` : ''}
+        </p>
+      ) : (
+        <p className="muted gpu-now">Pas encore assez de mesures : elles arrivent quand l’app tourne, toutes les 15 s.</p>
+      )}
+      {gpu.samples.length >= 2 && (
+        <>
+          <AreaChart values={gpu.samples.map((s) => s.util)} times={times} format={(v) => `${v.toFixed(0)} %`} max={100} color="var(--up)" label="Utilisation du GPU sur la dernière heure" timeFormat={timeFormat} />
+          <AreaChart
+            values={gpu.samples.map((s) => s.mem)}
+            times={times}
+            format={(v) => formatBytes(v) + (total ? ` (${Math.round((v / total) * 100)} %)` : '')}
+            max={total || undefined}
+            color="var(--warn)"
+            label="Mémoire du GPU sur la dernière heure"
+            timeFormat={timeFormat}
+          />
+        </>
+      )}
+    </section>
+  )
+}
+
 /** A GPU's name and memory, e.g. "#0 NVIDIA GeForce RTX 4070 SUPER · 12 Go". */
 function gpuLabel(g: { index: number; name: string; memoryBytes?: number }): string {
   return `#${g.index} ${g.name}${g.memoryBytes ? ` · ${formatBytes(g.memoryBytes)}` : ''}`
@@ -1905,6 +1949,7 @@ function Observability({ m }: { m: Measures }) {
           timeFormat={timeFormat}
         />
       </section>
+      {usage?.gpus?.map((g) => <GpuPanel key={g.id} gpu={g} />)}
       <section className="panel chart-panel">
         <div className="chart-head">
           <h2>Mémoire</h2>

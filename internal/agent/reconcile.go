@@ -98,6 +98,18 @@ func (r *Reconciler) Run(ctx context.Context) {
 	}
 }
 
+// wantsGpu tells whether a running app of the node uses GPUs.
+func (r *Reconciler) wantsGpu() bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for _, a := range r.desired.GetApps() {
+		if a.GetGpu() != nil && a.GetRunning() && !a.GetLeaving() {
+			return true
+		}
+	}
+	return false
+}
+
 func (r *Reconciler) snapshot() *agentpb.DesiredState {
 	r.mu.Lock()
 	defer r.mu.Unlock()

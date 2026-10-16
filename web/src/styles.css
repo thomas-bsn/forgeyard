@@ -5104,3 +5104,9 @@ a.link-btn {
 .gpu-line strong {
   margin-right: 6px;
 }
+
+.gpu-now {
+  margin: 0;
+  font-size: 0.9rem;
+  font-variant-numeric: tabular-nums;
+}

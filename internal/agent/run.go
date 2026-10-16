@@ -51,9 +51,13 @@ func Run(ctx context.Context, st *State, dc *docker.Client, logger *slog.Logger)
 
 	// GPUs are checked once per agent, and again when the server asks: each connection sends the last check.
 	gpus := &gpuState{}
+	var mon *gpuMonitor
+	if dc != nil {
+		mon = newGpuMonitor(dc, logger)
+	}
 	backoff := time.Second
 	for {
-		connected, err := session(ctx, client, dc, rec, gpus, logger)
+		connected, err := session(ctx, client, dc, rec, gpus, mon, logger)
 		if ctx.Err() != nil {
 			return nil
 		}
@@ -74,7 +78,7 @@ func Run(ctx context.Context, st *State, dc *docker.Client, logger *slog.Logger)
 }
 
 // session runs one stream. connected reports whether the server accepted it, to reset the backoff.
-func session(ctx context.Context, client agentpb.AgentServiceClient, dc *docker.Client, rec *Reconciler, gpus *gpuState, logger *slog.Logger) (connected bool, err error) {
+func session(ctx context.Context, client agentpb.AgentServiceClient, dc *docker.Client, rec *Reconciler, gpus *gpuState, mon *gpuMonitor, logger *slog.Logger) (connected bool, err error) {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	stream, err := client.Connect(ctx)
@@ -176,7 +180,13 @@ func session(ctx context.Context, client agentpb.AgentServiceClient, dc *docker.
 			case <-ctx.Done():
 				return
 			case <-metrics.C:
-				send(&agentpb.AgentMessage{Msg: &agentpb.AgentMessage_Metrics{Metrics: sampleMetrics(ctx, dc)}})
+				m := sampleMetrics(ctx, dc)
+				if mon != nil {
+					// GPUs are measured while an app uses them, on a node whose Docker gives them.
+					mon.sync(ctx, rec != nil && rec.wantsGpu() && gpus.get().GetStatus() == "ok")
+					m.Gpus = mon.metrics()
+				}
+				send(&agentpb.AgentMessage{Msg: &agentpb.AgentMessage_Metrics{Metrics: m}})
 			case <-externalsTick.C:
 				sendExternals()
 				sendTopology()

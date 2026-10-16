@@ -110,8 +110,14 @@ func (s *Server) handleAppUsage(w http.ResponseWriter, r *http.Request) {
 	if samples == nil {
 		samples = []nodes.UsageSample{}
 	}
+	gpus, err := s.appGpuUsage(r.Context(), a)
+	if err != nil {
+		s.internalError(w, r, err)
+		return
+	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"memoryLimitBytes": a.MemoryMb << 20,
 		"samples":          samples,
+		"gpus":             gpus,
 	})
 }

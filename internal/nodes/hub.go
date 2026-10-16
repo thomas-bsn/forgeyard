@@ -174,6 +174,7 @@ type Hub struct {
 	execs      map[string]*execStream                 // terminals, by session ID
 	tunnels    map[string]*tunnelWaiter               // tunnels asked for, until their agent opens them
 	backups    map[string]pendingBackup               // backup jobs waiting for their result, by job ID
+	gpuUsage   map[string][]GpuSample                 // by node and GPU (ExternalKey), oldest first
 }
 
 // pendingBackup is a backup job sent to a node, waiting for its result.
@@ -188,7 +189,7 @@ func NewHub(st *store.Store, logger *slog.Logger) *Hub {
 		store: st, logger: logger, sessions: make(map[int64]*session),
 		statuses: make(map[int64]AppStatus), usage: make(map[int64][]UsageSample), extUsage: make(map[string][]UsageSample),
 		externals: make(map[int64][]*agentpb.ExternalContainer), logStreams: make(map[string]chan *agentpb.LogLine),
-		execs: make(map[string]*execStream), tunnels: make(map[string]*tunnelWaiter), backups: make(map[string]pendingBackup),
+		execs: make(map[string]*execStream), tunnels: make(map[string]*tunnelWaiter), backups: make(map[string]pendingBackup), gpuUsage: make(map[string][]GpuSample),
 	}
 }
 
@@ -595,7 +596,7 @@ func (h *Hub) Connect(stream agentpb.AgentService_ConnectServer) error {
 		case msg := <-msgs:
 			switch m := msg.GetMsg().(type) {
 			case *agentpb.AgentMessage_Metrics:
-				h.addMetrics(sess, m.Metrics)
+				h.addMetrics(node.ID, sess, m.Metrics)
 				if time.Since(lastTouch) > touchEvery {
 					h.touch(node.ID)
 					lastTouch = time.Now()
@@ -734,13 +735,58 @@ func (h *Hub) setStatuses(nodeID int64, list []*agentpb.AppStatus) {
 	}
 }
 
-func (h *Hub) addMetrics(s *session, m *agentpb.Metrics) {
+func (h *Hub) addMetrics(nodeID int64, s *session, m *agentpb.Metrics) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	s.metrics = append(s.metrics, m)
 	if len(s.metrics) > historyLen {
 		s.metrics = s.metrics[len(s.metrics)-historyLen:]
 	}
+	now := time.Now()
+	for _, g := range m.GetGpus() {
+		key := ExternalKey(nodeID, g.GetId())
+		h.gpuUsage[key] = addGpuSample(h.gpuUsage[key], now, g)
+	}
+}
+
+// GpuSample is a GPU's use over usageEvery from At, averaged like UsageSample. It is the GPU's as a
+// whole: every app that uses it counts.
+type GpuSample struct {
+	At                 int64   `json:"t"`
+	UtilizationPercent float64 `json:"util"`
+	MemoryUsedBytes    int64   `json:"mem"`
+	MemoryTotalBytes   int64   `json:"memTotal"`
+	TemperatureC       float64 `json:"temp,omitempty"`
+	PowerWatts         float64 `json:"power,omitempty"`
+	reports            int
+}
+
+func addGpuSample(samples []GpuSample, now time.Time, g *agentpb.GpuMetric) []GpuSample {
+	if n := len(samples); n > 0 && now.Unix()-samples[n-1].At < int64(usageEvery/time.Second) {
+		last := &samples[n-1]
+		k := float64(last.reports)
+		avg := func(old, v float64) float64 { return (old*k + v) / (k + 1) }
+		last.UtilizationPercent = avg(last.UtilizationPercent, g.GetUtilizationPercent())
+		last.MemoryUsedBytes = int64(avg(float64(last.MemoryUsedBytes), float64(g.GetMemoryUsedBytes())))
+		last.TemperatureC = avg(last.TemperatureC, g.GetTemperatureC())
+		last.PowerWatts = avg(last.PowerWatts, g.GetPowerWatts())
+		last.MemoryTotalBytes = g.GetMemoryTotalBytes()
+		last.reports++
+		return samples
+	}
+	samples = append(samples, GpuSample{At: now.Unix(), UtilizationPercent: g.GetUtilizationPercent(), MemoryUsedBytes: g.GetMemoryUsedBytes(),
+		MemoryTotalBytes: g.GetMemoryTotalBytes(), TemperatureC: g.GetTemperatureC(), PowerWatts: g.GetPowerWatts(), reports: 1})
+	if len(samples) > usageLen {
+		samples = samples[len(samples)-usageLen:]
+	}
+	return samples
+}
+
+// GpuUsage returns a GPU's use over the last hour, oldest first.
+func (h *Hub) GpuUsage(nodeID int64, gpuID string) []GpuSample {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return append([]GpuSample(nil), h.gpuUsage[ExternalKey(nodeID, gpuID)]...)
 }
 
 func (h *Hub) touch(nodeID int64) {

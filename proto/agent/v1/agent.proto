@@ -254,6 +254,18 @@ message Metrics {
   uint64 memory_used_bytes = 3;
   uint64 disk_used_bytes = 4;
   int32 containers_running = 5;
+  // gpus: the use of each GPU, while an app of the node uses GPUs. A GPU as a whole: Docker does not
+  // measure it per container, and the apps sharing a GPU share these figures.
+  repeated GpuMetric gpus = 6;
+}
+
+message GpuMetric {
+  string id = 1; // its UUID, as in Gpu
+  double utilization_percent = 2;
+  int64 memory_used_bytes = 3;
+  int64 memory_total_bytes = 4;
+  double temperature_c = 5;
+  double power_watts = 6;
 }
 
 // Welcome answers Hello once the node is recognized.

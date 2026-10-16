@@ -75,3 +75,20 @@ func TestGpuErrors(t *testing.T) {
 		t.Fatal("another error was taken for a GPU one")
 	}
 }
+
+func TestParseGpuMetric(t *testing.T) {
+	m := parseGpuMetric("2026-10-16T10:00:00.123456789Z GPU-5f3c1a2b, 87, 7816, 12282, 64, 191.42")
+	if m == nil || m.GetId() != "GPU-5f3c1a2b" || m.GetUtilizationPercent() != 87 || m.GetMemoryUsedBytes() != 7816<<20 ||
+		m.GetMemoryTotalBytes() != 12282<<20 || m.GetTemperatureC() != 64 || m.GetPowerWatts() != 191.42 {
+		t.Fatalf("%v", m)
+	}
+	// WSL2 or some cards do not give every figure.
+	if m := parseGpuMetric("GPU-aaaa, 3, 512, 6138, [N/A], [N/A]"); m == nil || m.GetPowerWatts() != 0 || m.GetUtilizationPercent() != 3 {
+		t.Fatalf("N/A figures: %v", m)
+	}
+	for _, bad := range []string{"", "No devices were found", "index, uuid"} {
+		if parseGpuMetric(bad) != nil {
+			t.Errorf("%q read as a measure", bad)
+		}
+	}
+}

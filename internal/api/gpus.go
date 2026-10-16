@@ -195,3 +195,32 @@ func writeGpuError(w http.ResponseWriter, err error) bool {
 	writeError(w, http.StatusConflict, strings.TrimSpace(string(ge)))
 	return true
 }
+
+// gpuUsage is a GPU an app may use and its use over the last hour, the GPU's as a whole.
+type gpuUsage struct {
+	nodes.GPU
+	Samples []nodes.GpuSample `json:"samples"`
+}
+
+// appGpuUsage lists the use of the GPUs an app may use: none for an app without GPU.
+func (s *Server) appGpuUsage(ctx context.Context, a db.App) ([]gpuUsage, error) {
+	out := []gpuUsage{}
+	g := appGpu(a)
+	if g == nil {
+		return out, nil
+	}
+	node, err := s.store.GetNode(ctx, a.NodeID)
+	if err != nil {
+		return nil, err
+	}
+	for _, x := range gpusOf(node).GPUs {
+		if g.All || slices.Contains(g.IDs, x.ID) {
+			samples := s.nodes.GpuUsage(node.ID, x.ID)
+			if samples == nil {
+				samples = []nodes.GpuSample{}
+			}
+			out = append(out, gpuUsage{GPU: x, Samples: samples})
+		}
+	}
+	return out, nil
+}

@@ -3,6 +3,8 @@ package nodes
 import (
 	"testing"
 	"time"
+
+	"github.com/thomas-bsn/forgeyard/internal/agentpb"
 )
 
 func TestUsageSamplesAverageTheirWindow(t *testing.T) {
@@ -18,5 +20,16 @@ func TestUsageSamplesAverageTheirWindow(t *testing.T) {
 	s = addSample(s, start.Add(15*time.Second), 50, 10)
 	if len(s) != 2 || s[1].CPUPercent != 50 {
 		t.Fatalf("a new point every 15 s: %+v", s)
+	}
+}
+
+func TestGpuSamplesAverageTheirWindow(t *testing.T) {
+	start := time.Unix(1_000_000, 0)
+	var s []GpuSample
+	for i, util := range []float64{20, 100, 60} {
+		s = addGpuSample(s, start.Add(time.Duration(i*5)*time.Second), &agentpb.GpuMetric{Id: "GPU-a", UtilizationPercent: util, MemoryUsedBytes: 1000, MemoryTotalBytes: 4000})
+	}
+	if len(s) != 1 || s[0].UtilizationPercent != 60 || s[0].MemoryUsedBytes != 1000 || s[0].MemoryTotalBytes != 4000 {
+		t.Fatalf("%+v", s)
 	}
 }
