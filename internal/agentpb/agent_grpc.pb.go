@@ -34,12 +34,8 @@ type AgentServiceClient interface {
 	// Tunnel carries one TCP connection from the control plane to the node's Traefik, for a node that
 	// receives its visits through its agent (ingress mode "tunnel"), or an SFTP session to an app's
 	// container. The agent opens it when asked by TunnelOpen; its first chunk names the tunnel, then both
-	// sides send the connection's bytes.
-	//
-	// The agent also opens one on its own to build an app from its git repository: its first chunk names
-	// "source/<app id>/<commit>", the control plane answers with the files as a tar archive then a chunk
-	// with eof set, and the agent sends the build's output back, then a chunk with eof set and the error
-	// in data, empty when the build succeeded.
+	// sides send the connection's bytes. When the agent cannot connect it, its first chunk has eof set and
+	// says why in data.
 	Tunnel(ctx context.Context, opts ...grpc.CallOption) (grpc.BidiStreamingClient[TunnelChunk, TunnelChunk], error)
 }
 
@@ -88,12 +84,8 @@ type AgentServiceServer interface {
 	// Tunnel carries one TCP connection from the control plane to the node's Traefik, for a node that
 	// receives its visits through its agent (ingress mode "tunnel"), or an SFTP session to an app's
 	// container. The agent opens it when asked by TunnelOpen; its first chunk names the tunnel, then both
-	// sides send the connection's bytes.
-	//
-	// The agent also opens one on its own to build an app from its git repository: its first chunk names
-	// "source/<app id>/<commit>", the control plane answers with the files as a tar archive then a chunk
-	// with eof set, and the agent sends the build's output back, then a chunk with eof set and the error
-	// in data, empty when the build succeeded.
+	// sides send the connection's bytes. When the agent cannot connect it, its first chunk has eof set and
+	// says why in data.
 	Tunnel(grpc.BidiStreamingServer[TunnelChunk, TunnelChunk]) error
 	mustEmbedUnimplementedAgentServiceServer()
 }

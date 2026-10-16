@@ -4,8 +4,6 @@ import (
 	"context"
 	"errors"
 	"net"
-	"strconv"
-	"strings"
 	"time"
 
 	"google.golang.org/grpc/codes"
@@ -87,9 +85,6 @@ func (h *Hub) Tunnel(stream agentpb.AgentService_TunnelServer) error {
 	if err != nil {
 		return err
 	}
-	if rest, ok := strings.CutPrefix(first.GetTunnelId(), "source/"); ok {
-		return h.serveSource(stream, node.ID, rest)
-	}
 	h.mu.Lock()
 	w, ok := h.tunnels[first.GetTunnelId()]
 	if ok && w.nodeID == node.ID {
@@ -113,19 +108,4 @@ func (h *Hub) Tunnel(stream agentpb.AgentService_TunnelServer) error {
 	case <-stream.Context().Done():
 	}
 	return nil
-}
-
-// SourceFunc serves the files of an app's git repository at a commit to a node building it: it checks
-// that the node runs the app at that commit, sends the files as a tar archive, then a chunk with eof set,
-// and reads the build's output until the agent's chunk with eof set, whose data is the build's error.
-type SourceFunc func(ctx context.Context, nodeID, appID int64, commit string, stream agentpb.AgentService_TunnelServer) error
-
-// serveSource answers a stream an agent opened to build an app from its repository.
-func (h *Hub) serveSource(stream agentpb.AgentService_TunnelServer, nodeID int64, name string) error {
-	app, commit, ok := strings.Cut(name, "/")
-	appID, err := strconv.ParseInt(app, 10, 64)
-	if !ok || err != nil || h.Source == nil {
-		return status.Error(codes.InvalidArgument, "unknown source")
-	}
-	return h.Source(stream.Context(), nodeID, appID, commit, stream)
 }

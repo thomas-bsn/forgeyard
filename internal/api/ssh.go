@@ -28,7 +28,7 @@ import (
 // is, with no SSH server in the container and a single port to open: the connection ends here and goes on
 // over the agent's stream, like the web terminal. People sign in with the public keys of their profile;
 // the user name is the app's, which they must own (or be an admin). The same address serves SFTP (and scp)
-// in the container, and git push for an app deployed that way (see git.go).
+// in the container.
 
 // LoadSSHHostKey reads the gateway's host key, creating it on first start: it must stay the same, or
 // clients warn that the host changed.
@@ -182,7 +182,7 @@ func (s *Server) sshSession(ctx context.Context, ch ssh.Channel, reqs <-chan *ss
 	defer ch.Close()
 	cols, rows := uint32(80), uint32(24)
 	var sess *nodes.ExecSession
-	started := false // a shell, a command, git or SFTP: one per session
+	started := false // a shell, a command or SFTP: one per session
 	fail := func(msg string) {
 		fmt.Fprintf(ch.Stderr(), "Forgeyard : %s\r\n", msg)
 		ch.SendRequest("exit-status", false, ssh.Marshal(struct{ Status uint32 }{1}))
@@ -226,10 +226,6 @@ func (s *Server) sshSession(ctx context.Context, ch ssh.Channel, reqs <-chan *ss
 			}
 			started = true
 			req.Reply(true, nil)
-			if service, path, ok := gitCommand(command); ok {
-				go s.gitSession(ctx, ch, userID, appID, service, path)
-				continue
-			}
 			app, err := s.store.GetApp(ctx, appID)
 			if errors.Is(err, sql.ErrNoRows) {
 				fail("cette app n'existe plus")

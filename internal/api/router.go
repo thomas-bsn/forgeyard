@@ -46,8 +46,6 @@ type Deps struct {
 	// commands (empty: the instance's public IP, else Forgeyard's own host).
 	SSHPort int
 	SSHHost string
-	// RepoDir holds the git repositories of the apps deployed by git push.
-	RepoDir string
 }
 
 // Server holds the dependencies of the HTTP handlers.
@@ -68,7 +66,6 @@ type Server struct {
 	localServerURL string
 	sshPort        int
 	sshHost        string
-	repoRoot       string
 
 	// Replaced in tests.
 	newDNSProvider func(name string, creds map[string]string) (dns.Provider, error)
@@ -94,9 +91,6 @@ type Server struct {
 
 	// backupMu runs one backup job at a time: restic's pruning locks the repository.
 	backupMu sync.Mutex
-
-	buildMu       sync.Mutex
-	buildWatchers map[string][]chan buildEvent // pushes following their build, by app and commit
 }
 
 // NewServer returns a Server. setupToken must be non-empty while the setup wizard has not been completed.
@@ -115,7 +109,6 @@ func NewServer(d Deps, setupToken string) *Server {
 		localServerURL:   d.LocalServerURL,
 		sshPort:          d.SSHPort,
 		sshHost:          d.SSHHost,
-		repoRoot:         d.RepoDir,
 		limiter:          auth.NewLoginLimiter(10, 15*time.Minute),
 		discord:          discord.NewClient(),
 		secrets:          d.Secrets,
@@ -127,7 +120,6 @@ func NewServer(d Deps, setupToken string) *Server {
 		nodeReported:     make(map[int64]bool),
 		imagePorts:       make(map[string]imagePorts),
 		agentUpdateTried: make(map[int64]time.Time),
-		buildWatchers:    make(map[string][]chan buildEvent),
 
 		newDNSProvider: dns.New,
 		lookupHost:     net.DefaultResolver.LookupHost,
@@ -141,7 +133,6 @@ func NewServer(d Deps, setupToken string) *Server {
 	d.Nodes.StateChanged = s.onAppStateChange
 	d.Nodes.ExternalChanged = s.onExternalChange
 	d.Nodes.NodeChanged = s.onNodeChange
-	d.Nodes.Source = s.serveSource
 	return s
 }
 

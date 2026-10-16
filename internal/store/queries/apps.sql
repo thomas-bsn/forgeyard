@@ -1,6 +1,6 @@
 -- name: CreateApp :one
-INSERT INTO apps (name, owner_id, node_id, kind, image, dockerfile, git_branch, port, env_sealed, memory_mb, volumes, gpu, created_at, updated_at)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+INSERT INTO apps (name, owner_id, node_id, kind, image, dockerfile, port, env_sealed, memory_mb, volumes, gpu, created_at, updated_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 RETURNING *;
 
 -- name: GetApp :one
@@ -28,18 +28,12 @@ SELECT * FROM apps WHERE node_id = ? ORDER BY id;
 SELECT node_id, COUNT(*) AS count FROM apps GROUP BY node_id;
 
 -- name: UpdateAppConfig :one
-UPDATE apps SET image = ?, dockerfile = ?, git_branch = ?, port = ?, env_sealed = ?, memory_mb = ?, volumes = ?, gpu = ?, generation = generation + 1, updated_at = ?
+UPDATE apps SET image = ?, dockerfile = ?, port = ?, env_sealed = ?, memory_mb = ?, volumes = ?, gpu = ?, generation = generation + 1, updated_at = ?
 WHERE id = ?
 RETURNING *;
 
 -- name: SetAppRunning :one
 UPDATE apps SET running = ?, generation = generation + ?, updated_at = ? WHERE id = ? RETURNING *;
-
--- name: DeployGitCommit :one
--- A push to the branch an app deploys: it runs that commit from now on, started afresh.
-UPDATE apps SET git_commit = ?, image = ?, port = ?, running = 1, crash_suspended = 0, generation = generation + 1, updated_at = ?
-WHERE id = ?
-RETURNING *;
 
 -- name: SetAppDNSName :exec
 UPDATE apps SET dns_name = ? WHERE id = ?;

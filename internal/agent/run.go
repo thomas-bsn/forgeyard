@@ -46,7 +46,6 @@ func Run(ctx context.Context, st *State, dc *docker.Client, logger *slog.Logger)
 	var rec *Reconciler
 	if dc != nil {
 		rec = NewReconciler(dc, logger)
-		rec.client = client
 		go rec.Run(ctx)
 	}
 

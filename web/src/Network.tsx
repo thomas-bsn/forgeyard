@@ -82,9 +82,8 @@ function Issue({ d, onFix, busy }: { d: Diagnosis; onFix?: (port: number) => voi
 async function setAppPort(appId: number, port: number) {
   const a = await api.app(appId)
   await api.updateApp(appId, {
-    image: a.dockerfile || a.gitBranch ? '' : a.image,
+    image: a.dockerfile ? '' : a.image,
     dockerfile: a.dockerfile ?? '',
-    gitBranch: a.gitBranch ?? '',
     port,
     memoryMb: a.memoryMb,
     env: a.env ?? {},

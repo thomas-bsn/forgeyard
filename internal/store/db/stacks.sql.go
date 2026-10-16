@@ -53,7 +53,7 @@ func (q *Queries) CreateStack(ctx context.Context, arg CreateStackParams) (Stack
 const createStackApp = `-- name: CreateStackApp :one
 INSERT INTO apps (name, owner_id, node_id, kind, image, port, env_sealed, memory_mb, stack_id, service, service_spec, created_at, updated_at)
 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-RETURNING id, name, owner_id, node_id, image, port, env_sealed, running, memory_mb, generation, dns_name, created_at, updated_at, public, logo_mode, logo_color, logo_updated_at, crash_suspended, moving_from, moved_at, dockerfile, kind, port_source, volumes, stack_id, service, service_spec, gpu, git_branch, git_commit
+RETURNING id, name, owner_id, node_id, image, port, env_sealed, running, memory_mb, generation, dns_name, created_at, updated_at, public, logo_mode, logo_color, logo_updated_at, crash_suspended, moving_from, moved_at, dockerfile, kind, port_source, volumes, stack_id, service, service_spec, gpu
 `
 
 type CreateStackAppParams struct {
@@ -118,8 +118,6 @@ func (q *Queries) CreateStackApp(ctx context.Context, arg CreateStackAppParams) 
 		&i.Service,
 		&i.ServiceSpec,
 		&i.Gpu,
-		&i.GitBranch,
-		&i.GitCommit,
 	)
 	return i, err
 }
@@ -155,7 +153,7 @@ func (q *Queries) GetStack(ctx context.Context, id int64) (Stack, error) {
 }
 
 const listStackApps = `-- name: ListStackApps :many
-SELECT id, name, owner_id, node_id, image, port, env_sealed, running, memory_mb, generation, dns_name, created_at, updated_at, public, logo_mode, logo_color, logo_updated_at, crash_suspended, moving_from, moved_at, dockerfile, kind, port_source, volumes, stack_id, service, service_spec, gpu, git_branch, git_commit FROM apps WHERE stack_id = ? ORDER BY id
+SELECT id, name, owner_id, node_id, image, port, env_sealed, running, memory_mb, generation, dns_name, created_at, updated_at, public, logo_mode, logo_color, logo_updated_at, crash_suspended, moving_from, moved_at, dockerfile, kind, port_source, volumes, stack_id, service, service_spec, gpu FROM apps WHERE stack_id = ? ORDER BY id
 `
 
 func (q *Queries) ListStackApps(ctx context.Context, stackID int64) ([]App, error) {
@@ -196,8 +194,6 @@ func (q *Queries) ListStackApps(ctx context.Context, stackID int64) ([]App, erro
 			&i.Service,
 			&i.ServiceSpec,
 			&i.Gpu,
-			&i.GitBranch,
-			&i.GitCommit,
 		); err != nil {
 			return nil, err
 		}
@@ -432,7 +428,7 @@ const updateStackApp = `-- name: UpdateStackApp :one
 UPDATE apps SET image = ?, port = ?, env_sealed = ?, memory_mb = ?, service_spec = ?, running = 1,
     generation = generation + 1, updated_at = ?
 WHERE id = ?
-RETURNING id, name, owner_id, node_id, image, port, env_sealed, running, memory_mb, generation, dns_name, created_at, updated_at, public, logo_mode, logo_color, logo_updated_at, crash_suspended, moving_from, moved_at, dockerfile, kind, port_source, volumes, stack_id, service, service_spec, gpu, git_branch, git_commit
+RETURNING id, name, owner_id, node_id, image, port, env_sealed, running, memory_mb, generation, dns_name, created_at, updated_at, public, logo_mode, logo_color, logo_updated_at, crash_suspended, moving_from, moved_at, dockerfile, kind, port_source, volumes, stack_id, service, service_spec, gpu
 `
 
 type UpdateStackAppParams struct {
@@ -485,8 +481,6 @@ func (q *Queries) UpdateStackApp(ctx context.Context, arg UpdateStackAppParams) 
 		&i.Service,
 		&i.ServiceSpec,
 		&i.Gpu,
-		&i.GitBranch,
-		&i.GitCommit,
 	)
 	return i, err
 }

@@ -231,8 +231,6 @@ export type AppState =
   | 'blocked'
   | 'completed'
   | 'failed'
-  // Deployed by git push, before its first push.
-  | 'awaiting-push'
 
 export type App = {
   id: number
@@ -270,9 +268,6 @@ export type App = {
   waitingFor?: string // what a service of a stack waits for to start
   ssh?: string // the command reaching it through the SSH gateway
   sftp?: string // the same for SFTP
-  gitBranch?: string // deployed by git push: the branch it deploys
-  gitCommit?: string // the commit it runs, once pushed
-  gitRemote?: string // where it is pushed
   // Paths kept across redeployments, with their size (-1 not measured yet); builtin: a sandbox's /root.
   volumes: { path: string; sizeBytes: number; builtin?: boolean }[]
   logo: { mode: 'auto' | 'custom' | 'initial'; url?: string; color?: string; autoUrl?: string }
@@ -395,8 +390,7 @@ export type AppInput = {
   volumes?: string[]
   image: string
   dockerfile?: string
-  gitBranch?: string // deployed by git push to this branch
-  port: number // 0 for an app deployed by git push: the EXPOSE of its Dockerfile, read at the first push
+  port: number
   memoryMb: number
   env: Record<string, string>
   nodeId?: number

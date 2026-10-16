@@ -215,15 +215,8 @@ func (c *Client) Build(ctx context.Context, tag, dockerfile string) error {
 	if err := tw.Close(); err != nil {
 		return err
 	}
-	return c.BuildContext(ctx, tag, &buf, nil)
-}
-
-// BuildContext builds an image from a build context, a tar archive with the Dockerfile at its root, read as
-// it comes. The base images are pulled again, as in Build. output, when set, gets the build's output as it
-// comes, in pieces that may cut lines.
-func (c *Client) BuildContext(ctx context.Context, tag string, files io.Reader, output func(string)) error {
 	q := url.Values{"t": {tag}, "pull": {"1"}, "rm": {"1"}, "forcerm": {"1"}}
-	resp, err := c.doRaw(ctx, http.MethodPost, "/build?"+q.Encode(), "application/x-tar", files)
+	resp, err := c.doRaw(ctx, http.MethodPost, "/build?"+q.Encode(), "application/x-tar", &buf)
 	if err != nil {
 		return err
 	}
@@ -240,9 +233,6 @@ func (c *Client) BuildContext(ctx context.Context, tag string, files io.Reader, 
 			return nil
 		} else if err != nil {
 			return err
-		}
-		if output != nil && msg.Stream != "" {
-			output(msg.Stream)
 		}
 		for _, line := range strings.Split(msg.Stream, "\n") {
 			if line = strings.TrimSpace(line); line != "" {

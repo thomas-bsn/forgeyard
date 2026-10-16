@@ -26,7 +26,6 @@ const stateLabels: Record<AppState, { label: string; tone: 'up' | 'warn' | 'down
   blocked: { label: 'Bloquée', tone: 'down' },
   completed: { label: 'Job terminé', tone: 'up' },
   failed: { label: 'Job en échec', tone: 'down' },
-  'awaiting-push': { label: 'En attente d’un git push', tone: '' },
 }
 
 export function appTone(a: App): 'up' | 'warn' | 'down' | '' {
@@ -746,7 +745,7 @@ function AppCard({ item: i, admin }: { item: Item; admin: boolean }) {
         <ItemLogo item={i} size={44} />
         <span className="app-card-title">
           <strong>{i.name}</strong>
-          <span className="muted">{i.external ? 'externe' : admin ? i.app!.ownerName : i.app!.gitBranch ? `git · ${i.app!.gitBranch}` : i.app!.image}</span>
+          <span className="muted">{i.external ? 'externe' : admin ? i.app!.ownerName : i.app!.image}</span>
         </span>
         <span className="app-card-state">
           <Dot tone={i.tone} />
@@ -806,8 +805,8 @@ function nodeChoiceLabel(c: NodeChoice): string {
   return `${c.name} · ${formatBytes(c.freeMemoryBytes)} libres · ${c.cpus} CPU · ${c.apps} app${c.apps > 1 ? 's' : ''}${c.recommended ? ' (recommandée)' : ''}`
 }
 
-// compose: a docker-compose.yml, deployed as a project (its form is in Projects.tsx). git: deployed by git push.
-export type Source = 'image' | 'dockerfile' | 'git' | 'compose' | 'sandbox'
+// compose: a docker-compose.yml, deployed as a project (its form is in Projects.tsx).
+export type Source = 'image' | 'dockerfile' | 'compose' | 'sandbox'
 
 // The systems a sandbox starts from in one click; any other image works too.
 const sandboxSystems = [
@@ -828,15 +827,6 @@ const sourceIcons: Record<string, ReactNode> = {
     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
       <path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8Z" />
       <path d="M14 3v5h5M9 13h6M9 17h4" />
-    </svg>
-  ),
-  // A branch.
-  git: (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <circle cx="6" cy="5" r="2" />
-      <circle cx="6" cy="19" r="2" />
-      <circle cx="18" cy="7" r="2" />
-      <path d="M6 7v10M18 9a6 6 0 0 1-6 6H8" />
     </svg>
   ),
   // Four containers.
@@ -864,7 +854,6 @@ const sourceIcons: Record<string, ReactNode> = {
 const sources: { key: Source | 'github'; label: string; soon?: boolean }[] = [
   { key: 'image', label: 'Image' },
   { key: 'dockerfile', label: 'Dockerfile' },
-  { key: 'git', label: 'Git push' },
   { key: 'compose', label: 'Docker Compose' },
   { key: 'sandbox', label: 'Sandbox' },
   { key: 'github', label: 'GitHub', soon: true },
@@ -962,13 +951,10 @@ function AppFormModal({
   onSubmit: (input: AppInput, logo?: string) => Promise<void>
   onClose: () => void
 }) {
-  const [source, setSource] = useState<Source>(
-    initialSource ?? (initial?.kind === 'sandbox' ? 'sandbox' : initial?.gitBranch ? 'git' : initial?.dockerfile ? 'dockerfile' : 'image'),
-  )
+  const [source, setSource] = useState<Source>(initialSource ?? (initial?.kind === 'sandbox' ? 'sandbox' : initial?.dockerfile ? 'dockerfile' : 'image'))
   const [name, setName] = useState(initial?.name ?? '')
-  const [image, setImage] = useState(initial?.dockerfile || initial?.gitBranch ? '' : (initial?.image ?? ''))
+  const [image, setImage] = useState(initial?.dockerfile ? '' : (initial?.image ?? ''))
   const [dockerfile, setDockerfile] = useState(initial?.dockerfile ?? '')
-  const [gitBranch, setGitBranch] = useState(initial?.gitBranch || 'main')
   const [logo, setLogo] = useState('')
   const [choices, setChoices] = useState<NodeChoice[]>([])
   const [nodeId, setNodeId] = useState(0)
@@ -983,7 +969,7 @@ function AppFormModal({
     }, () => {})
   }, [admin, initial])
   // The logo preview follows the image once typing pauses, not at every key (each name is looked up).
-  const logoImage = source === 'dockerfile' ? dockerfileBase(dockerfile) : source === 'git' ? '' : image
+  const logoImage = source === 'dockerfile' ? dockerfileBase(dockerfile) : image
   const sandbox = source === 'sandbox'
   const [settledImage, setSettledImage] = useState(logoImage)
   useEffect(() => {
@@ -992,8 +978,7 @@ function AppFormModal({
   }, [logoImage])
   const [cropping, setCropping] = useState<File | null>(null)
   const logoFile = useRef<HTMLInputElement>(null)
-  // An app deployed by git push may leave its port empty: the EXPOSE of its Dockerfile, read at the first push.
-  const [port, setPort] = useState(initial?.port === 0 ? '' : String(initial?.port ?? 80))
+  const [port, setPort] = useState(String(initial?.port ?? 80))
   // The port fills in from what the image (or the Dockerfile) declares, until it is typed by hand.
   const [portTouched, setPortTouched] = useState(!!initial)
   const [declared, setDeclared] = useState<{ image: string; ports: number[]; volumes: string[]; volumesFrom?: string; hub?: string; error?: string } | null>(null)
@@ -1056,9 +1041,8 @@ function AppFormModal({
         {
           name: initial ? undefined : name,
           kind: initial ? undefined : sandbox ? 'sandbox' : 'web',
-          image: source === 'dockerfile' || source === 'git' ? '' : image,
+          image: source === 'dockerfile' ? '' : image,
           dockerfile: source === 'dockerfile' ? dockerfile : '',
-          gitBranch: source === 'git' ? gitBranch : '',
           port: Number(port),
           memoryMb: Number(memory),
           env: vars,
@@ -1155,7 +1139,7 @@ function AppFormModal({
         <dt>Données</dt>
         <dd>{sandbox ? '/root gardé' : keptCount ? `${keptCount} volume${keptCount > 1 ? 's' : ''}` : 'non gardées'}</dd>
         <dt>Source</dt>
-        <dd>{sandbox ? 'Linux, accès SSH' : source === 'git' ? 'construite à chaque push' : source === 'dockerfile' ? 'construite' : 'téléchargée'}</dd>
+        <dd>{sandbox ? 'Linux, accès SSH' : source === 'dockerfile' ? 'construite' : 'téléchargée'}</dd>
       </dl>
       {overFree && (
         <p className="aside-note aside-warn">
@@ -1185,7 +1169,6 @@ function AppFormModal({
           if (k === 'compose') return onCompose?.()
           setSource(k)
           if (k === 'sandbox' && !image.trim()) setImage(sandboxSystems[0].image)
-          if (k === 'git' && !portTouched) setPort('')
         }}
       />
       {sandbox ? (
@@ -1205,15 +1188,6 @@ function AppFormModal({
             gardé entre les redéploiements.
           </small>
         </div>
-      ) : source === 'git' ? (
-        <label className="field">
-          <span>Branche</span>
-          <input className="mono" value={gitBranch} onChange={(e) => setGitBranch(e.target.value)} placeholder="main" required autoFocus={!!initial} />
-          <small>
-            Chaque git push sur cette branche est construit sur le node, avec le Dockerfile à la racine du dépôt, puis mis en ligne sans
-            coupure. L’adresse du dépôt s’affiche une fois l’app créée.
-          </small>
-        </label>
       ) : source === 'image' ? (
         <label className="field">
           <span>Image</span>
@@ -1246,13 +1220,10 @@ function AppFormModal({
                 setPort(e.target.value)
                 setPortTouched(true)
               }}
-              required={source !== 'git'}
-              placeholder={source === 'git' ? 'EXPOSE' : undefined}
+              required
               title="Le port sur lequel l’app écoute dans son conteneur"
             />
-            {source === 'git' && !port ? (
-              <small>Vide : lu dans l’EXPOSE du Dockerfile au premier push</small>
-            ) : suggested.length > 0 && suggested.includes(Number(port)) ? (
+            {suggested.length > 0 && suggested.includes(Number(port)) ? (
               <small>{exposed.length ? 'Du Dockerfile ✓' : 'Lu dans l’image ✓'}</small>
             ) : suggested.length > 0 ? (
               <small>
@@ -1467,23 +1438,6 @@ function AppDetail({
           </div>
         ) : null}
 
-        {app.gitBranch && (
-          <div className="ssh-box">
-            <span className="muted">{app.gitCommit ? 'Déployer une nouvelle version' : 'Pour la mettre en ligne, pousse ton code'}</span>
-            {app.gitRemote ? (
-              <>
-                <CopyField value={`git remote add forgeyard ${app.gitRemote}`} />
-                <CopyField value={`git push forgeyard ${app.gitBranch}`} />
-              </>
-            ) : (
-              <span>Passerelle SSH désactivée : git push passe par elle.</span>
-            )}
-            <small className="muted">
-              Avec une clé de <a href="#/profile/ssh">Mon profil › Clés SSH</a>. Le node construit l’image avec le Dockerfile à la racine du
-              dépôt ; le push affiche la construction jusqu’à la mise en ligne.
-            </small>
-          </div>
-        )}
         {app.kind === 'service' || app.kind === 'job' ? null : app.kind === 'sandbox' ? (
           <div className="ssh-box">
             <span className="muted">Se connecter en SSH</span>
@@ -1551,9 +1505,8 @@ function AppDetail({
                       run(async () =>
                         setFull(
                           await api.updateApp(app.id, {
-                            image: full.dockerfile || full.gitBranch ? '' : full.image,
+                            image: full.dockerfile ? '' : full.image,
                             dockerfile: full.dockerfile ?? '',
-                            gitBranch: full.gitBranch ?? '',
                             port: p,
                             memoryMb: full.memoryMb,
                             env: full.env ?? {},
@@ -1588,27 +1541,8 @@ function AppDetail({
         {app.error && <p className="error">{app.error}</p>}
 
         <dl className="kv">
-          {app.gitBranch ? (
-            <>
-              <dt>Git</dt>
-              <dd>
-                branche <span className="mono">{app.gitBranch}</span>
-                {app.gitCommit ? (
-                  <>
-                    {' · '}
-                    <span className="mono">{app.gitCommit.slice(0, 7)}</span>
-                  </>
-                ) : (
-                  <span className="muted"> · rien de poussé</span>
-                )}
-              </dd>
-            </>
-          ) : (
-            <>
-              <dt>Image</dt>
-              <dd className="mono">{app.image}</dd>
-            </>
-          )}
+          <dt>Image</dt>
+          <dd className="mono">{app.image}</dd>
           {app.kind === 'web' && (
             <>
               <dt>Port</dt>

@@ -50,8 +50,6 @@ type App struct {
 	Service        string
 	ServiceSpec    string
 	Gpu            string
-	GitBranch      string
-	GitCommit      string
 }
 
 type AppEvent struct {

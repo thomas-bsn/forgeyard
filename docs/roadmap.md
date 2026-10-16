@@ -37,7 +37,6 @@
 
 ## v0.3 : build et GitHub
 - [x] Build depuis un Dockerfile collé (sans autres fichiers)
-- [x] Git push sur la passerelle SSH : dépôt gardé par le server, construction sur le node, sortie dans le push ([apps](apps/README.md#git-push))
 - [ ] GitHub App (manifest flow), déploiement à chaque push
 - [ ] Railpack ou Nixpacks
 - [x] Déploiement sans coupure (l'ancienne version reste en ligne si la nouvelle ne démarre pas)

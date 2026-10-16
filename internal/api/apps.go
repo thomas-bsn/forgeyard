@@ -46,14 +46,11 @@ type appInput struct {
 	Kind  string `json:"kind"` // at creation: web (default) or sandbox
 	Image string `json:"image"`
 	// Dockerfile, when set, is built on the node instead of pulling Image, which Forgeyard then names.
-	Dockerfile string `json:"dockerfile"`
-	// GitBranch, when set, makes the app deployed by git push: each push to that branch is built on the
-	// node, from the Dockerfile at the root of the repository.
-	GitBranch string            `json:"gitBranch"`
-	Port      int               `json:"port"`
-	Env       map[string]string `json:"env"`
-	MemoryMB  int               `json:"memoryMb"`
-	NodeID    int64             `json:"nodeId"` // at creation: where it runs, 0 for the recommended node
+	Dockerfile string            `json:"dockerfile"`
+	Port       int               `json:"port"`
+	Env        map[string]string `json:"env"`
+	MemoryMB   int               `json:"memoryMb"`
+	NodeID     int64             `json:"nodeId"` // at creation: where it runs, 0 for the recommended node
 	// Volumes are the paths of the container kept across redeployments.
 	Volumes []string `json:"volumes"`
 	// GPU: the GPUs of its node the app may use; none without it.
@@ -70,11 +67,10 @@ func (in *appInput) validate(creating bool) string {
 	default:
 		return "type d'app inconnu : web ou sandbox"
 	}
-	in.GitBranch = strings.TrimSpace(in.GitBranch)
 	if in.Kind == kindSandbox {
 		// A sandbox serves nothing: it has no port, and starts from a plain Linux image by default.
 		in.Port = 0
-		if in.Image == "" && strings.TrimSpace(in.Dockerfile) == "" && in.GitBranch == "" {
+		if in.Image == "" && strings.TrimSpace(in.Dockerfile) == "" {
 			in.Image = defaultSandboxImage
 		}
 	}
@@ -82,12 +78,7 @@ func (in *appInput) validate(creating bool) string {
 		return "nom : 1 à 32 caractères parmi a-z, 0-9 et -, sans tiret au début ni à la fin (il devient le sous-domaine)"
 	}
 	in.Dockerfile = strings.TrimSpace(strings.ReplaceAll(in.Dockerfile, "\r\n", "\n"))
-	if in.GitBranch != "" {
-		if !validGitBranch(in.GitBranch) {
-			return "branche invalide : par exemple main"
-		}
-		in.Image, in.Dockerfile = "", ""
-	} else if in.Dockerfile != "" {
+	if in.Dockerfile != "" {
 		if len(in.Dockerfile) > 64<<10 {
 			return "Dockerfile trop long : 64 Ko au maximum"
 		}
@@ -98,8 +89,7 @@ func (in *appInput) validate(creating bool) string {
 	} else if in.Image == "" || len(in.Image) > 255 || strings.ContainsAny(in.Image, " \t\n") {
 		return "image invalide : par exemple nginx:latest ou ghcr.io/moi/mon-app:main"
 	}
-	// An app deployed by git push may leave its port to the EXPOSE of its Dockerfile, read at the first push.
-	if in.Kind == kindWeb && (in.Port < 1 || in.Port > 65535) && !(in.GitBranch != "" && in.Port == 0) {
+	if in.Kind == kindWeb && (in.Port < 1 || in.Port > 65535) {
 		return "port invalide : le port sur lequel l'app écoute dans son conteneur, par exemple 80 ou 3000"
 	}
 	if in.MemoryMB == 0 {
@@ -255,23 +245,15 @@ func (s *Server) desiredState(ctx context.Context, nodeID int64) (*agentpb.Desir
 		d.Ingress.Mode = "tunnel"
 	}
 	for _, a := range apps {
-		if a.GitBranch != "" && a.GitCommit == "" {
-			continue // nothing pushed yet: nothing to run
-		}
 		env, err := s.openEnv(a.EnvSealed)
 		if err != nil {
 			return nil, fmt.Errorf("app %s: %w", a.Name, err)
-		}
-		gitCommit := ""
-		if a.GitBranch != "" {
-			gitCommit = a.GitCommit
 		}
 		d.Apps = append(d.Apps, &agentpb.AppSpec{
 			Id: a.ID, Name: a.Name, Image: a.Image, Port: int32(a.Port), Env: env,
 			Hostname: webHost(c, a), Running: a.Running != 0,
 			MemoryBytes: a.MemoryMb << 20, Generation: a.Generation, Leaving: a.MovingFrom == nodeID,
 			Dockerfile: a.Dockerfile, Sandbox: a.Kind == kindSandbox, Volumes: appVolumes(a), Stack: stacks[a.ID], Gpu: appGpu(a).spec(),
-			GitCommit: gitCommit,
 		})
 	}
 	if node.IsLocal != 0 {
@@ -494,11 +476,8 @@ type appResponse struct {
 	Dockerfile     string            `json:"dockerfile,omitempty"` // with the env, for the app's owner
 	Kind           string            `json:"kind"`                 // web, sandbox, or service and job in a stack
 	Volumes        []appVolume       `json:"volumes"`
-	SSH            string            `json:"ssh,omitempty"`       // the command reaching it through the SSH gateway
-	SFTP           string            `json:"sftp,omitempty"`      // the same for SFTP
-	GitBranch      string            `json:"gitBranch,omitempty"` // the branch an app deployed by git push deploys
-	GitCommit      string            `json:"gitCommit,omitempty"` // the commit it runs, once pushed
-	GitRemote      string            `json:"gitRemote,omitempty"` // where it is pushed
+	SSH            string            `json:"ssh,omitempty"`  // the command reaching it through the SSH gateway
+	SFTP           string            `json:"sftp,omitempty"` // the same for SFTP
 	GPU            *gpuRequest       `json:"gpu,omitempty"`
 	GPUNames       []string          `json:"gpuNames,omitempty"` // the GPUs it may use, as its node names them
 	StackID        int64             `json:"stackId,omitempty"`
@@ -518,9 +497,6 @@ func (s *Server) toAppResponse(a db.App, ownerName string, ownerSuspended bool, 
 		resp.URL = "https://" + host
 	}
 	resp.Kind, resp.SSH, resp.SFTP = a.Kind, s.sshCommand(c, a.Name, localHost), s.sftpCommand(c, a.Name, localHost)
-	if a.GitBranch != "" {
-		resp.GitBranch, resp.GitCommit, resp.GitRemote = a.GitBranch, a.GitCommit, s.gitRemote(c, a.Name, localHost)
-	}
 	if resp.GPU = appGpu(a); resp.GPU != nil && node != nil {
 		for _, g := range gpusOf(*node).GPUs {
 			if resp.GPU.All || slices.Contains(resp.GPU.IDs, g.ID) {
@@ -538,10 +514,6 @@ func (s *Server) toAppResponse(a db.App, ownerName string, ownerSuspended bool, 
 	}
 	if _, online := s.nodes.Live(a.NodeID); !online {
 		resp.State = "node-offline"
-	}
-	if a.GitBranch != "" && a.GitCommit == "" {
-		resp.State = "awaiting-push"
-		return resp
 	}
 	if st, ok := s.nodes.AppStatus(a.ID); ok {
 		if resp.State != "node-offline" {
@@ -819,7 +791,7 @@ func (s *Server) handleCreateApp(w http.ResponseWriter, r *http.Request) {
 	}
 	now := time.Now().Unix()
 	app, err := s.store.CreateApp(ctx, db.CreateAppParams{
-		Name: in.Name, OwnerID: currentUser(r).ID, NodeID: node.ID, Kind: in.Kind, Image: in.Image, Dockerfile: in.Dockerfile, GitBranch: in.GitBranch, Port: int64(in.Port),
+		Name: in.Name, OwnerID: currentUser(r).ID, NodeID: node.ID, Kind: in.Kind, Image: in.Image, Dockerfile: in.Dockerfile, Port: int64(in.Port),
 		Volumes: string(must(json.Marshal(in.Volumes))), Gpu: sealGpu(in.GPU),
 		EnvSealed: sealed, MemoryMb: int64(in.MemoryMB), CreatedAt: now, UpdatedAt: now,
 	})
@@ -899,11 +871,8 @@ func (s *Server) handleUpdateApp(w http.ResponseWriter, r *http.Request) {
 	if in.Dockerfile != "" {
 		in.Image = builtImage(a.Name, in.Dockerfile)
 	}
-	if in.GitBranch != "" && a.GitCommit != "" {
-		in.Image = gitImage(a.Name, a.GitCommit) // the commit last pushed, until the next push
-	}
 	a, err = s.store.UpdateAppConfig(r.Context(), db.UpdateAppConfigParams{
-		Volumes: string(must(json.Marshal(in.Volumes))), Gpu: sealGpu(in.GPU), Image: in.Image, Dockerfile: in.Dockerfile, GitBranch: in.GitBranch, Port: int64(in.Port), EnvSealed: sealed, MemoryMb: int64(in.MemoryMB),
+		Volumes: string(must(json.Marshal(in.Volumes))), Gpu: sealGpu(in.GPU), Image: in.Image, Dockerfile: in.Dockerfile, Port: int64(in.Port), EnvSealed: sealed, MemoryMb: int64(in.MemoryMB),
 		UpdatedAt: time.Now().Unix(), ID: a.ID,
 	})
 	if err != nil {
@@ -913,9 +882,6 @@ func (s *Server) handleUpdateApp(w http.ResponseWriter, r *http.Request) {
 	source := a.Image
 	if a.Dockerfile != "" {
 		source = "Dockerfile"
-	}
-	if a.GitBranch != "" {
-		source = "git push, branche " + a.GitBranch
 	}
 	s.appEvent(a.ID, eventInfo, "Configuration modifiée par "+currentUser(r).DisplayName+" : "+source)
 	s.logger.Info("app updated", "app", a.Name, "image", a.Image, "by", currentUser(r).DisplayName)
@@ -1018,7 +984,6 @@ func (s *Server) removeApp(ctx context.Context, a db.App) error {
 		s.push(ctx, a.MovingFrom) // it still ran there too
 	}
 	s.nodes.DropAppData(a.ID)
-	s.dropRepo(a.ID)
 	return nil
 }
 
