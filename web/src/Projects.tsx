@@ -97,11 +97,6 @@ export function ProjectCard({ project: p, admin }: { project: Stack; admin: bool
   )
 }
 
-function randomSecret(): string {
-  const bytes = crypto.getRandomValues(new Uint8Array(18))
-  return btoa(String.fromCharCode(...bytes)).replace(/[+/=]/g, '')
-}
-
 /** The variables a compose file uses: ${VAR}, ${VAR:-…} and $VAR, not $$. */
 function usedVariables(compose: string): string[] {
   const out = new Set<string>()
@@ -126,11 +121,8 @@ export function ProjectFormModal({
   onSource?: (s: Source) => void
 }) {
   const [name, setName] = useState(stack?.name ?? '')
-  const [compose, setCompose] = useState(stack?.compose ?? composeExample)
-  // The example's password is made up here, so that it is valid as it comes.
-  const [env, setEnv] = useState<{ key: string; value: string }[]>(
-    stack ? Object.entries(stack.env ?? {}).map(([key, value]) => ({ key, value })) : [{ key: 'DB_PASSWORD', value: randomSecret() }],
-  )
+  const [compose, setCompose] = useState(stack?.compose ?? '')
+  const [env, setEnv] = useState<{ key: string; value: string }[]>(Object.entries(stack?.env ?? {}).map(([key, value]) => ({ key, value })))
   // A private registry the images come from; the saved password never comes back, so it is kept unless retyped.
   const [registry, setRegistry] = useState({ server: stack?.registry?.server ?? '', username: stack?.registry?.username ?? '', password: '' })
   const [registryTouched, setRegistryTouched] = useState(false)
@@ -161,6 +153,11 @@ export function ProjectFormModal({
   const varsKey = JSON.stringify(vars)
   // Checked as it is typed, once typing pauses.
   useEffect(() => {
+    if (!compose.trim()) {
+      setPreview(null)
+      setErrors([])
+      return
+    }
     const t = setTimeout(() => {
       api.validateStack({ name: stack?.name ?? (name.trim() || 'projet'), compose, env: vars }).then(
         (p) => {
@@ -280,6 +277,8 @@ export function ProjectFormModal({
           onChange={(e) => setCompose(e.target.value)}
           spellCheck={false}
           rows={20}
+          required
+          placeholder={composeExample}
           aria-invalid={errors.length > 0}
         />
         <small>

@@ -5019,6 +5019,11 @@ a.link-btn {
   font-size: 0.8rem;
 }
 
+.compose-editor::placeholder {
+  color: var(--muted);
+  opacity: 0.5;
+}
+
 .compose-editor {
   min-height: 320px;
   tab-size: 2;
