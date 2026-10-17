@@ -11,6 +11,7 @@
   --up: #16a34a;
   --down: #dc2626;
   --warn: #d97706;
+  --stop: #9aa1ae;
   --discord: #5865f2;
   --shadow: 0 1px 2px rgb(0 0 0 / 0.05), 0 4px 12px rgb(0 0 0 / 0.04);
   color-scheme: light;
@@ -29,6 +30,7 @@
     --up: #22c55e;
     --down: #ef4444;
     --warn: #f59e0b;
+    --stop: #6b7280;
     --shadow: 0 1px 2px rgb(0 0 0 / 0.3);
     color-scheme: dark;
   }
@@ -46,6 +48,7 @@
   --up: #22c55e;
   --down: #ef4444;
   --warn: #f59e0b;
+  --stop: #6b7280;
   --shadow: 0 1px 2px rgb(0 0 0 / 0.3);
   color-scheme: dark;
 }
@@ -1167,6 +1170,50 @@ button.row:hover {
   margin-left: 4px;
   color: var(--muted);
   font-variant-numeric: tabular-nums;
+}
+
+/* State filters: a dot and a pill in the colour of each state. */
+.state-dot {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  margin-right: 6px;
+  border-radius: 50%;
+  background: var(--stop);
+}
+
+.state-dot.up {
+  background: var(--up);
+}
+
+.state-dot.problem {
+  background: var(--down);
+}
+
+.filter-pill {
+  margin-left: 4px;
+  padding: 0 7px;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  background: color-mix(in srgb, var(--stop) 20%, transparent);
+  color: var(--muted);
+}
+
+.filter-pill.all {
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  color: var(--accent);
+}
+
+.filter-pill.up {
+  background: color-mix(in srgb, var(--up) 16%, transparent);
+  color: var(--up);
+}
+
+.filter-pill.problem {
+  background: color-mix(in srgb, var(--down) 16%, transparent);
+  color: var(--down);
 }
 
 .node-section {
@@ -2689,12 +2736,39 @@ a.link-btn {
 }
 
 .problem-count {
-  padding: 0 7px;
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--down) 15%, var(--card));
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   color: var(--down);
   font-size: 0.75rem;
   font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+/* A dot that breathes while apps are in error. */
+.problem-count::before {
+  content: '';
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--down);
+  animation: problem-pulse 1.8s ease-out infinite;
+}
+
+@keyframes problem-pulse {
+  0% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--down) 55%, transparent);
+  }
+  70%,
+  100% {
+    box-shadow: 0 0 0 7px transparent;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .problem-count::before {
+    animation: none;
+  }
 }
 
 .node-nav-meters {

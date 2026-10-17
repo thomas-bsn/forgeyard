@@ -323,7 +323,8 @@ function AppList({
           ] as const
         ).map(([value, label, n]) => (
           <button key={value} type="button" aria-pressed={stateFilter === value} className={stateFilter === value ? 'on' : ''} onClick={() => setStateFilter(value)}>
-            {label} <span className={`filter-count ${value === 'problem' && n > 0 ? 'text-down' : ''}`}>{n}</span>
+            {value !== 'all' && <span className={`state-dot ${value}`} />}
+            {label} <span className={`filter-pill ${value}`}>{n}</span>
           </button>
         ))}
       </div>
