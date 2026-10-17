@@ -14,7 +14,7 @@ import {
   type StackVolume,
 } from './api'
 import { appTone, Dot, Logs, SourcePick, stateText, type Source } from './Apps'
-import { AppLogo, formatBytes, Modal, since, Switch } from './ui'
+import { AppLogo, formatBytes, Modal, since, Switch, useRedeploy } from './ui'
 
 export const projectStates: Record<StackState, { label: string; tone: 'up' | 'warn' | 'down' | '' }> = {
   pending: { label: 'En attente', tone: '' },
@@ -399,6 +399,7 @@ export function ProjectDetail({ stack, onChange, go }: { stack: Stack; onChange:
 
   const st = projectStates[stack.state] ?? { label: stack.state, tone: '' }
   const running = stack.services.some((s) => s.running)
+  const [redeploying, startRedeploy] = useRedeploy(stack.state === 'deploying')
   const failedJob = stack.services.find((s) => s.state === 'failed')
 
   return (
@@ -456,12 +457,15 @@ export function ProjectDetail({ stack, onChange, go }: { stack: Stack; onChange:
               </button>
               <button
                 type="button"
-                className="btn"
-                disabled={busy}
+                className={`btn ${redeploying ? 'btn-busy' : ''}`}
+                disabled={busy || redeploying}
                 title="Recrée tous les services (images téléchargées à nouveau) et relance les jobs"
-                onClick={() => run(() => api.stackAction(stack.id, 'redeploy'))}
+                onClick={() => {
+                  startRedeploy()
+                  run(() => api.stackAction(stack.id, 'redeploy'))
+                }}
               >
-                Redéployer
+                {redeploying ? 'Redéploiement…' : 'Redéployer'}
               </button>
             </>
           ) : (

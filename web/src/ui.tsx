@@ -581,3 +581,30 @@ export function since(unix?: number): string {
   if (min < 48 * 60) return `il y a ${Math.round(min / 60)} h`
   return new Date(unix * 1000).toLocaleDateString('fr-FR')
 }
+
+/**
+ * A redeploy answers at once, long before the new version runs: the button stays busy from the click until
+ * the deployment has been seen (active) and is over, or for 15 s when it was too quick to be seen.
+ */
+export function useRedeploy(active: boolean): [busy: boolean, start: () => void] {
+  const [pending, setPending] = useState(false)
+  const seen = useRef(false)
+  useEffect(() => {
+    if (!pending) return
+    if (active) {
+      seen.current = true
+      return
+    }
+    if (seen.current) {
+      seen.current = false
+      setPending(false)
+      return
+    }
+    const t = setTimeout(() => setPending(false), 15000)
+    return () => clearTimeout(t)
+  }, [pending, active])
+  return [pending || active, () => {
+    seen.current = false
+    setPending(true)
+  }]
+}

@@ -1,6 +1,6 @@
 import { lazy, Suspense, useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react'
 import { api, errorMessage, type App, type AppEvent, type AppInput, type AppState, type AppUsage, type Container, type GpuRequest, type Node, type NodeChoice, type NodeGpus, type Stack } from './api'
-import { AppLogo, AreaChart, CopyField, formatBytes, LOGO_COLORS, Modal, since, Switch, upFor } from './ui'
+import { AppLogo, AreaChart, CopyField, formatBytes, LOGO_COLORS, Modal, since, Switch, upFor, useRedeploy } from './ui'
 import { ImageCropper } from './Cropper'
 import { ProjectCard, ProjectDetail, ProjectFormModal, ProjectLogo, projectStates } from './Projects'
 import { AppNetworkTab } from './Network'
@@ -1422,6 +1422,7 @@ function AppDetail({
   }
 
   const tone = appTone(app)
+  const [redeploying, startRedeploy] = useRedeploy(['pending', 'pulling', 'building', 'creating', 'deploying'].includes(app.state))
 
   return (
     <div className="detail">
@@ -1638,8 +1639,16 @@ function AppDetail({
               <button type="button" className="btn" disabled={busy} onClick={() => run(() => api.appAction(app.id, 'stop'))}>
                 Arrêter
               </button>
-              <button type="button" className="btn" disabled={busy || app.suspended} onClick={() => run(() => api.appAction(app.id, 'redeploy'))}>
-                Redéployer
+              <button
+                type="button"
+                className={`btn ${redeploying ? 'btn-busy' : ''}`}
+                disabled={busy || redeploying || app.suspended}
+                onClick={() => {
+                  startRedeploy()
+                  run(() => api.appAction(app.id, 'redeploy'))
+                }}
+              >
+                {redeploying ? 'Redéploiement…' : 'Redéployer'}
               </button>
             </>
           ) : (
