@@ -221,10 +221,10 @@ export function ProjectFormModal({
       ) : (
         <p className="muted aside-note">Les services apparaissent ici, dans leur ordre de démarrage.</p>
       )}
-      {preview && preview.volumes.length > 0 && (
+      {!!preview?.volumes?.length && (
         <dl className="aside-facts">
           <dt>Volumes</dt>
-          <dd className="mono">{preview.volumes.join(', ')}</dd>
+          <dd className="mono">{preview?.volumes.join(', ')}</dd>
         </dl>
       )}
       {choices.length > 1 && (

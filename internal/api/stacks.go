@@ -543,7 +543,9 @@ func (s *Server) handleValidateStack(w http.ResponseWriter, r *http.Request) {
 		out.Errors = compose.Errors{}
 	}
 	if st != nil {
-		out.Volumes = st.Volumes
+		if st.Volumes != nil {
+			out.Volumes = st.Volumes
+		}
 		for _, p := range planServices(in.Name, st) {
 			var svc compose.Service
 			json.Unmarshal([]byte(p.Spec), &svc)
