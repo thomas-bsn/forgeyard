@@ -273,15 +273,17 @@ function AppList({
     </button>
   )
 
-  const filters = (
-    <div className="filters">
-      <label className="search">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
-          <circle cx="11" cy="11" r="7" />
-          <path d="m20 20-3.5-3.5" />
-        </svg>
-        <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Rechercher" aria-label="Rechercher une app" />
-      </label>
+  const searchBox = (
+    <label className="search">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
+        <circle cx="11" cy="11" r="7" />
+        <path d="m20 20-3.5-3.5" />
+      </svg>
+      <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Rechercher" aria-label="Rechercher une app" />
+    </label>
+  )
+  const typeFilters = (
+    <>
       {admin && inNode.some((i) => i.external) && (
         <div className="segmented segmented-small" role="group" aria-label="Type">
           {(
@@ -313,21 +315,31 @@ function AppList({
           ))}
         </div>
       )}
-      <div className="segmented segmented-small" role="group" aria-label="État">
-        {(
-          [
-            ['all', 'Toutes', byKind.length],
-            ['up', 'En ligne', count('up')],
-            ['stopped', 'Arrêtées', count('stopped')],
-            ['problem', 'En erreur', count('problem')],
-          ] as const
-        ).map(([value, label, n]) => (
-          <button key={value} type="button" aria-pressed={stateFilter === value} className={stateFilter === value ? 'on' : ''} onClick={() => setStateFilter(value)}>
-            {value !== 'all' && <span className={`state-dot ${value}`} />}
-            {label} <span className={`filter-pill ${value}`}>{n}</span>
-          </button>
-        ))}
-      </div>
+    </>
+  )
+  const stateFilters = (
+    <div className="segmented segmented-small" role="group" aria-label="État">
+      {(
+        [
+          ['all', 'Toutes', byKind.length],
+          ['up', 'En ligne', count('up')],
+          ['stopped', 'Arrêtées', count('stopped')],
+          ['problem', 'En erreur', count('problem')],
+        ] as const
+      ).map(([value, label, n]) => (
+        <button key={value} type="button" aria-pressed={stateFilter === value} className={stateFilter === value ? 'on' : ''} onClick={() => setStateFilter(value)}>
+          {value !== 'all' && <span className={`state-dot ${value}`} />}
+          {label} <span className={`filter-pill ${value}`}>{n}</span>
+        </button>
+      ))}
+    </div>
+  )
+
+  const filters = (
+    <div className="filters">
+      {searchBox}
+      {typeFilters}
+      {stateFilters}
     </div>
   )
 
@@ -493,36 +505,56 @@ function AppList({
     )
   }
 
-  // "sidebar", the default: nodes on the left, the picked node's apps on the right.
+  // "sidebar", the default: nodes on the left with the health of each, the picked node's apps on the right.
+  const stateTiles = (
+    <div className="state-tiles" role="group" aria-label="État">
+      {(
+        [
+          ['all', 'Toutes', byKind.length],
+          ['up', 'En ligne', count('up')],
+          ['stopped', 'Arrêtées', count('stopped')],
+          ['problem', 'En erreur', count('problem')],
+        ] as const
+      ).map(([value, label, n]) => (
+        <button key={value} type="button" aria-pressed={stateFilter === value} className={`state-tile ${value === 'problem' && n > 0 ? 'alert' : ''}`} onClick={() => setStateFilter(value)}>
+          <strong>{n}</strong>
+          <span>
+            {value !== 'all' && <span className={`state-dot ${value}`} />}
+            {label}
+          </span>
+        </button>
+      ))}
+    </div>
+  )
+  const nodeNavButton = (n: Node | undefined) => {
+    const list = n ? all.filter((i) => nodeOf(i) === n.id) : all
+    const bad = problems(n?.id)
+    const m = n?.metrics
+    return (
+      <button key={n?.id ?? 'all'} type="button" aria-current={(n?.id ?? undefined) === node?.id ? 'page' : undefined} onClick={() => setPicked(n ? String(n.id) : 'all')}>
+        <span className="node-nav-head">
+          {n ? nodeDot(n) : <Dot tone="" />}
+          <span className="node-nav-name">{n ? n.name : 'Tous les nodes'}</span>
+          {bad > 0 && <span className="problem-count">{bad}</span>}
+          <span className="muted">{list.length}</span>
+        </span>
+        {n && m && n.state !== 'offline' && (
+          <span className="node-nav-meters">
+            <MiniMeter label="CPU" text={`${m.cpuPercent.toFixed(0)} %`} pct={m.cpuPercent} />
+            <MiniMeter label="RAM" text={`${((m.memoryUsedBytes / (n.memoryBytes || 1)) * 100).toFixed(0)} %`} pct={(m.memoryUsedBytes / (n.memoryBytes || 1)) * 100} />
+          </span>
+        )}
+        {n?.state === 'offline' && <span className="muted node-nav-offline">hors ligne</span>}
+      </button>
+    )
+  }
   return (
     <div className={admin ? 'apps-split' : 'section'}>
       {admin && (
         <nav className="node-nav" aria-label="Nodes">
           <span className="node-nav-title">Nodes</span>
-          <button type="button" aria-current={!node ? 'page' : undefined} onClick={() => setPicked('all')}>
-            <Dot tone="" />
-            <span className="node-nav-name">Tous</span>
-            {problems() > 0 && <span className="problem-count">{problems()}</span>}
-            <span className="muted">{all.length}</span>
-          </button>
-          {choices.map((n) => (
-            <button key={n.id} type="button" aria-current={node?.id === n.id ? 'page' : undefined} onClick={() => setPicked(String(n.id))}>
-              {nodeDot(n)}
-              <span className="node-nav-name">{n.name}</span>
-              {problems(n.id) > 0 && <span className="problem-count">{problems(n.id)}</span>}
-              <span className="muted">{all.filter((i) => nodeOf(i) === n.id).length}</span>
-            </button>
-          ))}
-          {node?.metrics && (
-            <div className="node-nav-meters">
-              <MiniMeter label="CPU" text={`${node.metrics.cpuPercent.toFixed(0)} % de ${node.cpus} cœurs`} pct={node.metrics.cpuPercent} />
-              <MiniMeter
-                label="RAM"
-                text={`${formatBytes(node.metrics.memoryUsedBytes)} / ${formatBytes(node.memoryBytes)}`}
-                pct={(node.metrics.memoryUsedBytes / (node.memoryBytes || 1)) * 100}
-              />
-            </div>
-          )}
+          {nodeNavButton(undefined)}
+          {choices.map((n) => nodeNavButton(n))}
         </nav>
       )}
       <main className="apps-main">
@@ -530,9 +562,11 @@ function AppList({
           <h1 className="toolbar-title">
             {title} <span className="muted">{countText(inNode)}</span>
           </h1>
+          {searchBox}
+          {typeFilters}
           {newApp}
         </div>
-        {filters}
+        {stateTiles}
         {error && <p className="error">{error}</p>}
         {empty}
         {shown.length > 0 && (
@@ -2259,6 +2293,9 @@ export function Logs({ url }: { url: string }) {
           <span className="live-status">En pause</span>
         )}
         <span className="spacer" />
+        <button type="button" className="btn btn-ghost btn-small" disabled={lines.length === 0} onClick={() => setLines([])}>
+          Effacer
+        </button>
         <label className="toggle">
           <input type="checkbox" checked={live} onChange={(e) => setLive(e.target.checked)} />
           En direct

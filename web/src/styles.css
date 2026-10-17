@@ -1618,7 +1618,14 @@ button.row:hover {
 
 .logs-panel .logs {
   height: 480px;
+  min-height: 160px;
   border-radius: 0;
+  /* Dragged by the corner; the height lasts until the page is reloaded. */
+  resize: vertical;
+}
+
+.logs-head .btn-ghost {
+  color: #b4bac6;
 }
 
 .log-muted {
@@ -2698,9 +2705,8 @@ a.link-btn {
 }
 
 .node-nav button {
-  display: flex;
-  align-items: center;
-  gap: 10px;
+  display: grid;
+  gap: 8px;
   padding: 10px 12px;
   border: 1px solid transparent;
   border-radius: 12px;
@@ -2720,6 +2726,17 @@ a.link-btn {
   border-color: var(--border);
   color: var(--accent);
   font-weight: 600;
+}
+
+.node-nav-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.node-nav-offline {
+  font-size: 0.78rem;
 }
 
 .node-nav-name {
@@ -2773,13 +2790,69 @@ a.link-btn {
 
 .node-nav-meters {
   display: grid;
+  gap: 6px;
+  font-size: 0.75rem;
+  font-weight: 400;
+  color: var(--muted);
+}
+
+.node-nav .mini-meter .meter-track {
+  background: var(--border);
+}
+
+.node-nav .meter-label {
+  font-size: 0.75rem;
+}
+
+/* The state filters as counters, readable from afar. */
+.state-tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
   gap: 8px;
-  margin-top: 10px;
-  padding: 12px;
+}
+
+.state-tile {
+  display: grid;
+  gap: 2px;
+  padding: 10px 14px;
   border-radius: 12px;
   border: 1px solid var(--border);
   background: var(--card);
-  font-size: 0.78rem;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.state-tile:hover {
+  background: var(--card-hover);
+}
+
+.state-tile strong {
+  font-size: 1.5rem;
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+}
+
+.state-tile > span {
+  display: inline-flex;
+  align-items: center;
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+.state-tile[aria-pressed='true'] {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 10%, var(--card));
+}
+
+.state-tile.alert strong {
+  color: var(--down);
+}
+
+.state-tile.alert {
+  border-color: color-mix(in srgb, var(--down) 45%, var(--border));
+  background: color-mix(in srgb, var(--down) 6%, var(--card));
 }
 
 .apps-main {
@@ -2798,6 +2871,9 @@ a.link-btn {
   .node-nav-title,
   .node-nav-meters {
     display: none;
+  }
+  .node-nav button {
+    display: flex;
   }
 }
 
