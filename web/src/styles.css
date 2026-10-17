@@ -854,6 +854,57 @@ button.row:hover {
   font: 0.9rem ui-monospace, SFMono-Regular, Menlo, monospace;
 }
 
+.env-line {
+  display: grid;
+  grid-template-columns: minmax(90px, 1fr) minmax(0, 2fr) auto;
+  gap: 8px;
+  align-items: start;
+  padding: 3px;
+  border-radius: 12px;
+}
+
+.env-line:focus-within {
+  background: var(--card-hover);
+}
+
+.env-line input,
+.env-line textarea {
+  width: 100%;
+  min-width: 0;
+  padding: 8px 10px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text);
+  font: 0.9rem ui-monospace, SFMono-Regular, Menlo, monospace;
+  text-overflow: ellipsis;
+}
+
+.env-line textarea {
+  display: block;
+  resize: none;
+  overflow: hidden;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+/* The tools show on hover and while the line is edited; on a touch screen they stay. */
+.env-tools {
+  display: flex;
+  opacity: 0;
+}
+
+.env-line:hover .env-tools,
+.env-line:focus-within .env-tools {
+  opacity: 1;
+}
+
+@media (hover: none) {
+  .env-tools {
+    opacity: 1;
+  }
+}
+
 .logs {
   margin: 0;
   height: 360px;

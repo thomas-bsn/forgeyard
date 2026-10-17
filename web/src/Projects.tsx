@@ -62,6 +62,84 @@ export function ProjectLogo({ project, size }: { project: Stack; size: number })
   )
 }
 
+type EnvVar = { key: string; value: string; reveal?: boolean }
+
+const secretName = /SECRET|PASSWORD|TOKEN|KEY|DATABASE_URL/i
+
+/**
+ * A variable on one line, which opens to the whole value while it is edited. The value of a secret is hidden
+ * until the eye is clicked or the line is edited.
+ */
+function EnvLine({ v, onChange, onRemove }: { v: EnvVar; onChange: (patch: Partial<EnvVar>) => void; onRemove: () => void }) {
+  const [editing, setEditing] = useState(false)
+  const [copied, setCopied] = useState(false)
+  const area = useRef<HTMLTextAreaElement>(null)
+  const masked = secretName.test(v.key) && v.value !== '' && !v.reveal
+
+  useEffect(() => {
+    const t = area.current
+    if (!editing || !t) return
+    t.style.height = 'auto'
+    t.style.height = `${t.scrollHeight + 2}px`
+  }, [editing, v.value])
+
+  return (
+    <div className="env-line">
+      <input aria-label="Nom de la variable" value={v.key} onChange={(e) => onChange({ key: e.target.value })} placeholder="NOM" spellCheck={false} />
+      {editing ? (
+        <textarea
+          ref={area}
+          rows={1}
+          aria-label="Valeur"
+          value={v.value}
+          autoFocus
+          spellCheck={false}
+          onFocus={(e) => e.currentTarget.setSelectionRange(v.value.length, v.value.length)}
+          onBlur={() => setEditing(false)}
+          onKeyDown={(e) => e.key === 'Enter' && e.preventDefault()}
+          onChange={(e) => onChange({ value: e.target.value.replace(/\n/g, '') })}
+          placeholder="valeur"
+        />
+      ) : (
+        <input
+          type={masked ? 'password' : 'text'}
+          aria-label="Valeur"
+          value={v.value}
+          readOnly
+          onFocus={() => setEditing(true)}
+          placeholder="valeur"
+        />
+      )}
+      <span className="env-tools">
+        {v.value !== '' && (
+          <button
+            type="button"
+            className="btn btn-ghost"
+            aria-label="Copier la valeur"
+            title={copied ? 'Copié' : 'Copier la valeur'}
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={() => {
+              navigator.clipboard?.writeText(v.value)
+              setCopied(true)
+              setTimeout(() => setCopied(false), 1500)
+            }}
+          >
+            {copied ? '✓' : '⧉'}
+          </button>
+        )}
+        {secretName.test(v.key) && v.value !== '' && (
+          <button type="button" className="btn btn-ghost" aria-label={v.reveal ? 'Masquer la valeur' : 'Afficher la valeur'} title={v.reveal ? 'Masquer' : 'Afficher'} onMouseDown={(e) => e.preventDefault()} onClick={() => onChange({ reveal: !v.reveal })}>
+            {v.reveal ? '🙈' : '👁'}
+          </button>
+        )}
+        <button type="button" className="btn btn-ghost" onClick={onRemove} aria-label="Retirer la variable">
+          ✕
+        </button>
+      </span>
+    </div>
+  )
+}
+
 /** A project in the app list: its state, address, and one line per app. */
 export function ProjectCard({ project: p, admin }: { project: Stack; admin: boolean }) {
   const st = projectStates[p.state] ?? { label: p.state, tone: '' }
@@ -129,7 +207,7 @@ export function ProjectFormModal({
 }) {
   const [name, setName] = useState(stack?.name ?? '')
   const [compose, setCompose] = useState(stack?.compose ?? '')
-  const [env, setEnv] = useState<{ key: string; value: string }[]>(Object.entries(stack?.env ?? {}).map(([key, value]) => ({ key, value })))
+  const [env, setEnv] = useState<EnvVar[]>(Object.entries(stack?.env ?? {}).map(([key, value]) => ({ key, value })))
   // A private registry the images come from; the saved password never comes back, so it is kept unless retyped.
   const [registry, setRegistry] = useState({ server: stack?.registry?.server ?? '', username: stack?.registry?.username ?? '', password: '' })
   const [registryTouched, setRegistryTouched] = useState(false)
@@ -313,13 +391,7 @@ export function ProjectFormModal({
         </span>
         <div className="env-list">
           {env.map((v, i) => (
-            <div className="env-row" key={i}>
-              <input aria-label="Nom de la variable" value={v.key} onChange={(e) => setEnv(env.map((x, j) => (j === i ? { ...x, key: e.target.value } : x)))} placeholder="NOM" />
-              <input aria-label="Valeur" value={v.value} onChange={(e) => setEnv(env.map((x, j) => (j === i ? { ...x, value: e.target.value } : x)))} placeholder="valeur" />
-              <button type="button" className="btn btn-ghost" onClick={() => setEnv(env.filter((_, j) => j !== i))} aria-label="Retirer la variable">
-                ✕
-              </button>
-            </div>
+            <EnvLine key={i} v={v} onChange={(patch) => setEnv(env.map((x, j) => (j === i ? { ...x, ...patch } : x)))} onRemove={() => setEnv(env.filter((_, j) => j !== i))} />
           ))}
           {missing.length > 0 && (
             <span className="chips-row">
