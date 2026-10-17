@@ -198,6 +198,15 @@ type Stack struct {
 	CreatedAt       int64
 	UpdatedAt       int64
 	RegistrySealed  string
+	LogoMode        string
+	LogoColor       string
+	LogoUpdatedAt   int64
+}
+
+type StackLogo struct {
+	StackID     int64
+	ContentType string
+	Data        []byte
 }
 
 type SupportMessage struct {

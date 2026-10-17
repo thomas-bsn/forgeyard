@@ -385,6 +385,7 @@ type stackResponse struct {
 	Compose   string            `json:"compose,omitempty"` // with the variables, for its owner
 	Env       map[string]string `json:"env,omitempty"`
 	Registry  *registryInfo     `json:"registry,omitempty"`
+	Logo      stackLogo         `json:"logo"`
 }
 
 // stackState sums up a stack from its services: blocked when a job failed or a service cannot start,
@@ -437,7 +438,7 @@ func (s *Server) stackFromPath(w http.ResponseWriter, r *http.Request) (db.Stack
 // describeStack builds a stack's response; withSource adds its compose file and variables.
 func (s *Server) describeStack(ctx context.Context, r *http.Request, st db.Stack, ownerName, nodeName string, withSource bool) (stackResponse, error) {
 	resp := stackResponse{ID: st.ID, Name: st.Name, OwnerID: st.OwnerID, OwnerName: ownerName, NodeID: st.NodeID, NodeName: nodeName,
-		UpdatedAt: st.UpdatedAt, Services: []appResponse{}, Volumes: []stackVolumeInfo{}}
+		UpdatedAt: st.UpdatedAt, Services: []appResponse{}, Volumes: []stackVolumeInfo{}, Logo: toStackLogo(st)}
 	c, err := s.loadDNSConfig(ctx)
 	if err != nil {
 		return resp, err

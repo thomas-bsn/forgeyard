@@ -323,6 +323,7 @@ export type Stack = {
   compose?: string
   env?: Record<string, string>
   registry?: { server: string; username: string; passwordSet: boolean }
+  logo: { mode: 'auto' | 'custom' | 'initial'; url?: string; color?: string }
 }
 
 /** The login of a private registry; without a password the saved one is kept, without a server the login is removed. */
@@ -561,6 +562,8 @@ export const api = {
   member: (id: number) => request<MemberProfile>('GET', `/api/members/${id}`),
   setAppLogo: (id: number, body: { mode: 'auto' | 'custom' | 'initial'; color?: string; image?: string }) =>
     request<App>('PUT', `/api/apps/${id}/logo`, body),
+  setStackLogo: (id: number, body: { mode: 'auto' | 'custom' | 'initial'; color?: string; image?: string }) =>
+    request<Stack>('PUT', `/api/stacks/${id}/logo`, body),
   nodeChoices: () => request<NodeChoice[]>('GET', '/api/admin/nodes/choices'),
   moveApp: (id: number, nodeId: number, leaveData = false) => request<App>('POST', `/api/admin/apps/${id}/move`, { nodeId, leaveData }),
   setAppPublic: (id: number, value: boolean) => request<App>('PUT', `/api/apps/${id}/public`, { public: value }),

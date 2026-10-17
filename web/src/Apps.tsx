@@ -1743,7 +1743,17 @@ function AppDetail({
       )}
       {choosingLogo && (
         <LogoChooser
-          app={app}
+          name={app.name}
+          logo={app.logo}
+          autoPreview={<AppLogo url={app.logo.autoUrl} name={app.name} size={48} />}
+          autoText={
+            app.logo.autoUrl ? (
+              <>Le logo de l’image sur Docker Hub, ou celui de son éditeur. Sans logo trouvé, l’initiale.</>
+            ) : (
+              <>Cette image ne vient pas de Docker Hub : l’initiale est utilisée.</>
+            )
+          }
+          save={(body) => api.setAppLogo(app.id, body)}
           onClose={() => setChoosingLogo(false)}
           onSaved={() => {
             setChoosingLogo(false)
@@ -2324,21 +2334,37 @@ export function Logs({ url }: { url: string }) {
 }
 
 /** Where an app's logo comes from: Docker Hub, an uploaded picture, or its initial on a colour. */
-function LogoChooser({ app, onClose, onSaved }: { app: App; onClose: () => void; onSaved: () => void }) {
-  const [mode, setMode] = useState(app.logo.mode)
-  const [color, setColor] = useState(app.logo.color ?? '')
+export function LogoChooser({
+  name,
+  logo,
+  autoPreview,
+  autoText,
+  save: saveLogo,
+  onClose,
+  onSaved,
+}: {
+  name: string
+  logo: App['logo']
+  autoPreview: ReactNode
+  autoText: ReactNode
+  save: (body: { mode: 'auto' | 'custom' | 'initial'; color?: string; image?: string }) => Promise<unknown>
+  onClose: () => void
+  onSaved: () => void
+}) {
+  const [mode, setMode] = useState(logo.mode)
+  const [color, setColor] = useState(logo.color ?? '')
   const [picture, setPicture] = useState('') // a newly framed picture, as a data URL
   const [cropping, setCropping] = useState<File | null>(null)
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
   const file = useRef<HTMLInputElement>(null)
-  const hasPicture = picture !== '' || (app.logo.mode === 'custom' && !!app.logo.url)
+  const hasPicture = picture !== '' || (logo.mode === 'custom' && !!logo.url)
 
   async function save() {
     setBusy(true)
     setError('')
     try {
-      await api.setAppLogo(app.id, { mode, color: mode === 'initial' ? color : '', image: mode === 'custom' && picture ? picture : undefined })
+      await saveLogo({ mode, color: mode === 'initial' ? color : '', image: mode === 'custom' && picture ? picture : undefined })
       onSaved()
     } catch (err) {
       setError(errorMessage(err))
@@ -2361,7 +2387,7 @@ function LogoChooser({ app, onClose, onSaved }: { app: App; onClose: () => void;
   return (
     <>
       <Modal
-        title={`Logo de « ${app.name} »`}
+        title={`Logo de « ${name} »`}
         onClose={onClose}
         footer={
           <>
@@ -2376,16 +2402,16 @@ function LogoChooser({ app, onClose, onSaved }: { app: App; onClose: () => void;
       >
         {option(
           'auto',
-          <AppLogo url={app.logo.autoUrl} name={app.name} size={48} />,
+          autoPreview,
           'Automatique',
-          app.logo.autoUrl ? <>Le logo de l’image sur Docker Hub, ou celui de son éditeur. Sans logo trouvé, l’initiale.</> : <>Cette image ne vient pas de Docker Hub : l’initiale est utilisée.</>,
+          autoText,
         )}
         {option(
           'custom',
           picture ? (
             <img className="app-logo app-logo-preview" src={picture} alt="" />
-          ) : app.logo.mode === 'custom' && app.logo.url ? (
-            <AppLogo url={app.logo.url} name={app.name} size={48} />
+          ) : logo.mode === 'custom' && logo.url ? (
+            <AppLogo url={logo.url} name={name} size={48} />
           ) : (
             <span className="app-logo app-logo-upload" aria-hidden="true">
               ↑
@@ -2401,7 +2427,7 @@ function LogoChooser({ app, onClose, onSaved }: { app: App; onClose: () => void;
         )}
         {option(
           'initial',
-          <AppLogo name={app.name} color={color || undefined} size={48} />,
+          <AppLogo name={name} color={color || undefined} size={48} />,
           'Initiale et couleur',
           'La première lettre du nom sur une couleur.',
           <span className="color-swatches" role="radiogroup" aria-label="Couleur">

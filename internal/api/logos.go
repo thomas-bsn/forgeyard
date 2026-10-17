@@ -333,6 +333,103 @@ func (s *Server) handleGetAppLogo(w http.ResponseWriter, r *http.Request) {
 	serveImage(w, l.ContentType, l.Data)
 }
 
+// stackLogo describes how the UI draws a project's logo. With mode "auto" there is no URL: the UI overlaps the
+// logos of the project's first services.
+type stackLogo struct {
+	Mode  string `json:"mode"`
+	URL   string `json:"url,omitempty"`
+	Color string `json:"color,omitempty"`
+}
+
+func toStackLogo(st db.Stack) stackLogo {
+	l := stackLogo{Mode: st.LogoMode, Color: st.LogoColor}
+	if st.LogoMode == "custom" {
+		l.URL = "/api/stacks/" + strconv.FormatInt(st.ID, 10) + "/logo?v=" + strconv.FormatInt(st.LogoUpdatedAt, 10)
+	}
+	return l
+}
+
+// handlePutStackLogo sets how a project's logo is chosen, with the uploaded picture for "custom".
+func (s *Server) handlePutStackLogo(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	st, ok := s.stackFromPath(w, r)
+	if !ok {
+		return
+	}
+	var body logoRequest
+	if !decodeJSON(w, r, &body) {
+		return
+	}
+	if body.Color != "" && !validColor(body.Color) {
+		writeError(w, http.StatusBadRequest, "couleur invalide (#rrggbb)")
+		return
+	}
+	var data []byte
+	var contentType string
+	switch body.Mode {
+	case "auto", "initial":
+	case "custom":
+		if body.Image == "" {
+			// Keep the picture already uploaded.
+			if st.LogoUpdatedAt == 0 {
+				writeError(w, http.StatusBadRequest, "envoyez une image")
+				return
+			}
+			break
+		}
+		var err error
+		if data, contentType, err = decodeDataURL(body.Image, maxAvatarBytes); err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+	default:
+		writeError(w, http.StatusBadRequest, "mode inconnu : auto, custom ou initial")
+		return
+	}
+	updated := st.LogoUpdatedAt
+	if data != nil {
+		updated = time.Now().UnixMilli()
+	}
+	if err := s.store.InTx(ctx, func(q *db.Queries) error {
+		if data != nil {
+			if err := q.PutStackLogoImage(ctx, db.PutStackLogoImageParams{StackID: st.ID, ContentType: contentType, Data: data}); err != nil {
+				return err
+			}
+		}
+		if body.Mode != "custom" && st.LogoUpdatedAt > 0 {
+			if err := q.DeleteStackLogoImage(ctx, st.ID); err != nil {
+				return err
+			}
+			updated = 0
+		}
+		return q.SetStackLogo(ctx, db.SetStackLogoParams{LogoMode: body.Mode, LogoColor: body.Color, LogoUpdatedAt: updated, ID: st.ID})
+	}); err != nil {
+		s.internalError(w, r, err)
+		return
+	}
+	st.LogoMode, st.LogoColor, st.LogoUpdatedAt = body.Mode, body.Color, updated
+	s.writeStack(w, r, http.StatusOK, st)
+}
+
+// handleGetStackLogo serves a project's uploaded logo. Like app logos, any signed-in user may see it.
+func (s *Server) handleGetStackLogo(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	l, err := s.store.GetStackLogoImage(r.Context(), id)
+	if errors.Is(err, sql.ErrNoRows) {
+		http.NotFound(w, r)
+		return
+	}
+	if err != nil {
+		s.internalError(w, r, err)
+		return
+	}
+	serveImage(w, l.ContentType, l.Data)
+}
+
 func validColor(c string) bool {
 	if len(c) != 7 || c[0] != '#' {
 		return false

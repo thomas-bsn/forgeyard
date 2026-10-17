@@ -13,7 +13,7 @@ import {
   type StackState,
   type StackVolume,
 } from './api'
-import { appTone, Dot, Logs, SourcePick, stateText, type Source } from './Apps'
+import { appTone, Dot, LogoChooser, Logs, SourcePick, stateText, type Source } from './Apps'
 import { AppLogo, formatBytes, Modal, since, Switch, useRedeploy } from './ui'
 
 export const projectStates: Record<StackState, { label: string; tone: 'up' | 'warn' | 'down' | '' }> = {
@@ -48,8 +48,9 @@ volumes:
   data:
 `
 
-/** A project's picture: the logos of its first services, overlapping. */
+/** A project's picture: the one it was given, else the logos of its first services, overlapping. */
 export function ProjectLogo({ project, size }: { project: Stack; size: number }) {
+  if (project.logo.mode !== 'auto') return <AppLogo url={project.logo.url} color={project.logo.color} name={project.name} size={size} />
   const small = Math.round(size * 0.68)
   return (
     <span className="project-logo" style={{ width: size, height: size }} aria-hidden="true">
@@ -400,6 +401,7 @@ export function ProjectDetail({ stack, onChange, go }: { stack: Stack; onChange:
   const st = projectStates[stack.state] ?? { label: stack.state, tone: '' }
   const running = stack.services.some((s) => s.running)
   const [redeploying, startRedeploy] = useRedeploy(stack.state === 'deploying')
+  const [choosingLogo, setChoosingLogo] = useState(false)
   const failedJob = stack.services.find((s) => s.state === 'failed')
 
   return (
@@ -409,6 +411,14 @@ export function ProjectDetail({ stack, onChange, go }: { stack: Stack; onChange:
           ← Apps
         </a>
         <div className="detail-title">
+          <button type="button" className="logo-button" onClick={() => setChoosingLogo(true)} aria-label="Changer le logo" title="Changer le logo">
+            <ProjectLogo project={stack} size={52} />
+            <span className="logo-edit" aria-hidden="true">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z" />
+              </svg>
+            </span>
+          </button>
           <div>
             <h1>{stack.name}</h1>
             <span className={`state-line state-${st.tone}`}>
@@ -532,6 +542,20 @@ export function ProjectDetail({ stack, onChange, go }: { stack: Stack; onChange:
           onSaved={(s) => {
             setFull(s)
             setEditing(false)
+            onChange()
+          }}
+        />
+      )}
+      {choosingLogo && (
+        <LogoChooser
+          name={stack.name}
+          logo={stack.logo}
+          autoPreview={<ProjectLogo project={{ ...stack, logo: { mode: 'auto' } }} size={48} />}
+          autoText="Les logos des premiers services du projet."
+          save={(body) => api.setStackLogo(stack.id, body)}
+          onClose={() => setChoosingLogo(false)}
+          onSaved={() => {
+            setChoosingLogo(false)
             onChange()
           }}
         />

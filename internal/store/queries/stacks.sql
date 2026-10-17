@@ -52,3 +52,16 @@ UPDATE apps SET running = ?, generation = generation + ?, updated_at = ? WHERE s
 
 -- name: NameTaken :one
 SELECT CAST(EXISTS (SELECT 1 FROM apps a WHERE a.name = ?1) OR EXISTS (SELECT 1 FROM stacks s WHERE s.name = ?1) AS INTEGER) AS taken;
+
+-- name: SetStackLogo :exec
+UPDATE stacks SET logo_mode = ?, logo_color = ?, logo_updated_at = ? WHERE id = ?;
+
+-- name: PutStackLogoImage :exec
+INSERT INTO stack_logos (stack_id, content_type, data) VALUES (?, ?, ?)
+ON CONFLICT (stack_id) DO UPDATE SET content_type = excluded.content_type, data = excluded.data;
+
+-- name: GetStackLogoImage :one
+SELECT * FROM stack_logos WHERE stack_id = ?;
+
+-- name: DeleteStackLogoImage :exec
+DELETE FROM stack_logos WHERE stack_id = ?;

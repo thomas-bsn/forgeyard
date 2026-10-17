@@ -12,7 +12,7 @@ import (
 const createStack = `-- name: CreateStack :one
 INSERT INTO stacks (name, owner_id, node_id, compose, env_sealed, registry_sealed, created_at, updated_at)
 VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-RETURNING id, name, owner_id, node_id, compose, env_sealed, volume_overrides, created_at, updated_at, registry_sealed
+RETURNING id, name, owner_id, node_id, compose, env_sealed, volume_overrides, created_at, updated_at, registry_sealed, logo_mode, logo_color, logo_updated_at
 `
 
 type CreateStackParams struct {
@@ -49,6 +49,9 @@ func (q *Queries) CreateStack(ctx context.Context, arg CreateStackParams) (Stack
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.RegistrySealed,
+		&i.LogoMode,
+		&i.LogoColor,
+		&i.LogoUpdatedAt,
 	)
 	return i, err
 }
@@ -134,8 +137,17 @@ func (q *Queries) DeleteStack(ctx context.Context, id int64) error {
 	return err
 }
 
+const deleteStackLogoImage = `-- name: DeleteStackLogoImage :exec
+DELETE FROM stack_logos WHERE stack_id = ?
+`
+
+func (q *Queries) DeleteStackLogoImage(ctx context.Context, stackID int64) error {
+	_, err := q.db.ExecContext(ctx, deleteStackLogoImage, stackID)
+	return err
+}
+
 const getStack = `-- name: GetStack :one
-SELECT id, name, owner_id, node_id, compose, env_sealed, volume_overrides, created_at, updated_at, registry_sealed FROM stacks WHERE id = ?
+SELECT id, name, owner_id, node_id, compose, env_sealed, volume_overrides, created_at, updated_at, registry_sealed, logo_mode, logo_color, logo_updated_at FROM stacks WHERE id = ?
 `
 
 func (q *Queries) GetStack(ctx context.Context, id int64) (Stack, error) {
@@ -152,7 +164,21 @@ func (q *Queries) GetStack(ctx context.Context, id int64) (Stack, error) {
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.RegistrySealed,
+		&i.LogoMode,
+		&i.LogoColor,
+		&i.LogoUpdatedAt,
 	)
+	return i, err
+}
+
+const getStackLogoImage = `-- name: GetStackLogoImage :one
+SELECT stack_id, content_type, data FROM stack_logos WHERE stack_id = ?
+`
+
+func (q *Queries) GetStackLogoImage(ctx context.Context, stackID int64) (StackLogo, error) {
+	row := q.db.QueryRowContext(ctx, getStackLogoImage, stackID)
+	var i StackLogo
+	err := row.Scan(&i.StackID, &i.ContentType, &i.Data)
 	return i, err
 }
 
@@ -213,7 +239,7 @@ func (q *Queries) ListStackApps(ctx context.Context, stackID int64) ([]App, erro
 }
 
 const listStacks = `-- name: ListStacks :many
-SELECT stacks.id, stacks.name, stacks.owner_id, stacks.node_id, stacks.compose, stacks.env_sealed, stacks.volume_overrides, stacks.created_at, stacks.updated_at, stacks.registry_sealed, users.display_name AS owner_name, nodes.name AS node_name
+SELECT stacks.id, stacks.name, stacks.owner_id, stacks.node_id, stacks.compose, stacks.env_sealed, stacks.volume_overrides, stacks.created_at, stacks.updated_at, stacks.registry_sealed, stacks.logo_mode, stacks.logo_color, stacks.logo_updated_at, users.display_name AS owner_name, nodes.name AS node_name
 FROM stacks
 JOIN users ON users.id = stacks.owner_id
 JOIN nodes ON nodes.id = stacks.node_id
@@ -246,6 +272,9 @@ func (q *Queries) ListStacks(ctx context.Context) ([]ListStacksRow, error) {
 			&i.Stack.CreatedAt,
 			&i.Stack.UpdatedAt,
 			&i.Stack.RegistrySealed,
+			&i.Stack.LogoMode,
+			&i.Stack.LogoColor,
+			&i.Stack.LogoUpdatedAt,
 			&i.OwnerName,
 			&i.NodeName,
 		); err != nil {
@@ -263,7 +292,7 @@ func (q *Queries) ListStacks(ctx context.Context) ([]ListStacksRow, error) {
 }
 
 const listStacksByOwner = `-- name: ListStacksByOwner :many
-SELECT stacks.id, stacks.name, stacks.owner_id, stacks.node_id, stacks.compose, stacks.env_sealed, stacks.volume_overrides, stacks.created_at, stacks.updated_at, stacks.registry_sealed, users.display_name AS owner_name, nodes.name AS node_name
+SELECT stacks.id, stacks.name, stacks.owner_id, stacks.node_id, stacks.compose, stacks.env_sealed, stacks.volume_overrides, stacks.created_at, stacks.updated_at, stacks.registry_sealed, stacks.logo_mode, stacks.logo_color, stacks.logo_updated_at, users.display_name AS owner_name, nodes.name AS node_name
 FROM stacks
 JOIN users ON users.id = stacks.owner_id
 JOIN nodes ON nodes.id = stacks.node_id
@@ -297,6 +326,9 @@ func (q *Queries) ListStacksByOwner(ctx context.Context, ownerID int64) ([]ListS
 			&i.Stack.CreatedAt,
 			&i.Stack.UpdatedAt,
 			&i.Stack.RegistrySealed,
+			&i.Stack.LogoMode,
+			&i.Stack.LogoColor,
+			&i.Stack.LogoUpdatedAt,
 			&i.OwnerName,
 			&i.NodeName,
 		); err != nil {
@@ -314,7 +346,7 @@ func (q *Queries) ListStacksByOwner(ctx context.Context, ownerID int64) ([]ListS
 }
 
 const listStacksByOwnerID = `-- name: ListStacksByOwnerID :many
-SELECT id, name, owner_id, node_id, compose, env_sealed, volume_overrides, created_at, updated_at, registry_sealed FROM stacks WHERE owner_id = ? ORDER BY id
+SELECT id, name, owner_id, node_id, compose, env_sealed, volume_overrides, created_at, updated_at, registry_sealed, logo_mode, logo_color, logo_updated_at FROM stacks WHERE owner_id = ? ORDER BY id
 `
 
 func (q *Queries) ListStacksByOwnerID(ctx context.Context, ownerID int64) ([]Stack, error) {
@@ -337,6 +369,9 @@ func (q *Queries) ListStacksByOwnerID(ctx context.Context, ownerID int64) ([]Sta
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.RegistrySealed,
+			&i.LogoMode,
+			&i.LogoColor,
+			&i.LogoUpdatedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -360,6 +395,43 @@ func (q *Queries) NameTaken(ctx context.Context, name string) (int64, error) {
 	var taken int64
 	err := row.Scan(&taken)
 	return taken, err
+}
+
+const putStackLogoImage = `-- name: PutStackLogoImage :exec
+INSERT INTO stack_logos (stack_id, content_type, data) VALUES (?, ?, ?)
+ON CONFLICT (stack_id) DO UPDATE SET content_type = excluded.content_type, data = excluded.data
+`
+
+type PutStackLogoImageParams struct {
+	StackID     int64
+	ContentType string
+	Data        []byte
+}
+
+func (q *Queries) PutStackLogoImage(ctx context.Context, arg PutStackLogoImageParams) error {
+	_, err := q.db.ExecContext(ctx, putStackLogoImage, arg.StackID, arg.ContentType, arg.Data)
+	return err
+}
+
+const setStackLogo = `-- name: SetStackLogo :exec
+UPDATE stacks SET logo_mode = ?, logo_color = ?, logo_updated_at = ? WHERE id = ?
+`
+
+type SetStackLogoParams struct {
+	LogoMode      string
+	LogoColor     string
+	LogoUpdatedAt int64
+	ID            int64
+}
+
+func (q *Queries) SetStackLogo(ctx context.Context, arg SetStackLogoParams) error {
+	_, err := q.db.ExecContext(ctx, setStackLogo,
+		arg.LogoMode,
+		arg.LogoColor,
+		arg.LogoUpdatedAt,
+		arg.ID,
+	)
+	return err
 }
 
 const setStackRunning = `-- name: SetStackRunning :exec
@@ -399,7 +471,7 @@ func (q *Queries) SetStackVolumeOverrides(ctx context.Context, arg SetStackVolum
 }
 
 const updateStack = `-- name: UpdateStack :one
-UPDATE stacks SET compose = ?, env_sealed = ?, registry_sealed = ?, updated_at = ? WHERE id = ? RETURNING id, name, owner_id, node_id, compose, env_sealed, volume_overrides, created_at, updated_at, registry_sealed
+UPDATE stacks SET compose = ?, env_sealed = ?, registry_sealed = ?, updated_at = ? WHERE id = ? RETURNING id, name, owner_id, node_id, compose, env_sealed, volume_overrides, created_at, updated_at, registry_sealed, logo_mode, logo_color, logo_updated_at
 `
 
 type UpdateStackParams struct {
@@ -430,6 +502,9 @@ func (q *Queries) UpdateStack(ctx context.Context, arg UpdateStackParams) (Stack
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.RegistrySealed,
+		&i.LogoMode,
+		&i.LogoColor,
+		&i.LogoUpdatedAt,
 	)
 	return i, err
 }
