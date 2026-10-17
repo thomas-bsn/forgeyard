@@ -64,7 +64,7 @@ const containerLabels: Record<string, string> = {
 }
 
 export function Dot({ tone }: { tone: string }) {
-  return <span className={`dot ${tone ? `dot-${tone}` : ''}`} />
+  return <span className={`dot ${tone ? `dot-${tone}` : ''} ${tone === 'warn' ? 'dot-spin' : ''}`} />
 }
 
 function useAppsData(admin: boolean) {

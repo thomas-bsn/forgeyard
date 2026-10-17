@@ -318,6 +318,22 @@ details.field[open] > summary {
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--warn) 25%, transparent);
 }
 
+/* A state that is still moving (download, build, start, update): the dot becomes a spinner. */
+.dot-spin {
+  box-sizing: border-box;
+  background: transparent;
+  box-shadow: none;
+  border: 2px solid var(--warn);
+  border-right-color: transparent;
+  animation: spin 0.8s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dot-spin {
+    animation-duration: 3s;
+  }
+}
+
 .banner {
   display: flex;
   align-items: center;
