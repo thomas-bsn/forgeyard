@@ -3237,7 +3237,10 @@ a.link-btn {
    height, and padding there would leave the last row half hidden. */
 .terminal-box {
   height: 480px;
+  min-height: 160px;
   padding: 8px 10px;
+  overflow: hidden;
+  resize: vertical;
 }
 
 .terminal-screen {
