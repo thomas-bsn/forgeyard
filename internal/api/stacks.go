@@ -306,7 +306,7 @@ func stackServiceSpec(st db.Stack, a db.App, appIDs map[string]int64, reg regist
 	var svc compose.Service
 	json.Unmarshal([]byte(a.ServiceSpec), &svc)
 	out := &agentpb.StackService{
-		StackId: st.ID, Network: stackNetwork(st.ID), Service: a.Service, Command: svc.Command, Entrypoint: svc.Entrypoint,
+		StackId: st.ID, Network: stackNetwork(st.ID), Service: a.Service, Command: svc.Command, Entrypoint: svc.Entrypoint, User: svc.User,
 		Restart: svc.Restart, Job: svc.Job, RegistryServer: reg.Server, RegistryUsername: reg.Username, RegistryPassword: reg.Password,
 	}
 	if h := svc.Healthcheck; h != nil {

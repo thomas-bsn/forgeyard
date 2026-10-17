@@ -54,8 +54,10 @@ type Service struct {
 	Name  string `json:"-"`
 	Image string `json:"-"`
 	// Command and Entrypoint replace the image's own when set.
-	Command     []string          `json:"command,omitempty"`
-	Entrypoint  []string          `json:"entrypoint,omitempty"`
+	Command    []string `json:"command,omitempty"`
+	Entrypoint []string `json:"entrypoint,omitempty"`
+	// User is who the container runs as: a name or a uid, optionally with a group or a gid. Empty: the image's.
+	User        string            `json:"user,omitempty"`
 	Environment map[string]string `json:"-"`
 	Volumes     []Mount           `json:"volumes,omitempty"`
 	DependsOn   []Dependency      `json:"dependsOn,omitempty"`
@@ -97,12 +99,13 @@ var (
 	volumeNamePattern  = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,62}$`)
 	envKeyPattern      = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
 	restartPattern     = regexp.MustCompile(`^(no|always|unless-stopped|on-failure(:[0-9]+)?)$`)
+	// user: name, uid, name:group, uid:gid, as Docker takes them; the names are looked up in the image.
+	userPattern = regexp.MustCompile(`^([0-9]{1,10}|[A-Za-z_][A-Za-z0-9_.-]{0,31})(:([0-9]{1,10}|[A-Za-z_][A-Za-z0-9_.-]{0,31}))?$`)
 )
 
 // refused explains the keys of a service people often write that Forgeyard does not take.
 var refused = map[string]string{
 	"build":          "build n'est pas pris en charge : utilisez une image publiée (image: …)",
-	"ports":          "ports n'est pas pris en charge : exposez le service avec x-forgeyard: { expose: { port: 80 } }",
 	"expose":         "expose n'est pas nécessaire : les services du projet se joignent par leur nom",
 	"env_file":       "env_file n'est pas pris en charge : mettez les variables dans le projet et utilisez ${VAR}",
 	"networks":       "networks n'est pas pris en charge : le projet a son propre réseau, les services s'y joignent par leur nom",
@@ -280,6 +283,13 @@ func (p *parser) service(name string, keyN, n *yaml.Node, volumes map[string]boo
 			svc.Command = p.words(v, name+".command")
 		case "entrypoint":
 			svc.Entrypoint = p.words(v, name+".entrypoint")
+		case "user":
+			svc.User = p.scalar(v, name+".user")
+			if svc.User != "" && !userPattern.MatchString(svc.User) {
+				p.errorf(v, "%s.user : un nom ou un uid, avec un groupe ou un gid si besoin (www-data, 1000, 1000:1000)", name)
+			}
+		case "ports":
+			p.errorf(kv.keyN, "%s : %s", name, portsAdvice(v))
 		case "environment":
 			p.environment(v, name, svc.Environment)
 		case "volumes":
@@ -311,6 +321,57 @@ func (p *parser) service(name string, keyN, n *yaml.Node, volumes map[string]boo
 		p.errorf(imageN, "%s.image invalide : par exemple postgres:17 ou ghcr.io/moi/api:main", name)
 	}
 	return svc
+}
+
+// portsAdvice explains why ports is refused and what to write instead: Forgeyard publishes no port of the
+// machine, a web service is reached at the stack's HTTPS address through x-forgeyard.expose, with the port
+// of the container (the second number of HOST:CONTAINER).
+func portsAdvice(n *yaml.Node) string {
+	var found []string
+	udp := false
+	add := func(port string, proto string) {
+		if proto == "udp" {
+			udp = true
+		}
+		if _, err := strconv.Atoi(port); err == nil && !slices.Contains(found, port) {
+			found = append(found, port)
+		}
+	}
+	for _, e := range n.Content {
+		if e = resolve(e); e == nil {
+			continue
+		}
+		switch e.Kind {
+		case yaml.ScalarNode:
+			spec, proto, _ := strings.Cut(e.Value, "/")
+			parts := strings.Split(spec, ":")
+			add(parts[len(parts)-1], proto)
+		case yaml.MappingNode:
+			var target, proto string
+			for _, kv := range pairs(e) {
+				switch kv.key {
+				case "target":
+					target = kv.value.Value
+				case "protocol":
+					proto = kv.value.Value
+				}
+			}
+			add(target, proto)
+		}
+	}
+	msg := "ports n'est pas pris en charge : Forgeyard ne publie pas de port de la machine, il expose un service web par l'adresse HTTPS du projet."
+	switch {
+	case len(found) == 1:
+		msg += fmt.Sprintf(" Si c'est le service web, ajoutez x-forgeyard: { expose: { port: %s } }.", found[0])
+	case len(found) > 1:
+		msg += fmt.Sprintf(" Si c'est le service web, ajoutez x-forgeyard: { expose: { port: N } } avec le port du conteneur (%s) ; un seul port est exposé par projet.", strings.Join(found, ", "))
+	default:
+		msg += " Si c'est le service web, ajoutez x-forgeyard: { expose: { port: 80 } } avec le port du conteneur."
+	}
+	if udp {
+		msg += " Les ports UDP ne sont pas pris en charge."
+	}
+	return msg
 }
 
 func (p *parser) scalar(n *yaml.Node, what string) string {

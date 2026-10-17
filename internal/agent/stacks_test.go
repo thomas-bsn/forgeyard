@@ -108,6 +108,20 @@ func TestStackServiceContainer(t *testing.T) {
 		t.Fatalf("on-failure: %v", p)
 	}
 
+	// A service runs as its user when it has one, and a new one makes a new version.
+	if _, set := cfg["User"]; set {
+		t.Fatalf("a service without a user takes the image's: %v", cfg["User"])
+	}
+	beforeUser := appHash(app, "proxy")
+	app.Stack.User = "1000:1000"
+	if cfg = appContainerConfig(app, "h", "proxy"); cfg["User"] != "1000:1000" {
+		t.Fatalf("user: %v", cfg["User"])
+	}
+	if appHash(app, "proxy") == beforeUser {
+		t.Fatal("a new user did not change the spec hash")
+	}
+	app.Stack.User = ""
+
 	// Its dependencies order its start but do not make a new version.
 	before := appHash(app, "proxy")
 	app.Stack.DependsOn = []*agentpb.Dependency{{AppId: 3, Service: "x", Condition: condStarted}}
@@ -123,5 +137,17 @@ func TestStackServiceContainer(t *testing.T) {
 func TestJobState(t *testing.T) {
 	if jobState(*container("exited", 0, "")) != "completed" || jobState(*container("exited", 1, "")) != "failed" {
 		t.Fatal("job states")
+	}
+}
+
+func TestRegistryLoginStaysOutOfTheSpecHash(t *testing.T) {
+	app := stackApp(7, "web")
+	before := appHash(app, "proxy")
+	app.Stack.RegistryServer, app.Stack.RegistryUsername, app.Stack.RegistryPassword = "ghcr.io", "acme", "s3cret"
+	if appHash(app, "proxy") != before {
+		t.Fatal("the registry login changed the spec hash")
+	}
+	if strings.Contains(appHash(app, "proxy"), "s3cret") {
+		t.Fatal("the password is in the hash, which is kept in a container label")
 	}
 }

@@ -240,6 +240,9 @@ func stackHash(st *agentpb.StackService) string {
 	}
 	st = proto.Clone(st).(*agentpb.StackService)
 	st.DependsOn = nil
+	// The registry login pulls the image; it is not what the container is made of, and the hash is kept in
+	// a label of the container, where the password must not go.
+	st.RegistryServer, st.RegistryUsername, st.RegistryPassword = "", "", ""
 	raw, _ := proto.MarshalOptions{Deterministic: true}.Marshal(st)
 	return string(raw)
 }

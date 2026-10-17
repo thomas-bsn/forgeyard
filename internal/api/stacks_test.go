@@ -431,3 +431,30 @@ func TestStackRegistryLogin(t *testing.T) {
 		t.Fatalf("removed: %d %+v", code, removed.Registry)
 	}
 }
+
+func TestStackServiceUser(t *testing.T) {
+	url, _, admin, fa := setupStackServer(t)
+	compose := func(user string) string {
+		return "services:\n  web:\n    image: nginx\n    user: " + user + "\n    x-forgeyard: { expose: { port: 80 } }\n"
+	}
+	var st stackResponse
+	if code := postJSON(t, admin, url+"/api/stacks", stackInput{Name: "runas", Compose: compose("1000:1000")}, &st); code != http.StatusCreated {
+		t.Fatalf("create: %d", code)
+	}
+	web := fa.desiredWith(t, 1)["web"]
+	if web.GetStack().GetUser() != "1000:1000" {
+		t.Fatalf("what the agent gets: %q", web.GetStack().GetUser())
+	}
+	// Another user redeploys the service.
+	if code := putJSON(t, admin, url+"/api/stacks/"+itoa(st.ID), stackInput{Compose: compose("www-data")}, &st); code != http.StatusOK {
+		t.Fatalf("update: %d", code)
+	}
+	after := fa.desiredWith(t, 1)["web"]
+	if after.GetStack().GetUser() != "www-data" || after.GetGeneration() == web.GetGeneration() {
+		t.Fatalf("redeploy: %q, generation %d → %d", after.GetStack().GetUser(), web.GetGeneration(), after.GetGeneration())
+	}
+	var bad stackErrors
+	if code := postJSON(t, admin, url+"/api/stacks", stackInput{Name: "badrun", Compose: compose(`"a:b:c"`)}, &bad); code != http.StatusBadRequest || len(bad.Errors) != 1 || bad.Errors[0].Line != 4 {
+		t.Fatalf("bad user: %d %+v", code, bad)
+	}
+}

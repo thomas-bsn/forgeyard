@@ -152,6 +152,9 @@ func stackConfig(app *agentpb.AppSpec, config, hostConfig map[string]any, labels
 	if len(st.GetCommand()) > 0 {
 		config["Cmd"] = st.GetCommand()
 	}
+	if st.GetUser() != "" {
+		config["User"] = st.GetUser()
+	}
 	if h := st.GetHealthcheck(); h != nil {
 		config["Healthcheck"] = map[string]any{
 			"Test": h.GetTest(), "Interval": h.GetIntervalNs(), "Timeout": h.GetTimeoutNs(),

@@ -282,41 +282,27 @@ function AppList({
       <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Rechercher" aria-label="Rechercher une app" />
     </label>
   )
-  const typeFilters = (
-    <>
-      {admin && inNode.some((i) => i.external) && (
-        <div className="segmented segmented-small" role="group" aria-label="Type">
-          {(
-            [
-              ['all', 'Tout'],
-              ['apps', 'Forgeyard'],
-              ['external', 'Externes'],
-            ] as const
-          ).map(([value, label]) => (
-            <button key={value} type="button" aria-pressed={kind === value} className={kind === value ? 'on' : ''} onClick={() => setKind(value)}>
-              {label}
-            </button>
-          ))}
-        </div>
-      )}
-      {kind !== 'external' && inNode.some((i) => i.project) && (
-        <div className="segmented segmented-small" role="group" aria-label="Apps ou projets">
-          {(
-            [
-              ['all', 'Tout', null],
-              ['apps', 'Apps', inNode.filter((i) => i.app).length],
-              ['projects', 'Projets', inNode.filter((i) => i.project).length],
-            ] as const
-          ).map(([value, label, n]) => (
-            <button key={value} type="button" aria-pressed={only === value} className={only === value ? 'on' : ''} onClick={() => setOnly(value)}>
-              {label}
-              {n !== null && <span className="filter-count">{n}</span>}
-            </button>
-          ))}
-        </div>
-      )}
-    </>
-  )
+  // What the list shows besides Forgeyard's own apps and projects: one menu, only when there is a choice.
+  const shownKinds = [
+    ['forgeyard', 'Apps et projets', inNode.filter((i) => !i.external).length],
+    ...(inNode.some((i) => i.project) ? ([['apps', 'Apps seules', inNode.filter((i) => i.app).length], ['projects', 'Projets', inNode.filter((i) => i.project).length]] as const) : []),
+    ...(admin && inNode.some((i) => i.external) ? ([['external', 'Conteneurs externes', inNode.filter((i) => i.external).length], ['all', 'Tout', inNode.length]] as const) : []),
+  ] as const
+  const shownKind = kind === 'external' ? 'external' : kind === 'all' ? 'all' : only === 'apps' ? 'apps' : only === 'projects' ? 'projects' : 'forgeyard'
+  const pickKind = (v: string) => {
+    setKind(v === 'external' ? 'external' : v === 'all' ? 'all' : 'apps')
+    setOnly(v === 'apps' ? 'apps' : v === 'projects' ? 'projects' : 'all')
+  }
+  const typeFilters =
+    shownKinds.length > 1 ? (
+      <select className="kind-select" aria-label="Afficher" value={shownKind} onChange={(e) => pickKind(e.target.value)}>
+        {shownKinds.map(([value, label, n]) => (
+          <option key={value} value={value}>
+            {label} ({n})
+          </option>
+        ))}
+      </select>
+    ) : null
   const stateFilters = (
     <div className="segmented segmented-small" role="group" aria-label="État">
       {(

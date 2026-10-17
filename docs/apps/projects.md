@@ -57,6 +57,7 @@ Tout le reste est refusé, avec la ligne et la raison (tous les problèmes d'un 
 | `services.<nom>` | `a-z`, `0-9`, `-`, 32 caractères max. ; 20 services max. |
 | `image` | Obligatoire : une image publiée. `build` est refusé. |
 | `command`, `entrypoint` | Liste, ou chaîne découpée comme le ferait un shell (sans en lancer un). |
+| `user` | Le compte du conteneur : un nom (`www-data`), un uid (`1000`), avec un groupe ou un gid si besoin (`1000:1000`, `app:app`). Les noms sont cherchés dans l'image. Sans, celui de l'image. Une autre forme est refusée. |
 | `environment` | Objet ou liste `CLE=valeur` ; `CLE` seule prend la variable du projet du même nom. |
 | `volumes` | Volumes **nommés** seulement (`nom:/chemin`, `nom:/chemin:ro`, ou la forme longue `type: volume`), déclarés sous `volumes:` à la racine. Dossiers de la machine (bind mounts), volumes anonymes et `tmpfs` refusés. |
 | `depends_on` | Liste, ou objet avec `condition` : `service_started`, `service_healthy`, `service_completed_successfully`. |
@@ -66,7 +67,21 @@ Tout le reste est refusé, avec la ligne et la raison (tous les problèmes d'un 
 | `name`, `version`, `x-…` | Ignorés (les ancres YAML `&` / `*` et `<<:` marchent). |
 | `x-forgeyard` | `expose: { port: 80 }`, `backup: { type: postgres }`, `memory: 1024` (Mo, 512 par défaut). |
 
-Refusés avec une explication : `ports` (exposer avec `x-forgeyard`), `networks`, `env_file` (mettre les variables dans le projet), `container_name`, `privileged`, `cap_add`, `devices`, `network_mode`, `extends`.
+### Ce qui est refusé, et pourquoi
+
+Une option n'est acceptée que si Forgeyard peut en reproduire le comportement. Aucune n'est ignorée en silence : elle est refusée, sur sa ligne, avec ce qu'il faut écrire à la place quand il y a une alternative.
+
+| Option | Pourquoi | À la place |
+| --- | --- | --- |
+| `ports` | Forgeyard ne publie aucun port de la machine : `HOTE:CONTENEUR` n'a pas le même effet qu'une exposition HTTPS. | `x-forgeyard: { expose: { port: N } }`, avec le port du conteneur (le message le donne, d'après votre `ports`). Un seul service exposé par projet, en HTTP(S) ; pas de port TCP/UDP public. |
+| `build` | Le projet ne reçoit que le compose, pas votre code. | Une image publiée. |
+| `networks`, `network_mode` | Le projet a son propre réseau isolé. | Les services se joignent par leur nom. |
+| `env_file` | Le fichier n'existe pas sur le node. | Les variables du projet et `${VAR}`. |
+| `container_name` | Forgeyard nomme les conteneurs. | Le nom du service. |
+| `privileged`, `cap_add`, `devices` | Ils sortent le conteneur de son isolation. | Aucune. |
+| `extends` | Il lit d'autres fichiers. | Les ancres YAML (`&`, `*`, `<<:`). |
+
+Les ports publics (allocation, validation, règles réseau) restent une décision à prendre à part : tant qu'elle ne l'est pas, `ports` reste refusé.
 
 ### Variables
 
@@ -98,7 +113,7 @@ Vérifié sur une copie de Shameless : migrate attend postgres healthy, api atte
 
 ## Redéploiement
 
-- **Modifier le compose** (ou les variables) : le server relit le fichier et compare service par service. Seuls les services dont l'image, la commande, les variables, les volumes, le healthcheck, le port ou la mémoire changent sont redéployés ; les autres ne sont pas touchés. Un service ajouté est créé, un service retiré supprimé (ses volumes restent : ce sont ceux du projet). Un service qui devient (ou cesse d'être) le service exposé change de nom : il est remplacé.
+- **Modifier le compose** (ou les variables) : le server relit le fichier et compare service par service. Seuls les services dont l'image, la commande, le compte (`user`), les variables, les volumes, le healthcheck, le port ou la mémoire changent sont redéployés ; les autres ne sont pas touchés. Un service ajouté est créé, un service retiré supprimé (ses volumes restent : ce sont ceux du projet). Un service qui devient (ou cesse d'être) le service exposé change de nom : il est remplacé.
 - Le service exposé garde le **déploiement sans coupure** des apps (la nouvelle version démarre à côté, puis prend le relais) ; un service avec des volumes est arrêté puis relancé, comme une app avec des volumes. Une nouvelle version qui attend ses dépendances laisse l'ancienne tourner.
 - **Redéployer** recrée tous les services (images téléchargées de nouveau) et relance les jobs. **Arrêter** / **Démarrer** valent pour tous.
 - Un service se redéploie aussi seul depuis sa page d'app. Sa configuration, elle, ne se change que par le compose : modifier ou supprimer le service comme une app, ou le déplacer de node, est refusé.

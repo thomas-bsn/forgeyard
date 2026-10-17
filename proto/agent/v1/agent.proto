@@ -348,6 +348,7 @@ message StackService {
   string registry_server = 11;
   string registry_username = 12;
   string registry_password = 13;
+  string user = 14; // the container's user: name, uid, user:group or uid:gid; empty: the image's own
 }
 
 message Healthcheck {

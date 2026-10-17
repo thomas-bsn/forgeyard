@@ -1019,6 +1019,15 @@ button.row:hover {
   max-width: 50vw;
 }
 
+.kind-select {
+  padding: 9px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--card);
+  color: var(--text);
+  font: inherit;
+}
+
 .search:focus-within {
   outline: 2px solid var(--accent);
   outline-offset: -1px;

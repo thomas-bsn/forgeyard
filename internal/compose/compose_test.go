@@ -251,3 +251,40 @@ func TestOrderIsStable(t *testing.T) {
 		t.Fatalf("%v", names)
 	}
 }
+
+func TestParseUser(t *testing.T) {
+	for user, want := range map[string]string{
+		"1000": "1000", "www-data": "www-data", "1000:1000": "1000:1000", "app:app": "app:app", "postgres": "postgres",
+	} {
+		st, errs := Parse([]byte("services:\n  a:\n    image: nginx\n    user: "+user+"\n"), nil)
+		if errs != nil || st.Services[0].User != want {
+			t.Errorf("user %q: %v %+v", user, errs, st)
+		}
+	}
+	// An int in YAML is a uid; a variable fills in before the check.
+	st, errs := Parse([]byte("services:\n  a:\n    image: nginx\n    user: ${UID:-1000}\n"), nil)
+	if errs != nil || st.Services[0].User != "1000" {
+		t.Errorf("variable: %v %+v", errs, st)
+	}
+	for _, user := range []string{`"root; reboot"`, `"1:2:3"`, `"-1"`, `"a b"`, `[1000]`} {
+		if _, errs := Parse([]byte("services:\n  a:\n    image: nginx\n    user: "+user+"\n"), nil); errs == nil || errs[0].Line != 4 {
+			t.Errorf("user %s accepted: %v", user, errs)
+		}
+	}
+}
+
+func TestPortsAdviceNamesTheContainerPort(t *testing.T) {
+	for ports, want := range map[string]string{
+		`["8080:80"]`:                       "port: 80 }",
+		`["127.0.0.1:8080:3000/tcp"]`:       "port: 3000 }",
+		`[80]`:                              "port: 80 }",
+		`[{ target: 8080, published: 80 }]`: "port: 8080 }",
+		`["80:80", "443:443"]`:              "(80, 443)",
+		`["5353:5353/udp"]`:                 "UDP",
+	} {
+		_, errs := Parse([]byte("services:\n  a:\n    image: nginx\n    ports: "+ports+"\n"), nil)
+		if len(errs) != 1 || errs[0].Line != 4 || !strings.Contains(errs[0].Message, "ports n'est pas pris en charge") || !strings.Contains(errs[0].Message, want) {
+			t.Errorf("ports %s: %v, want %q", ports, errs, want)
+		}
+	}
+}
