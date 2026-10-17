@@ -1644,13 +1644,14 @@ function AppDetail({
               <button
                 type="button"
                 className={`btn ${redeploying ? 'btn-busy' : ''}`}
+                aria-busy={redeploying}
                 disabled={busy || redeploying || app.suspended}
                 onClick={() => {
                   startRedeploy()
                   run(() => api.appAction(app.id, 'redeploy'))
                 }}
               >
-                {redeploying ? 'Redéploiement…' : 'Redéployer'}
+                Redéployer
               </button>
             </>
           ) : (

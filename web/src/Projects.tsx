@@ -458,6 +458,7 @@ export function ProjectDetail({ stack, onChange, go }: { stack: Stack; onChange:
               <button
                 type="button"
                 className={`btn ${redeploying ? 'btn-busy' : ''}`}
+                aria-busy={redeploying}
                 disabled={busy || redeploying}
                 title="Recrée tous les services (images téléchargées à nouveau) et relance les jobs"
                 onClick={() => {
@@ -465,7 +466,7 @@ export function ProjectDetail({ stack, onChange, go }: { stack: Stack; onChange:
                   run(() => api.stackAction(stack.id, 'redeploy'))
                 }}
               >
-                {redeploying ? 'Redéploiement…' : 'Redéployer'}
+                Redéployer
               </button>
             </>
           ) : (
