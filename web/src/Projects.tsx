@@ -97,11 +97,17 @@ export function ProjectCard({ project: p, admin }: { project: Stack; admin: bool
   )
 }
 
-/** The variables a compose file uses: ${VAR}, ${VAR:-…} and $VAR, not $$. */
-function usedVariables(compose: string): string[] {
-  const out = new Set<string>()
-  for (const m of compose.matchAll(/(?<!\$)\$(?:\{([A-Za-z_][A-Za-z0-9_]*)|([A-Za-z_][A-Za-z0-9_]*))/g)) out.add(m[1] ?? m[2])
-  return [...out]
+/**
+ * The variables a compose file uses: ${VAR}, ${VAR:-…} and $VAR, not $$. A variable is required unless every
+ * use gives it a default (:-, -) or only tests it (:+, +): without a value, the project is refused.
+ */
+function usedVariables(compose: string): { name: string; required: boolean }[] {
+  const out = new Map<string, boolean>()
+  for (const m of compose.matchAll(/(?<!\$)\$(?:\{([A-Za-z_][A-Za-z0-9_]*)(:?[-+])?|([A-Za-z_][A-Za-z0-9_]*))/g)) {
+    const name = m[1] ?? m[3]
+    out.set(name, (out.get(name) ?? false) || !m[2])
+  }
+  return [...out].map(([name, required]) => ({ name, required })).sort((x, y) => Number(y.required) - Number(x.required))
 }
 
 const kindLabels: Record<string, string> = { web: 'exposé', service: 'privé', job: 'job', sandbox: 'sandbox' }
@@ -170,7 +176,7 @@ export function ProjectFormModal({
     return () => clearTimeout(t)
   }, [compose, varsKey, name])
 
-  const missing = usedVariables(compose).filter((v) => !(v in vars))
+  const missing = usedVariables(compose).filter((v) => !(v.name in vars))
 
   function goToLine(line: number) {
     const ta = editor.current
@@ -317,12 +323,19 @@ export function ProjectFormModal({
           {missing.length > 0 && (
             <span className="chips-row">
               {missing.map((m) => (
-                <button key={m} type="button" className="chip mono" onClick={() => setEnv([...env, { key: m, value: '' }])}>
-                  + {m}
+                <button
+                  key={m.name}
+                  type="button"
+                  className={`chip mono ${m.required ? 'chip-required' : ''}`}
+                  title={m.required ? 'Obligatoire : le compose n’a pas de valeur par défaut' : 'Facultatif : le compose a une valeur par défaut'}
+                  onClick={() => setEnv([...env, { key: m.name, value: '' }])}
+                >
+                  + {m.name}
                 </button>
               ))}
             </span>
           )}
+          {missing.some((m) => m.required) && <small className="text-down">En rouge : obligatoires, sans valeur par défaut dans le compose.</small>}
           <div>
             <button type="button" className="btn btn-dashed btn-small" onClick={() => setEnv([...env, { key: '', value: '' }])}>
               + Ajouter une variable

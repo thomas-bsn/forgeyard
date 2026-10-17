@@ -512,6 +512,13 @@ a.chip {
   text-decoration: none;
 }
 
+/* A variable the compose file cannot do without. */
+.chip-required {
+  border-color: var(--down);
+  color: var(--down);
+  background: color-mix(in srgb, var(--down) 8%, var(--card));
+}
+
 .count {
   min-width: 20px;
   padding: 0 6px;
