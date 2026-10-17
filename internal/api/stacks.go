@@ -165,8 +165,19 @@ type stackErrors struct {
 }
 
 // parse checks a stack's input: its variables, then its compose file. The problems of the file come with
-// their lines.
+// their lines. A file that cannot run gives no stack.
 func (in *stackInput) parse(creating bool) (*compose.Stack, string, compose.Errors) {
+	st, msg, errs := in.parseTolerant(creating)
+	if msg != "" || errs != nil {
+		return nil, msg, errs
+	}
+	return st, "", nil
+}
+
+// parseTolerant is parse, but it keeps the services it could read even when the file is refused: the
+// editor previews their start order while the file is being fixed. Only a file nothing could be read from
+// (invalid YAML, no services, too long) gives no stack.
+func (in *stackInput) parseTolerant(creating bool) (*compose.Stack, string, compose.Errors) {
 	in.Name = strings.ToLower(strings.TrimSpace(in.Name))
 	in.Compose = strings.ReplaceAll(in.Compose, "\r\n", "\n")
 	if creating && !appNamePattern.MatchString(in.Name) {
@@ -191,7 +202,7 @@ func (in *stackInput) parse(creating bool) (*compose.Stack, string, compose.Erro
 	}
 	st, errs := compose.Parse([]byte(in.Compose), in.Env)
 	if errs != nil {
-		return nil, "", errs
+		return st, "", errs
 	}
 	if len(st.Services) > 20 {
 		return nil, "", compose.Errors{{Message: "20 services au maximum par projet"}}
@@ -204,7 +215,7 @@ func (in *stackInput) parse(creating bool) (*compose.Stack, string, compose.Erro
 		}
 	}
 	if errs != nil {
-		return nil, "", errs
+		return st, "", errs
 	}
 	return st, "", nil
 }
@@ -537,7 +548,7 @@ func (s *Server) handleValidateStack(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	creating := in.Name != ""
-	st, msg, errs := in.parse(creating)
+	st, msg, errs := in.parseTolerant(creating)
 	out := stackPreview{Services: []stackPreviewService{}, Volumes: []string{}, Errors: errs, Error: msg}
 	if out.Errors == nil {
 		out.Errors = compose.Errors{}

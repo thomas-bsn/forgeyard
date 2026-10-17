@@ -197,27 +197,35 @@ export function ProjectFormModal({
       <span className="aside-label">Aperçu</span>
       {preview?.error && <p className="error">{preview.error}</p>}
       {preview && preview.services.length > 0 ? (
-        <ol className="stack-preview">
-          {preview.services.map((s) => (
-            <li key={s.name}>
-              <span className="stack-preview-head">
-                <strong>{s.name}</strong>
-                <span className={`badge ${s.kind === 'web' ? 'badge-accent' : ''}`}>{s.kind === 'web' ? `exposé :${s.port}` : kindLabels[s.kind]}</span>
-                {s.backup && <span className="badge">pg_dump</span>}
-              </span>
-              <span className="mono muted">{s.image}</span>
-              {s.kind === 'web' && domain && <span className="muted">→ {shownName}.{domain}</span>}
-              {s.dependsOn.length > 0 && (
-                <span className="muted">
-                  après{' '}
-                  {s.dependsOn
-                    .map((d) => `${d.service}${d.condition === 'service_healthy' ? ' (healthy)' : d.condition === 'service_completed_successfully' ? ' (terminé)' : ''}`)
-                    .join(', ')}
+        <>
+          <ol className="stack-preview">
+            {preview.services.map((s) => (
+              <li key={s.name}>
+                <span className="stack-preview-head">
+                  <strong>{s.name}</strong>
+                  <span className={`badge ${s.kind === 'web' ? 'badge-accent' : ''}`}>{s.kind === 'web' ? `exposé :${s.port}` : kindLabels[s.kind]}</span>
+                  {s.backup && <span className="badge">pg_dump</span>}
                 </span>
-              )}
-            </li>
-          ))}
-        </ol>
+                <span className="mono muted">{s.image}</span>
+                {s.kind === 'web' && domain && <span className="muted">→ {shownName}.{domain}</span>}
+                {s.dependsOn.length > 0 && (
+                  <span className="muted">
+                    après{' '}
+                    {s.dependsOn
+                      .map((d) => `${d.service}${d.condition === 'service_healthy' ? ' (healthy)' : d.condition === 'service_completed_successfully' ? ' (terminé)' : ''}`)
+                      .join(', ')}
+                  </span>
+                )}
+              </li>
+            ))}
+          </ol>
+          {preview.errors.length > 0 && (
+            <p className="muted aside-note aside-warn">
+              Fichier refusé : l'ordre est indicatif tant que ses {preview.errors.length} erreur{preview.errors.length > 1 ? 's' : ''}{' '}
+              {preview.errors.length > 1 ? 'ne sont pas corrigées' : "n'est pas corrigée"} (voir sous l'éditeur).
+            </p>
+          )}
+        </>
       ) : (
         <p className="muted aside-note">Les services apparaissent ici, dans leur ordre de démarrage.</p>
       )}

@@ -115,7 +115,9 @@ var refused = map[string]string{
 }
 
 // Parse reads a compose file, replacing ${VAR} with the stack's variables. All the problems are returned
-// at once.
+// at once. When the file is readable but refused (an unsupported key, a missing variable), the services it
+// could read come with the errors, in start order, so an editor can preview them; the stack is nil only
+// when nothing could be read at all (invalid YAML, no services).
 func Parse(src []byte, vars map[string]string) (*Stack, Errors) {
 	p := &parser{vars: vars}
 	var doc yaml.Node
@@ -133,7 +135,7 @@ func Parse(src []byte, vars map[string]string) (*Stack, Errors) {
 	st := p.stack(root)
 	if len(p.errs) > 0 {
 		sort.SliceStable(p.errs, func(i, j int) bool { return p.errs[i].Line < p.errs[j].Line })
-		return nil, p.errs
+		return st, p.errs
 	}
 	return st, nil
 }
@@ -638,9 +640,8 @@ func (p *parser) links(st *Stack, services *yaml.Node) {
 			p.errorf(line[s.Name], "%s est un job (un service attend qu'il se termine) : restart: %s le relancerait sans fin", s.Name, s.Restart)
 		}
 	}
-	if len(p.errs) > 0 {
-		return
-	}
+	// Order what can be ordered even when the file is refused: the caller may still show the services
+	// it could read, in their start order.
 	ordered, cycle := Order(st.Services)
 	if cycle != nil {
 		p.errorf(line[cycle[0]], "dépendances en boucle : %s", strings.Join(append(cycle, cycle[0]), " → "))

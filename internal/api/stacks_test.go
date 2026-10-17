@@ -113,6 +113,14 @@ func TestStackLifecycle(t *testing.T) {
 		len(preview.Errors) != 0 || len(preview.Services) != 4 || preview.Services[3].App != "shameless" || preview.Services[1].Kind != kindJob {
 		t.Fatalf("preview: %d %+v", code, preview)
 	}
+	// A refused file still previews the services it could read, in start order, so the editor can show
+	// them while the errors are fixed.
+	refused := "services:\n  web:\n    image: nginx:alpine\n    build: .\n    depends_on: [db]\n  db:\n    image: postgres:17-alpine\n"
+	var refusedPreview stackPreview
+	if code := postJSON(t, admin, url+"/api/stacks/validate", stackInput{Name: "refused", Compose: refused}, &refusedPreview); code != http.StatusOK ||
+		len(refusedPreview.Errors) == 0 || len(refusedPreview.Services) != 2 || refusedPreview.Services[0].Name != "db" || refusedPreview.Services[1].Name != "web" {
+		t.Fatalf("refused preview: %d %+v", code, refusedPreview)
+	}
 
 	var st stackResponse
 	if code := postJSON(t, admin, url+"/api/stacks", stackInput{Name: "shameless", Compose: shamelessCompose, Env: map[string]string{"DB_PASSWORD": "pw"}}, &st); code != http.StatusCreated {

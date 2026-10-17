@@ -199,6 +199,40 @@ func TestParseChecksServicesTogether(t *testing.T) {
 	}
 }
 
+func TestParseKeepsServicesWhenRefused(t *testing.T) {
+	// A file with an unsupported key is refused, but its services are readable: their start order is kept
+	// so an editor can still preview it.
+	src := `services:
+  web:
+    image: nginx:alpine
+    build: .
+    depends_on: [db]
+  db:
+    image: postgres:17-alpine
+`
+	st, errs := Parse([]byte(src), nil)
+	if errs == nil {
+		t.Fatal("accepted")
+	}
+	if st == nil {
+		t.Fatal("no stack kept for a refused but readable file")
+	}
+	var names []string
+	for _, s := range st.Services {
+		names = append(names, s.Name)
+	}
+	if !slices.Equal(names, []string{"db", "web"}) {
+		t.Fatalf("order: %v", names)
+	}
+	// A file nothing can be read from gives no stack.
+	if st, _ := Parse([]byte("services: ["), nil); st != nil {
+		t.Fatal("invalid YAML kept a stack")
+	}
+	if st, _ := Parse([]byte("volumes: {}"), nil); st != nil {
+		t.Fatal("a file without services kept a stack")
+	}
+}
+
 func TestInterpolate(t *testing.T) {
 	vars := map[string]string{"A": "1", "EMPTY": ""}
 	ok := map[string]string{

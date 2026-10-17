@@ -111,7 +111,7 @@ Supprimer le projet supprime ses apps (conteneurs, enregistrement DNS), son rés
 
 Dans l'onglet **Apps** :
 
-- **Nouvelle app › Docker Compose** : nom du projet, `docker-compose.yml`, variables. Le fichier est vérifié pendant la frappe : erreurs avec leur ligne (un clic sélectionne la ligne), variables utilisées mais absentes proposées en un clic, et à droite l'aperçu des services dans leur ordre de démarrage (exposé, privé, job, `pg_dump`). Un admin choisit le node.
+- **Nouvelle app › Docker Compose** : nom du projet, `docker-compose.yml`, variables. Le fichier est vérifié pendant la frappe : erreurs avec leur ligne (un clic sélectionne la ligne), variables utilisées mais absentes proposées en un clic, et à droite l'aperçu des services dans leur ordre de démarrage (exposé, privé, job, `pg_dump`). Un fichier refusé garde cet aperçu — indicatif — tant que les services ont pu être lus, pour montrer l'ordre qui serait lancé. Un admin choisit le node.
 - La liste montre d'abord les **Projets** (une carte par projet : état, adresse, une ligne par app), puis les **Apps** seules ; un filtre Tout / Apps / Projets n'en garde qu'un type. Les apps d'un projet ne sont listées que dans sa carte.
 - Page d'un projet (`#/projects/<id>`) : état d'ensemble, adresse, node, réseau ; **Apps du projet** (état de chacune, ce qu'il attend, lien vers sa page d'app), **Logs** (un service à la fois), **Volumes et sauvegardes** (voir [sauvegardes](backups.md)), **Compose** ; boutons Arrêter / Redéployer ou Démarrer, Modifier le compose, Supprimer.
 
