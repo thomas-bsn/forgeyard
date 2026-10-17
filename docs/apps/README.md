@@ -100,7 +100,7 @@ Par défaut, la liste montre les apps Forgeyard ; les conteneurs externes sont �
 
 ## États
 
-`pending` (en attente du node), `pulling`, `creating`, `running`, `restarting`, `stopped`, `exited`, `error`, et `node-offline` si le node n'est pas connecté. Un service de [projet](projects.md#démarrage) a aussi `waiting` (il attend ses dépendances), `blocked` (l'une d'elles a échoué), et un job `completed` ou `failed`. L'UI rafraîchit toutes les 3 s et affiche aussi le code de sortie, « tuée par manque de mémoire » et le nombre de redémarrages.
+`pending` (en attente du node), `pulling`, `creating`, `running`, `restarting`, `stopped`, `finished` (elle s'est arrêtée d'elle-même, code 0 : pas un plantage), `exited` (plantée), `error`, et `node-offline` si le node n'est pas connecté. Un service de [projet](projects.md#démarrage) a aussi `waiting` (il attend ses dépendances), `blocked` (l'une d'elles a échoué), et un job `completed` ou `failed`. L'UI rafraîchit toutes les 3 s et affiche aussi le code de sortie, « tuée par manque de mémoire » et le nombre de redémarrages.
 
 ## Adresse
 

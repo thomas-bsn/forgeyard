@@ -694,6 +694,8 @@ func (r *Reconciler) Statuses(ctx context.Context) []*agentpb.AppStatus {
 					st.State = "stopped"
 				} else if app.GetStack().GetJob() {
 					st.State = jobState(ct)
+				} else if ct.State.ExitCode == 0 && !ct.State.OOMKilled {
+					st.State = "finished" // it ended by itself, its work done: not a crash
 				}
 			}
 		}

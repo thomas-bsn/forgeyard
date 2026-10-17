@@ -387,7 +387,8 @@ message AppStatuses {
 
 message AppStatus {
   int64 app_id = 1;
-  // pulling, building, creating, deploying, running, restarting, stopped, exited, error; for a service of a
+  // pulling, building, creating, deploying, running, restarting, stopped, finished (ended by itself with code
+  // 0), exited (crashed), error; for a service of a
   // stack also waiting (for its dependencies), blocked (one failed), and completed or failed for a job
   string state = 2;
   int32 exit_code = 3;

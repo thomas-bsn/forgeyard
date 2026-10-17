@@ -52,6 +52,8 @@ func (s *Server) onAppStateChange(appID int64, from, to *agentpb.AppStatus) {
 			msg = "Plantée : manque de mémoire"
 		}
 		s.appEvent(appID, eventError, msg)
+	case "finished":
+		s.appEvent(appID, eventInfo, "Terminée (code 0) : elle s'est arrêtée d'elle-même")
 	case "restarting":
 		if from.GetState() != "restarting" {
 			s.appEvent(appID, eventWarning, "Redémarre en boucle")

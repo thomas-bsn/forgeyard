@@ -3285,7 +3285,8 @@ func (x *AppStatuses) GetApps() []*AppStatus {
 type AppStatus struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	AppId int64                  `protobuf:"varint,1,opt,name=app_id,json=appId,proto3" json:"app_id,omitempty"`
-	// pulling, building, creating, deploying, running, restarting, stopped, exited, error; for a service of a
+	// pulling, building, creating, deploying, running, restarting, stopped, finished (ended by itself with code
+	// 0), exited (crashed), error; for a service of a
 	// stack also waiting (for its dependencies), blocked (one failed), and completed or failed for a job
 	State        string `protobuf:"bytes,2,opt,name=state,proto3" json:"state,omitempty"`
 	ExitCode     int32  `protobuf:"varint,3,opt,name=exit_code,json=exitCode,proto3" json:"exit_code,omitempty"`

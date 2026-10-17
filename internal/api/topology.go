@@ -126,7 +126,7 @@ func (t *topoContext) traefikRunning(nodeID int64) (running, known bool) {
 var stateWords = map[string]string{
 	"pending": "en attente", "pulling": "téléchargement de l'image", "building": "construction de l'image",
 	"creating": "démarrage", "deploying": "mise à jour", "restarting": "redémarre en boucle", "stopped": "arrêtée",
-	"exited": "plantée", "error": "en erreur", "node-offline": "node hors ligne",
+	"exited": "plantée", "finished": "terminée", "error": "en erreur", "node-offline": "node hors ligne",
 	"waiting": "attend ses dépendances", "blocked": "bloquée", "completed": "job terminé", "failed": "job en échec",
 }
 

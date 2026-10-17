@@ -19,6 +19,7 @@ const stateLabels: Record<AppState, { label: string; tone: 'up' | 'warn' | 'down
   running: { label: 'En ligne', tone: 'up' },
   restarting: { label: 'Redémarre en boucle', tone: 'down' },
   stopped: { label: 'Arrêtée', tone: '' },
+  finished: { label: 'Terminée', tone: '' },
   exited: { label: 'Plantée', tone: 'down' },
   error: { label: 'Erreur', tone: 'down' },
   'node-offline': { label: 'Node hors ligne', tone: 'down' },
@@ -1427,8 +1428,9 @@ function AppDetail({
   return (
     <div className="detail">
       <aside className="panel detail-side">
-        <a href="#/apps" className="back-link">
-          ← Apps
+        {/* A service goes back to its project, not to the list it is not in. */}
+        <a href={app.stackId ? `#/projects/${app.stackId}` : '#/apps'} className="back-link">
+          {app.stackId ? '← Projet' : '← Apps'}
         </a>
         <div className="detail-title">
           <button type="button" className="logo-button" onClick={() => setChoosingLogo(true)} aria-label="Changer le logo" title="Changer le logo">

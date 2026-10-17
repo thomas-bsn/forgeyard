@@ -54,6 +54,7 @@ export function MemberGrid() {
 const stateText: Record<string, [string, string]> = {
   running: ['En ligne', 'dot-up'],
   stopped: ['Arrêtée', ''],
+  finished: ['Terminée', ''],
   exited: ['Plantée', 'dot-down'],
   restarting: ['Redémarre', 'dot-down'],
   error: ['Erreur', 'dot-down'],

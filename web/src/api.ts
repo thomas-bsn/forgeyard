@@ -224,6 +224,7 @@ export type AppState =
   | 'building'
   | 'stopped'
   | 'exited'
+  | 'finished'
   | 'error'
   | 'node-offline'
   // Services of a stack: waiting for their dependencies, blocked by one that failed; a job completed or failed.
