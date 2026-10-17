@@ -854,23 +854,37 @@ button.row:hover {
   font: 0.9rem ui-monospace, SFMono-Regular, Menlo, monospace;
 }
 
+/* The project form is wider than the other app forms: names and values need the room. */
+.modal-xl:has(.env-split) {
+  width: min(1120px, calc(100vw - 32px));
+}
+
+.env-list {
+  container-type: inline-size;
+}
+
 .env-split {
   display: grid;
-  grid-template-columns: minmax(0, 5fr) minmax(0, 6fr);
-  gap: 12px;
+  grid-template-columns: minmax(180px, 2fr) minmax(0, 3fr);
+  gap: 14px;
   align-items: start;
 }
 
-@media (max-width: 560px) {
+/* Too narrow for two columns: the names above, the detail below. */
+@container (max-width: 560px) {
   .env-split {
     grid-template-columns: minmax(0, 1fr);
+  }
+
+  .env-names {
+    max-height: 180px;
   }
 }
 
 .env-names {
   display: grid;
   gap: 2px;
-  max-height: 340px;
+  max-height: 380px;
   overflow: auto;
   padding: 4px;
   border-radius: 12px;
@@ -914,7 +928,8 @@ button.row:hover {
   display: block;
   width: 100%;
   min-width: 0;
-  padding: 8px 10px;
+  min-height: 40px;
+  padding: 9px 12px;
   border-radius: 10px;
   border: 1px solid var(--border);
   background: var(--bg);
@@ -926,6 +941,10 @@ button.row:hover {
 }
 
 /* A secret's value shows as dots until it is edited. */
+.env-detail label:nth-of-type(2) textarea {
+  min-height: 96px;
+}
+
 .env-detail textarea.env-masked {
   -webkit-text-security: disc;
 }
