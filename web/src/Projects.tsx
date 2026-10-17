@@ -67,75 +67,118 @@ type EnvVar = { key: string; value: string; reveal?: boolean }
 const secretName = /SECRET|PASSWORD|TOKEN|KEY|DATABASE_URL/i
 
 /**
- * A variable on one line, which opens to the whole value while it is edited. The value of a secret is hidden
- * until the eye is clicked or the line is edited.
+ * The variables as a list of names, complete, and the one picked below or beside it, with all the room for its
+ * name and value. The value of a secret is hidden until it is edited or the eye is clicked.
  */
-function EnvLine({ v, onChange, onRemove }: { v: EnvVar; onChange: (patch: Partial<EnvVar>) => void; onRemove: () => void }) {
-  const [editing, setEditing] = useState(false)
+function EnvEditor({ env, setEnv, missing }: { env: EnvVar[]; setEnv: (e: EnvVar[]) => void; missing: { name: string; required: boolean }[] }) {
+  const [sel, setSel] = useState(0)
   const [copied, setCopied] = useState(false)
-  const area = useRef<HTMLTextAreaElement>(null)
-  const masked = secretName.test(v.key) && v.value !== '' && !v.reveal
+  const nameArea = useRef<HTMLTextAreaElement>(null)
+  const valueArea = useRef<HTMLTextAreaElement>(null)
+  const i = Math.min(sel, env.length - 1)
+  const v = env[i] as EnvVar | undefined
+  const secret = !!v && secretName.test(v.key) && v.value !== ''
 
   useEffect(() => {
-    const t = area.current
-    if (!editing || !t) return
-    t.style.height = 'auto'
-    t.style.height = `${t.scrollHeight + 2}px`
-  }, [editing, v.value])
+    for (const t of [nameArea.current, valueArea.current]) {
+      if (!t) continue
+      t.style.height = 'auto'
+      t.style.height = `${t.scrollHeight + 2}px`
+    }
+  }, [i, v?.key, v?.value])
+
+  const patch = (p: Partial<EnvVar>) => setEnv(env.map((x, j) => (j === i ? { ...x, ...p } : x)))
+  const add = (key: string) => {
+    setEnv([...env, { key, value: '' }])
+    setSel(env.length)
+  }
+  const line = (e: string) => e.replace(/\n/g, '')
 
   return (
-    <div className="env-line">
-      <input aria-label="Nom de la variable" value={v.key} onChange={(e) => onChange({ key: e.target.value })} placeholder="NOM" spellCheck={false} />
-      {editing ? (
-        <textarea
-          ref={area}
-          rows={1}
-          aria-label="Valeur"
-          value={v.value}
-          autoFocus
-          spellCheck={false}
-          onFocus={(e) => e.currentTarget.setSelectionRange(v.value.length, v.value.length)}
-          onBlur={() => setEditing(false)}
-          onKeyDown={(e) => e.key === 'Enter' && e.preventDefault()}
-          onChange={(e) => onChange({ value: e.target.value.replace(/\n/g, '') })}
-          placeholder="valeur"
-        />
-      ) : (
-        <input
-          type={masked ? 'password' : 'text'}
-          aria-label="Valeur"
-          value={v.value}
-          readOnly
-          onFocus={() => setEditing(true)}
-          placeholder="valeur"
-        />
+    <div className="env-list">
+      {v && (
+        <div className="env-split">
+          <div className="env-names" role="listbox" aria-label="Variables">
+            {env.map((x, j) => (
+              <button key={j} type="button" role="option" aria-selected={j === i} className={`env-name ${j === i ? 'on' : ''}`} onClick={() => setSel(j)}>
+                {x.key || <span className="muted">(sans nom)</span>}
+              </button>
+            ))}
+          </div>
+          <div className="env-detail">
+            <label>
+              <small className="muted">Nom</small>
+              <textarea ref={nameArea} rows={1} aria-label="Nom de la variable" value={v.key} spellCheck={false} placeholder="NOM" onChange={(e) => patch({ key: line(e.target.value) })} onKeyDown={(e) => e.key === 'Enter' && e.preventDefault()} />
+            </label>
+            <label>
+              <small className="muted">Valeur</small>
+              <textarea
+                ref={valueArea}
+                rows={2}
+                aria-label="Valeur"
+                className={secret && !v.reveal ? 'env-masked' : ''}
+                value={v.value}
+                spellCheck={false}
+                placeholder="valeur"
+                onFocus={() => v.reveal === undefined && secret && patch({ reveal: true })}
+                onChange={(e) => patch({ value: line(e.target.value) })}
+                onKeyDown={(e) => e.key === 'Enter' && e.preventDefault()}
+              />
+            </label>
+            <span className="env-tools">
+              {v.value !== '' && (
+                <button
+                  type="button"
+                  className="btn btn-small"
+                  onClick={() => {
+                    navigator.clipboard?.writeText(v.value)
+                    setCopied(true)
+                    setTimeout(() => setCopied(false), 1500)
+                  }}
+                >
+                  {copied ? 'Copié' : 'Copier la valeur'}
+                </button>
+              )}
+              {secret && (
+                <button type="button" className="btn btn-small" onClick={() => patch({ reveal: !v.reveal })}>
+                  {v.reveal ? 'Masquer' : 'Afficher'}
+                </button>
+              )}
+              <button
+                type="button"
+                className="btn btn-small"
+                onClick={() => {
+                  setEnv(env.filter((_, j) => j !== i))
+                  setSel(Math.max(0, i - 1))
+                }}
+              >
+                Retirer
+              </button>
+            </span>
+          </div>
+        </div>
       )}
-      <span className="env-tools">
-        {v.value !== '' && (
-          <button
-            type="button"
-            className="btn btn-ghost"
-            aria-label="Copier la valeur"
-            title={copied ? 'Copié' : 'Copier la valeur'}
-            onMouseDown={(e) => e.preventDefault()}
-            onClick={() => {
-              navigator.clipboard?.writeText(v.value)
-              setCopied(true)
-              setTimeout(() => setCopied(false), 1500)
-            }}
-          >
-            {copied ? '✓' : '⧉'}
-          </button>
-        )}
-        {secretName.test(v.key) && v.value !== '' && (
-          <button type="button" className="btn btn-ghost" aria-label={v.reveal ? 'Masquer la valeur' : 'Afficher la valeur'} title={v.reveal ? 'Masquer' : 'Afficher'} onMouseDown={(e) => e.preventDefault()} onClick={() => onChange({ reveal: !v.reveal })}>
-            {v.reveal ? '🙈' : '👁'}
-          </button>
-        )}
-        <button type="button" className="btn btn-ghost" onClick={onRemove} aria-label="Retirer la variable">
-          ✕
+      {missing.length > 0 && (
+        <span className="chips-row">
+          {missing.map((m) => (
+            <button
+              key={m.name}
+              type="button"
+              className={`chip mono ${m.required ? 'chip-required' : ''}`}
+              title={m.required ? 'Obligatoire : le compose n’a pas de valeur par défaut' : 'Facultatif : le compose a une valeur par défaut'}
+              onClick={() => add(m.name)}
+            >
+              + {m.name}
+            </button>
+          ))}
+        </span>
+      )}
+      {missing.some((m) => m.required) && <small className="text-down">En rouge : obligatoires, sans valeur par défaut dans le compose.</small>}
+      <div>
+        <button type="button" className="btn btn-dashed btn-small" onClick={() => add('')}>
+          + Ajouter une variable
         </button>
-      </span>
+      </div>
     </div>
   )
 }
@@ -389,32 +432,7 @@ export function ProjectFormModal({
         <span>
           Variables <span className="muted">· pour ${'{VAR}'}, chiffrées</span>
         </span>
-        <div className="env-list">
-          {env.map((v, i) => (
-            <EnvLine key={i} v={v} onChange={(patch) => setEnv(env.map((x, j) => (j === i ? { ...x, ...patch } : x)))} onRemove={() => setEnv(env.filter((_, j) => j !== i))} />
-          ))}
-          {missing.length > 0 && (
-            <span className="chips-row">
-              {missing.map((m) => (
-                <button
-                  key={m.name}
-                  type="button"
-                  className={`chip mono ${m.required ? 'chip-required' : ''}`}
-                  title={m.required ? 'Obligatoire : le compose n’a pas de valeur par défaut' : 'Facultatif : le compose a une valeur par défaut'}
-                  onClick={() => setEnv([...env, { key: m.name, value: '' }])}
-                >
-                  + {m.name}
-                </button>
-              ))}
-            </span>
-          )}
-          {missing.some((m) => m.required) && <small className="text-down">En rouge : obligatoires, sans valeur par défaut dans le compose.</small>}
-          <div>
-            <button type="button" className="btn btn-dashed btn-small" onClick={() => setEnv([...env, { key: '', value: '' }])}>
-              + Ajouter une variable
-            </button>
-          </div>
-        </div>
+        <EnvEditor env={env} setEnv={setEnv} missing={missing} />
       </div>
       <details className="field" open={registryOpen} onToggle={(e) => setRegistryOpen(e.currentTarget.open)}>
         <summary>

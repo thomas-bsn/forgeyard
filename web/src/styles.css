@@ -854,21 +854,64 @@ button.row:hover {
   font: 0.9rem ui-monospace, SFMono-Regular, Menlo, monospace;
 }
 
-.env-line {
+.env-split {
   display: grid;
-  grid-template-columns: minmax(90px, 1fr) minmax(0, 2fr) auto;
-  gap: 8px;
+  grid-template-columns: minmax(0, 5fr) minmax(0, 6fr);
+  gap: 12px;
   align-items: start;
-  padding: 3px;
-  border-radius: 12px;
 }
 
-.env-line:focus-within {
+@media (max-width: 560px) {
+  .env-split {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.env-names {
+  display: grid;
+  gap: 2px;
+  max-height: 340px;
+  overflow: auto;
+  padding: 4px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+}
+
+.env-name {
+  padding: 7px 9px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text);
+  font: 0.82rem/1.35 ui-monospace, SFMono-Regular, Menlo, monospace;
+  text-align: left;
+  overflow-wrap: anywhere;
+  cursor: pointer;
+}
+
+.env-name:hover {
   background: var(--card-hover);
 }
 
-.env-line input,
-.env-line textarea {
+.env-name.on {
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.env-detail {
+  display: grid;
+  gap: 8px;
+}
+
+.env-detail label {
+  display: grid;
+  gap: 4px;
+}
+
+.env-detail textarea {
+  display: block;
   width: 100%;
   min-width: 0;
   padding: 8px 10px;
@@ -876,33 +919,21 @@ button.row:hover {
   border: 1px solid var(--border);
   background: var(--bg);
   color: var(--text);
-  font: 0.9rem ui-monospace, SFMono-Regular, Menlo, monospace;
-  text-overflow: ellipsis;
-}
-
-.env-line textarea {
-  display: block;
+  font: 0.9rem/1.45 ui-monospace, SFMono-Regular, Menlo, monospace;
   resize: none;
   overflow: hidden;
-  line-height: 1.45;
   overflow-wrap: anywhere;
 }
 
-/* The tools show on hover and while the line is edited; on a touch screen they stay. */
+/* A secret's value shows as dots until it is edited. */
+.env-detail textarea.env-masked {
+  -webkit-text-security: disc;
+}
+
 .env-tools {
   display: flex;
-  opacity: 0;
-}
-
-.env-line:hover .env-tools,
-.env-line:focus-within .env-tools {
-  opacity: 1;
-}
-
-@media (hover: none) {
-  .env-tools {
-    opacity: 1;
-  }
+  flex-wrap: wrap;
+  gap: 6px;
 }
 
 .logs {
