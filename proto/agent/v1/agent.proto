@@ -344,6 +344,10 @@ message StackService {
   bool job = 8;
   repeated Dependency depends_on = 9;
   repeated NamedVolume volumes = 10;
+  // registry: the credentials its images are pulled with, for the images of that registry. Empty: public.
+  string registry_server = 11;
+  string registry_username = 12;
+  string registry_password = 13;
 }
 
 message Healthcheck {

@@ -197,6 +197,7 @@ type Stack struct {
 	VolumeOverrides string
 	CreatedAt       int64
 	UpdatedAt       int64
+	RegistrySealed  string
 }
 
 type SupportMessage struct {

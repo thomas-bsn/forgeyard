@@ -1,6 +1,6 @@
 -- name: CreateStack :one
-INSERT INTO stacks (name, owner_id, node_id, compose, env_sealed, created_at, updated_at)
-VALUES (?, ?, ?, ?, ?, ?, ?)
+INSERT INTO stacks (name, owner_id, node_id, compose, env_sealed, registry_sealed, created_at, updated_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?)
 RETURNING *;
 
 -- name: GetStack :one
@@ -25,7 +25,7 @@ ORDER BY stacks.name;
 SELECT * FROM stacks WHERE owner_id = ? ORDER BY id;
 
 -- name: UpdateStack :one
-UPDATE stacks SET compose = ?, env_sealed = ?, updated_at = ? WHERE id = ? RETURNING *;
+UPDATE stacks SET compose = ?, env_sealed = ?, registry_sealed = ?, updated_at = ? WHERE id = ? RETURNING *;
 
 -- name: SetStackVolumeOverrides :exec
 UPDATE stacks SET volume_overrides = ?, updated_at = ? WHERE id = ?;

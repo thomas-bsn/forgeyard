@@ -131,6 +131,14 @@ export function ProjectFormModal({
   const [env, setEnv] = useState<{ key: string; value: string }[]>(
     stack ? Object.entries(stack.env ?? {}).map(([key, value]) => ({ key, value })) : [{ key: 'DB_PASSWORD', value: randomSecret() }],
   )
+  // A private registry the images come from; the saved password never comes back, so it is kept unless retyped.
+  const [registry, setRegistry] = useState({ server: stack?.registry?.server ?? '', username: stack?.registry?.username ?? '', password: '' })
+  const [registryTouched, setRegistryTouched] = useState(false)
+  const [registryOpen, setRegistryOpen] = useState(!!stack?.registry)
+  const editRegistry = (patch: Partial<typeof registry>) => {
+    setRegistry({ ...registry, ...patch })
+    setRegistryTouched(true)
+  }
   const [preview, setPreview] = useState<StackPreview | null>(null)
   const [errors, setErrors] = useState<ComposeError[]>([])
   const [error, setError] = useState('')
@@ -182,7 +190,8 @@ export function ProjectFormModal({
     setBusy(true)
     setError('')
     try {
-      const saved = stack ? await api.updateStack(stack.id, { compose, env: vars }) : await api.createStack({ name, compose, env: vars, nodeId: nodeId || undefined })
+      const login = registryTouched || (!stack && registry.server.trim()) ? registry : undefined
+      const saved = stack ? await api.updateStack(stack.id, { compose, env: vars, registry: login }) : await api.createStack({ name, compose, env: vars, nodeId: nodeId || undefined, registry: login })
       onSaved(saved)
     } catch (err) {
       if (err instanceof ApiError && err.composeErrors) setErrors(err.composeErrors)
@@ -322,6 +331,28 @@ export function ProjectFormModal({
           </div>
         </div>
       </div>
+      <details className="field" open={registryOpen} onToggle={(e) => setRegistryOpen(e.currentTarget.open)}>
+        <summary>
+          Registry privé <span className="muted">{registry.server ? `· ${registry.server}` : '· images publiques'}</span>
+        </summary>
+        <div className="env-list">
+          <input aria-label="Adresse du registry" className="mono" value={registry.server} onChange={(e) => editRegistry({ server: e.target.value })} placeholder="ghcr.io" />
+          <div className="env-row">
+            <input aria-label="Identifiant" value={registry.username} onChange={(e) => editRegistry({ username: e.target.value })} placeholder="identifiant" autoComplete="off" />
+            <input
+              type="password"
+              aria-label="Mot de passe ou token"
+              value={registry.password}
+              onChange={(e) => editRegistry({ password: e.target.value })}
+              placeholder={stack?.registry?.passwordSet ? 'inchangé' : 'token'}
+              autoComplete="new-password"
+            />
+          </div>
+          <small>
+            Pour télécharger les images privées de cette adresse. Un token en lecture seule suffit ; il est chiffré avant d’être enregistré. Videz l’adresse pour le retirer.
+          </small>
+        </div>
+      </details>
     </Modal>
   )
 }

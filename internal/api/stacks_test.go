@@ -393,3 +393,41 @@ func TestStackIDsAreNotReused(t *testing.T) {
 		t.Fatalf("the new stack would get the old one's volume: %s", second.Volumes[0].Docker)
 	}
 }
+
+func TestStackRegistryLogin(t *testing.T) {
+	url, _, admin, fa := setupStackServer(t)
+	compose := "services:\n  web:\n    image: ghcr.io/acme/private:main\n    x-forgeyard: { expose: { port: 80 } }\n"
+	reg := &registryInput{Server: "https://GHCR.io/", Username: "acme", Password: "s3cret"}
+	var st stackResponse
+	if code := postJSON(t, admin, url+"/api/stacks", stackInput{Name: "private", Compose: compose, Registry: reg}, &st); code != http.StatusCreated {
+		t.Fatalf("create: %d", code)
+	}
+	if st.Registry == nil || st.Registry.Server != "ghcr.io" || st.Registry.Username != "acme" || !st.Registry.PasswordSet {
+		t.Fatalf("registry: %+v", st.Registry)
+	}
+	web := fa.desiredWith(t, 1)["web"].GetStack()
+	if web.GetRegistryServer() != "ghcr.io" || web.GetRegistryUsername() != "acme" || web.GetRegistryPassword() != "s3cret" {
+		t.Fatalf("what the agent gets: %+v", web)
+	}
+
+	// Saving without a password keeps the one saved; a login without any is refused.
+	same := &registryInput{Server: "ghcr.io", Username: "acme2"}
+	if code := putJSON(t, admin, url+"/api/stacks/"+itoa(st.ID), stackInput{Compose: compose, Registry: same}, &st); code != http.StatusOK {
+		t.Fatalf("update: %d", code)
+	}
+	if web = fa.desiredWith(t, 1)["web"].GetStack(); web.GetRegistryUsername() != "acme2" || web.GetRegistryPassword() != "s3cret" {
+		t.Fatalf("password kept: %+v", web)
+	}
+	if code := putJSON(t, admin, url+"/api/stacks/"+itoa(st.ID), stackInput{Compose: compose, Registry: &registryInput{Server: "docker.io", Username: "x"}}, nil); code != http.StatusBadRequest {
+		t.Fatalf("a login without a password: %d", code)
+	}
+
+	// An update that does not mention it leaves it; an empty server removes it.
+	if code := putJSON(t, admin, url+"/api/stacks/"+itoa(st.ID), stackInput{Compose: compose}, &st); code != http.StatusOK || st.Registry == nil {
+		t.Fatalf("untouched: %d %+v", code, st.Registry)
+	}
+	var removed stackResponse
+	if code := putJSON(t, admin, url+"/api/stacks/"+itoa(st.ID), stackInput{Compose: compose, Registry: &registryInput{}}, &removed); code != http.StatusOK || removed.Registry != nil {
+		t.Fatalf("removed: %d %+v", code, removed.Registry)
+	}
+}

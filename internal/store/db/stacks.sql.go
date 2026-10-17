@@ -10,19 +10,20 @@ import (
 )
 
 const createStack = `-- name: CreateStack :one
-INSERT INTO stacks (name, owner_id, node_id, compose, env_sealed, created_at, updated_at)
-VALUES (?, ?, ?, ?, ?, ?, ?)
-RETURNING id, name, owner_id, node_id, compose, env_sealed, volume_overrides, created_at, updated_at
+INSERT INTO stacks (name, owner_id, node_id, compose, env_sealed, registry_sealed, created_at, updated_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+RETURNING id, name, owner_id, node_id, compose, env_sealed, volume_overrides, created_at, updated_at, registry_sealed
 `
 
 type CreateStackParams struct {
-	Name      string
-	OwnerID   int64
-	NodeID    int64
-	Compose   string
-	EnvSealed string
-	CreatedAt int64
-	UpdatedAt int64
+	Name           string
+	OwnerID        int64
+	NodeID         int64
+	Compose        string
+	EnvSealed      string
+	RegistrySealed string
+	CreatedAt      int64
+	UpdatedAt      int64
 }
 
 func (q *Queries) CreateStack(ctx context.Context, arg CreateStackParams) (Stack, error) {
@@ -32,6 +33,7 @@ func (q *Queries) CreateStack(ctx context.Context, arg CreateStackParams) (Stack
 		arg.NodeID,
 		arg.Compose,
 		arg.EnvSealed,
+		arg.RegistrySealed,
 		arg.CreatedAt,
 		arg.UpdatedAt,
 	)
@@ -46,6 +48,7 @@ func (q *Queries) CreateStack(ctx context.Context, arg CreateStackParams) (Stack
 		&i.VolumeOverrides,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.RegistrySealed,
 	)
 	return i, err
 }
@@ -132,7 +135,7 @@ func (q *Queries) DeleteStack(ctx context.Context, id int64) error {
 }
 
 const getStack = `-- name: GetStack :one
-SELECT id, name, owner_id, node_id, compose, env_sealed, volume_overrides, created_at, updated_at FROM stacks WHERE id = ?
+SELECT id, name, owner_id, node_id, compose, env_sealed, volume_overrides, created_at, updated_at, registry_sealed FROM stacks WHERE id = ?
 `
 
 func (q *Queries) GetStack(ctx context.Context, id int64) (Stack, error) {
@@ -148,6 +151,7 @@ func (q *Queries) GetStack(ctx context.Context, id int64) (Stack, error) {
 		&i.VolumeOverrides,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.RegistrySealed,
 	)
 	return i, err
 }
@@ -209,7 +213,7 @@ func (q *Queries) ListStackApps(ctx context.Context, stackID int64) ([]App, erro
 }
 
 const listStacks = `-- name: ListStacks :many
-SELECT stacks.id, stacks.name, stacks.owner_id, stacks.node_id, stacks.compose, stacks.env_sealed, stacks.volume_overrides, stacks.created_at, stacks.updated_at, users.display_name AS owner_name, nodes.name AS node_name
+SELECT stacks.id, stacks.name, stacks.owner_id, stacks.node_id, stacks.compose, stacks.env_sealed, stacks.volume_overrides, stacks.created_at, stacks.updated_at, stacks.registry_sealed, users.display_name AS owner_name, nodes.name AS node_name
 FROM stacks
 JOIN users ON users.id = stacks.owner_id
 JOIN nodes ON nodes.id = stacks.node_id
@@ -241,6 +245,7 @@ func (q *Queries) ListStacks(ctx context.Context) ([]ListStacksRow, error) {
 			&i.Stack.VolumeOverrides,
 			&i.Stack.CreatedAt,
 			&i.Stack.UpdatedAt,
+			&i.Stack.RegistrySealed,
 			&i.OwnerName,
 			&i.NodeName,
 		); err != nil {
@@ -258,7 +263,7 @@ func (q *Queries) ListStacks(ctx context.Context) ([]ListStacksRow, error) {
 }
 
 const listStacksByOwner = `-- name: ListStacksByOwner :many
-SELECT stacks.id, stacks.name, stacks.owner_id, stacks.node_id, stacks.compose, stacks.env_sealed, stacks.volume_overrides, stacks.created_at, stacks.updated_at, users.display_name AS owner_name, nodes.name AS node_name
+SELECT stacks.id, stacks.name, stacks.owner_id, stacks.node_id, stacks.compose, stacks.env_sealed, stacks.volume_overrides, stacks.created_at, stacks.updated_at, stacks.registry_sealed, users.display_name AS owner_name, nodes.name AS node_name
 FROM stacks
 JOIN users ON users.id = stacks.owner_id
 JOIN nodes ON nodes.id = stacks.node_id
@@ -291,6 +296,7 @@ func (q *Queries) ListStacksByOwner(ctx context.Context, ownerID int64) ([]ListS
 			&i.Stack.VolumeOverrides,
 			&i.Stack.CreatedAt,
 			&i.Stack.UpdatedAt,
+			&i.Stack.RegistrySealed,
 			&i.OwnerName,
 			&i.NodeName,
 		); err != nil {
@@ -308,7 +314,7 @@ func (q *Queries) ListStacksByOwner(ctx context.Context, ownerID int64) ([]ListS
 }
 
 const listStacksByOwnerID = `-- name: ListStacksByOwnerID :many
-SELECT id, name, owner_id, node_id, compose, env_sealed, volume_overrides, created_at, updated_at FROM stacks WHERE owner_id = ? ORDER BY id
+SELECT id, name, owner_id, node_id, compose, env_sealed, volume_overrides, created_at, updated_at, registry_sealed FROM stacks WHERE owner_id = ? ORDER BY id
 `
 
 func (q *Queries) ListStacksByOwnerID(ctx context.Context, ownerID int64) ([]Stack, error) {
@@ -330,6 +336,7 @@ func (q *Queries) ListStacksByOwnerID(ctx context.Context, ownerID int64) ([]Sta
 			&i.VolumeOverrides,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.RegistrySealed,
 		); err != nil {
 			return nil, err
 		}
@@ -392,20 +399,22 @@ func (q *Queries) SetStackVolumeOverrides(ctx context.Context, arg SetStackVolum
 }
 
 const updateStack = `-- name: UpdateStack :one
-UPDATE stacks SET compose = ?, env_sealed = ?, updated_at = ? WHERE id = ? RETURNING id, name, owner_id, node_id, compose, env_sealed, volume_overrides, created_at, updated_at
+UPDATE stacks SET compose = ?, env_sealed = ?, registry_sealed = ?, updated_at = ? WHERE id = ? RETURNING id, name, owner_id, node_id, compose, env_sealed, volume_overrides, created_at, updated_at, registry_sealed
 `
 
 type UpdateStackParams struct {
-	Compose   string
-	EnvSealed string
-	UpdatedAt int64
-	ID        int64
+	Compose        string
+	EnvSealed      string
+	RegistrySealed string
+	UpdatedAt      int64
+	ID             int64
 }
 
 func (q *Queries) UpdateStack(ctx context.Context, arg UpdateStackParams) (Stack, error) {
 	row := q.db.QueryRowContext(ctx, updateStack,
 		arg.Compose,
 		arg.EnvSealed,
+		arg.RegistrySealed,
 		arg.UpdatedAt,
 		arg.ID,
 	)
@@ -420,6 +429,7 @@ func (q *Queries) UpdateStack(ctx context.Context, arg UpdateStackParams) (Stack
 		&i.VolumeOverrides,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.RegistrySealed,
 	)
 	return i, err
 }

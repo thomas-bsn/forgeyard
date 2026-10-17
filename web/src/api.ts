@@ -321,7 +321,11 @@ export type Stack = {
   updatedAt: number
   compose?: string
   env?: Record<string, string>
+  registry?: { server: string; username: string; passwordSet: boolean }
 }
+
+/** The login of a private registry; without a password the saved one is kept, without a server the login is removed. */
+export type RegistryLogin = { server: string; username: string; password: string }
 
 export type StackPreview = {
   services: { name: string; app: string; image: string; kind: App['kind']; port?: number; dependsOn: { service: string; condition: string }[]; backup?: string }[]
@@ -610,8 +614,8 @@ export const api = {
   stacks: () => request<Stack[]>('GET', '/api/stacks'),
   stack: (id: number) => request<Stack>('GET', `/api/stacks/${id}`),
   validateStack: (body: { name: string; compose: string; env: Record<string, string> }) => request<StackPreview>('POST', '/api/stacks/validate', body),
-  createStack: (body: { name: string; compose: string; env: Record<string, string>; nodeId?: number }) => request<Stack>('POST', '/api/stacks', body),
-  updateStack: (id: number, body: { compose: string; env: Record<string, string> }) => request<Stack>('PUT', `/api/stacks/${id}`, body),
+  createStack: (body: { name: string; compose: string; env: Record<string, string>; nodeId?: number; registry?: RegistryLogin }) => request<Stack>('POST', '/api/stacks', body),
+  updateStack: (id: number, body: { compose: string; env: Record<string, string>; registry?: RegistryLogin }) => request<Stack>('PUT', `/api/stacks/${id}`, body),
   stackAction: (id: number, action: 'start' | 'stop' | 'redeploy') => request<Stack>('POST', `/api/stacks/${id}/${action}`, {}),
   deleteStack: (id: number, volumes: boolean) => request<void>('DELETE', `/api/stacks/${id}${volumes ? '?volumes=1' : ''}`, {}),
   saveBackupPolicy: (id: number, volume: string, body: { schedule: BackupPolicy['schedule']; hour: number; keep: number; enabled: boolean }) =>

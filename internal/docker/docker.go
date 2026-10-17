@@ -6,6 +6,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/binary"
 	"encoding/json"
 	"errors"
@@ -102,6 +103,10 @@ func (c *Client) do(ctx context.Context, method, path string, body any) (*http.R
 }
 
 func (c *Client) doRaw(ctx context.Context, method, path, contentType string, body io.Reader) (*http.Response, error) {
+	return c.doWithHeaders(ctx, method, path, contentType, body, nil)
+}
+
+func (c *Client) doWithHeaders(ctx context.Context, method, path, contentType string, body io.Reader, headers map[string]string) (*http.Response, error) {
 	// The host part is ignored by the Unix dialer.
 	req, err := http.NewRequestWithContext(ctx, method, "http://docker"+path, body)
 	if err != nil {
@@ -109,6 +114,9 @@ func (c *Client) doRaw(ctx context.Context, method, path, contentType string, bo
 	}
 	if contentType != "" {
 		req.Header.Set("Content-Type", contentType)
+	}
+	for k, v := range headers {
+		req.Header.Set(k, v)
 	}
 	resp, err := c.http.Do(req)
 	if err != nil {
@@ -174,11 +182,48 @@ func (c *Client) CreateVolume(ctx context.Context, name string, labels map[strin
 
 // Pull downloads an image, e.g. "nginx:1.27" or "ghcr.io/org/app:main". It returns once the pull is over.
 func (c *Client) Pull(ctx context.Context, image string) error {
+	return c.PullAs(ctx, image, nil)
+}
+
+// RegistryAuth is the login of a private registry.
+type RegistryAuth struct {
+	Server, Username, Password string
+}
+
+// ImageRegistry is the registry an image comes from: its first path segment when that looks like a host,
+// Docker Hub otherwise.
+func ImageRegistry(image string) string {
+	first, rest, ok := strings.Cut(image, "/")
+	if ok && rest != "" && (strings.ContainsAny(first, ".:") || first == "localhost") {
+		return strings.ToLower(first)
+	}
+	return "docker.io"
+}
+
+// SameRegistry tells whether two registry names are the same one; Docker Hub goes by several names.
+func SameRegistry(a, b string) bool {
+	norm := func(s string) string {
+		s = strings.ToLower(strings.TrimSuffix(s, "/"))
+		if s == "index.docker.io" || s == "registry-1.docker.io" {
+			return "docker.io"
+		}
+		return s
+	}
+	return norm(a) == norm(b)
+}
+
+// PullAs is Pull with the login of a private registry, used when the image comes from that registry.
+func (c *Client) PullAs(ctx context.Context, image string, auth *RegistryAuth) error {
+	var headers map[string]string
+	if auth != nil && auth.Server != "" && SameRegistry(ImageRegistry(image), auth.Server) {
+		raw, _ := json.Marshal(map[string]string{"username": auth.Username, "password": auth.Password, "serveraddress": auth.Server})
+		headers = map[string]string{"X-Registry-Auth": base64.URLEncoding.EncodeToString(raw)}
+	}
 	ref := image
 	if !strings.Contains(lastSegment(ref), ":") && !strings.Contains(ref, "@") {
 		ref += ":latest" // without a tag Docker would pull every tag
 	}
-	resp, err := c.do(ctx, http.MethodPost, "/images/create?fromImage="+url.QueryEscape(ref), nil)
+	resp, err := c.doWithHeaders(ctx, http.MethodPost, "/images/create?fromImage="+url.QueryEscape(ref), "", nil, headers)
 	if err != nil {
 		return err
 	}

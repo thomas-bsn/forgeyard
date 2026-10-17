@@ -15,6 +15,7 @@ import (
 	"github.com/thomas-bsn/forgeyard/internal/agentpb"
 	"github.com/thomas-bsn/forgeyard/internal/compose"
 	"github.com/thomas-bsn/forgeyard/internal/dns"
+	"github.com/thomas-bsn/forgeyard/internal/docker"
 	"github.com/thomas-bsn/forgeyard/internal/store/db"
 )
 
@@ -23,7 +24,8 @@ import (
 // file. The exposed service is named after the stack (its subdomain), the others <stack>-<service>.
 
 const (
-	settingStackEnvLabel = "stack_env"
+	settingStackEnvLabel      = "stack_env"
+	settingStackRegistryLabel = "stack_registry"
 
 	kindService = "service" // a service of a stack only the stack reaches
 	kindJob     = "job"     // a service of a stack another one waits to complete
@@ -156,6 +158,22 @@ type stackInput struct {
 	Compose string            `json:"compose"`
 	Env     map[string]string `json:"env"`
 	NodeID  int64             `json:"nodeId"` // at creation: where it runs, 0 for the recommended node
+	// Registry: the login of a private registry the images come from. Absent: unchanged; with an empty
+	// server: removed; with an empty password: the saved one is kept.
+	Registry *registryInput `json:"registry"`
+}
+
+type registryInput struct {
+	Server   string `json:"server"`
+	Username string `json:"username"`
+	Password string `json:"password"`
+}
+
+// registryInfo is a stack's registry login as its owner sees it: the password is never sent back.
+type registryInfo struct {
+	Server      string `json:"server"`
+	Username    string `json:"username"`
+	PasswordSet bool   `json:"passwordSet"`
 }
 
 // stackErrors answers a compose file that cannot run, with every problem and its line.
@@ -232,14 +250,64 @@ func (s *Server) openStackEnv(sealed string) (map[string]string, error) {
 	return env, json.Unmarshal([]byte(plain), &env)
 }
 
+func (s *Server) sealRegistry(r registryInput) (string, error) {
+	if r.Server == "" {
+		return "", nil
+	}
+	return s.secrets.Encrypt(string(must(json.Marshal(r))), settingStackRegistryLabel)
+}
+
+func (s *Server) openRegistry(sealed string) (registryInput, error) {
+	var r registryInput
+	if sealed == "" {
+		return r, nil
+	}
+	plain, err := s.secrets.Decrypt(sealed, settingStackRegistryLabel)
+	if err != nil {
+		return r, err
+	}
+	return r, json.Unmarshal([]byte(plain), &r)
+}
+
+// resolveRegistry gives the sealed login a stack is saved with, from what the form sent and what was saved
+// before. The message is a problem with the input.
+func (s *Server) resolveRegistry(in *registryInput, previous string) (sealed, msg string, err error) {
+	if in == nil {
+		return previous, "", nil
+	}
+	server := strings.ToLower(strings.TrimSpace(in.Server))
+	server = strings.TrimSuffix(strings.TrimPrefix(strings.TrimPrefix(server, "https://"), "http://"), "/")
+	if server == "" {
+		return "", "", nil
+	}
+	reg := registryInput{Server: server, Username: strings.TrimSpace(in.Username), Password: in.Password}
+	if reg.Password == "" {
+		old, err := s.openRegistry(previous)
+		if err != nil {
+			return "", "", err
+		}
+		if docker.SameRegistry(old.Server, server) {
+			reg.Password = old.Password
+		}
+	}
+	switch {
+	case reg.Username == "" || reg.Password == "":
+		return "", "registry : l'identifiant et le mot de passe (ou token) sont requis", nil
+	case len(server) > 255 || len(reg.Username) > 255 || len(reg.Password) > 4096 || strings.ContainsAny(server, " \t/"):
+		return "", "registry : adresse, identifiant ou mot de passe invalide", nil
+	}
+	sealed, err = s.sealRegistry(reg)
+	return sealed, "", err
+}
+
 // stackServiceSpec is how the agent runs a service of a stack: its dependencies are the apps of the
 // services it names.
-func stackServiceSpec(st db.Stack, a db.App, appIDs map[string]int64) *agentpb.StackService {
+func stackServiceSpec(st db.Stack, a db.App, appIDs map[string]int64, reg registryInput) *agentpb.StackService {
 	var svc compose.Service
 	json.Unmarshal([]byte(a.ServiceSpec), &svc)
 	out := &agentpb.StackService{
 		StackId: st.ID, Network: stackNetwork(st.ID), Service: a.Service, Command: svc.Command, Entrypoint: svc.Entrypoint,
-		Restart: svc.Restart, Job: svc.Job,
+		Restart: svc.Restart, Job: svc.Job, RegistryServer: reg.Server, RegistryUsername: reg.Username, RegistryPassword: reg.Password,
 	}
 	if h := svc.Healthcheck; h != nil {
 		out.Healthcheck = &agentpb.Healthcheck{Test: h.Test, IntervalNs: int64(h.Interval), TimeoutNs: int64(h.Timeout),
@@ -279,8 +347,12 @@ func (s *Server) stackSpecs(ctx context.Context, apps []db.App) (map[int64]*agen
 		for _, m := range members {
 			ids[m.Service] = m.ID
 		}
+		reg, err := s.openRegistry(st.RegistrySealed)
+		if err != nil {
+			return nil, err
+		}
 		for _, m := range members {
-			out[m.ID] = stackServiceSpec(st, m, ids)
+			out[m.ID] = stackServiceSpec(st, m, ids, reg)
 		}
 	}
 	return out, nil
@@ -312,6 +384,7 @@ type stackResponse struct {
 	UpdatedAt int64             `json:"updatedAt"`
 	Compose   string            `json:"compose,omitempty"` // with the variables, for its owner
 	Env       map[string]string `json:"env,omitempty"`
+	Registry  *registryInfo     `json:"registry,omitempty"`
 }
 
 // stackState sums up a stack from its services: blocked when a job failed or a service cannot start,
@@ -451,6 +524,13 @@ func (s *Server) describeStack(ctx context.Context, r *http.Request, st db.Stack
 		resp.Compose = st.Compose
 		if resp.Env, err = s.openStackEnv(st.EnvSealed); err != nil {
 			return resp, err
+		}
+		reg, err := s.openRegistry(st.RegistrySealed)
+		if err != nil {
+			return resp, err
+		}
+		if reg.Server != "" {
+			resp.Registry = &registryInfo{Server: reg.Server, Username: reg.Username, PasswordSet: reg.Password != ""}
 		}
 	}
 	return resp, nil
@@ -648,13 +728,22 @@ func (s *Server) handleCreateStack(w http.ResponseWriter, r *http.Request) {
 		s.internalError(w, r, err)
 		return
 	}
+	registry, msg, err := s.resolveRegistry(in.Registry, "")
+	if err != nil {
+		s.internalError(w, r, err)
+		return
+	}
+	if msg != "" {
+		writeError(w, http.StatusBadRequest, msg)
+		return
+	}
 	now := time.Now().Unix()
 	var st db.Stack
 	var created []db.App
 	err = s.store.InTx(ctx, func(q *db.Queries) error {
 		var err error
 		st, err = q.CreateStack(ctx, db.CreateStackParams{Name: in.Name, OwnerID: user.ID, NodeID: node.ID, Compose: in.Compose,
-			EnvSealed: sealed, CreatedAt: now, UpdatedAt: now})
+			EnvSealed: sealed, RegistrySealed: registry, CreatedAt: now, UpdatedAt: now})
 		if err != nil {
 			return err
 		}
@@ -779,6 +868,15 @@ func (s *Server) handleUpdateStack(w http.ResponseWriter, r *http.Request) {
 		s.internalError(w, r, err)
 		return
 	}
+	registry, msg, err := s.resolveRegistry(in.Registry, st.RegistrySealed)
+	if err != nil {
+		s.internalError(w, r, err)
+		return
+	}
+	if msg != "" {
+		writeError(w, http.StatusBadRequest, msg)
+		return
+	}
 	node, err := s.store.GetNode(ctx, st.NodeID)
 	if err != nil {
 		s.internalError(w, r, err)
@@ -794,7 +892,7 @@ func (s *Server) handleUpdateStack(w http.ResponseWriter, r *http.Request) {
 	var created []db.App
 	err = s.store.InTx(ctx, func(q *db.Queries) error {
 		var err error
-		if st, err = q.UpdateStack(ctx, db.UpdateStackParams{Compose: in.Compose, EnvSealed: sealed, UpdatedAt: time.Now().Unix(), ID: st.ID}); err != nil {
+		if st, err = q.UpdateStack(ctx, db.UpdateStackParams{Compose: in.Compose, EnvSealed: sealed, RegistrySealed: registry, UpdatedAt: time.Now().Unix(), ID: st.ID}); err != nil {
 			return err
 		}
 		for _, u := range plan.Update {

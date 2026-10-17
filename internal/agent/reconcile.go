@@ -339,7 +339,11 @@ func (r *Reconciler) fetchImage(ctx context.Context, app *agentpb.AppSpec) error
 		return nil
 	}
 	r.setProgress(app.GetId(), "pulling")
-	if err := r.dc.Pull(ctx, app.GetImage()); err != nil {
+	var auth *docker.RegistryAuth
+	if st := app.GetStack(); st != nil && st.GetRegistryServer() != "" {
+		auth = &docker.RegistryAuth{Server: st.GetRegistryServer(), Username: st.GetRegistryUsername(), Password: st.GetRegistryPassword()}
+	}
+	if err := r.dc.PullAs(ctx, app.GetImage(), auth); err != nil {
 		return fmt.Errorf("téléchargement de l'image %s : %w", app.GetImage(), err)
 	}
 	return nil
