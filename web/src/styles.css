@@ -1597,6 +1597,18 @@ button.row:hover {
   animation: node-pulse 1.4s ease-in-out infinite;
 }
 
+/* An app being deleted says so while the server removes its record and its container. */
+.app-removing::after {
+  content: 'Suppression…';
+  position: absolute;
+  inset: auto 8px 8px auto;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--panel, #fff);
+  border: 1px solid var(--border);
+  font-size: 12px;
+}
+
 .node-gone {
   pointer-events: none;
   animation: node-leave 0.4s ease-in forwards;

@@ -596,6 +596,7 @@ function WithMenu({ item, admin, onChange, place, children }: { item: Item; admi
   const app = item.app
   const [open, setOpen] = useState(false)
   const [moving, setMoving] = useState(false)
+  const [removing, setRemoving] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
   useEffect(() => {
     if (!open) return
@@ -611,17 +612,19 @@ function WithMenu({ item, admin, onChange, place, children }: { item: Item; admi
   }, [open])
   if (!app) return <>{children}</>
 
-  const act = (action: () => Promise<unknown>) => async () => {
+  const act = (action: () => Promise<unknown>, removes = false) => async () => {
     setOpen(false)
+    if (removes) setRemoving(true)
     try {
       await action()
       onChange()
     } catch (err) {
+      setRemoving(false)
       window.alert(errorMessage(err))
     }
   }
   return (
-    <div className={`menu-wrap menu-${place}`} ref={ref}>
+    <div className={`menu-wrap menu-${place}${removing ? ' node-removing app-removing' : ''}`} ref={ref}>
       {children}
       <button type="button" className={`item-menu-btn ${open ? 'open' : ''}`} aria-label={`Actions de ${app.name}`} aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen(!open)}>
         <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
@@ -673,7 +676,7 @@ function WithMenu({ item, admin, onChange, place, children }: { item: Item; admi
               role="menuitem"
               className="danger"
               onClick={() => {
-                if (window.confirm(deleteQuestion(app))) act(() => api.deleteApp(app.id))()
+                if (window.confirm(deleteQuestion(app))) act(() => api.deleteApp(app.id), true)()
                 else setOpen(false)
               }}
             >
@@ -1378,6 +1381,7 @@ function AppDetail({
   const [moving, setMoving] = useState(false)
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
+  const [deleting, setDeleting] = useState(false)
 
   useEffect(() => {
     api.app(app.id).then(setFull).catch((err) => setError(errorMessage(err)))
@@ -1645,14 +1649,20 @@ function AppDetail({
           disabled={busy}
           onClick={() => {
             if (window.confirm(deleteQuestion(app))) {
+              setDeleting(true)
               run(async () => {
-                await api.deleteApp(app.id)
+                try {
+                  await api.deleteApp(app.id)
+                } catch (err) {
+                  setDeleting(false)
+                  throw err
+                }
                 go('apps')
               })
             }
           }}
         >
-          Supprimer l’app…
+          {deleting ? 'Suppression…' : 'Supprimer l’app…'}
         </button>
       </aside>
 
