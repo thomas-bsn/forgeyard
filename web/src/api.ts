@@ -28,7 +28,29 @@ export type Member = {
   avatarUrl?: string
   bio: string
   publicApps: number
+  publicProjects: number
   createdAt: number
+}
+
+/** An app as a public profile shows it: its name, address and state only. */
+export type MemberApp = {
+  id: number
+  name: string
+  url?: string
+  state: AppState
+  logo: App['logo']
+  kind?: App['kind']
+  service?: string // its name in its project's compose file
+}
+
+/** A project on a public profile: its apps are listed inside, not among the apps. */
+export type MemberProject = {
+  id: number
+  name: string
+  url?: string
+  state: StackState
+  logo: Stack['logo']
+  services: MemberApp[]
 }
 
 export type MemberProfile = Member & {
@@ -37,7 +59,8 @@ export type MemberProfile = Member & {
   discordId?: string
   email?: string
   showApps: boolean
-  apps: { id: number; name: string; url?: string; state: AppState; logo: App['logo'] }[]
+  apps: MemberApp[]
+  projects: MemberProject[]
   activity: { at: number; kind: AppEvent['kind']; app: string; message: string }[]
 }
 

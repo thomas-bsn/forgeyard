@@ -49,8 +49,11 @@ DELETE FROM banners WHERE user_id = ?;
 UPDATE users SET banner_updated_at = ? WHERE id = ?;
 
 -- name: ListMembers :many
+-- public_apps counts the apps the member shows on their own (not a project's service); public_projects
+-- counts the projects that show at least one of their apps.
 SELECT users.*,
-       (SELECT COUNT(*) FROM apps WHERE apps.owner_id = users.id AND apps.public = 1) AS public_apps
+       (SELECT COUNT(*) FROM apps WHERE apps.owner_id = users.id AND apps.public = 1 AND apps.stack_id = 0) AS public_apps,
+       (SELECT COUNT(DISTINCT apps.stack_id) FROM apps WHERE apps.owner_id = users.id AND apps.public = 1 AND apps.stack_id != 0) AS public_projects
 FROM users
 WHERE users.disabled = 0
 ORDER BY users.display_name COLLATE NOCASE;

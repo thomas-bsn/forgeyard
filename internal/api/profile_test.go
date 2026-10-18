@@ -146,3 +146,54 @@ func TestMembers(t *testing.T) {
 		t.Fatalf("profile with hidden apps: %+v", p)
 	}
 }
+
+// TestMemberProfileProjects checks that a project's services are grouped under their project, not listed
+// as apps of their own, and that a project with no public app left disappears.
+func TestMemberProfileProjects(t *testing.T) {
+	url, _, admin, _ := setupStackServer(t)
+	var solo appResponse
+	postJSON(t, admin, url+"/api/apps", appInput{Name: "solo", Image: "nginx", Port: 80}, &solo)
+	var st stackResponse
+	if code := postJSON(t, admin, url+"/api/stacks", stackInput{Name: "shameless", Compose: shamelessCompose, Env: map[string]string{"DB_PASSWORD": "pw"}}, &st); code != http.StatusCreated {
+		t.Fatalf("create stack: %d", code)
+	}
+	putJSON(t, admin, url+"/api/me/profile", profileRequest{DisplayName: "Boss", ShowApps: true}, nil)
+
+	var members []memberSummary
+	get(t, admin, url+"/api/members", &members)
+	if len(members) != 1 || members[0].PublicApps != 1 || members[0].PublicProjects != 1 {
+		t.Fatalf("member counts: %+v", members)
+	}
+	var p memberProfile
+	get(t, admin, url+"/api/members/"+itoa(members[0].ID), &p)
+	if len(p.Apps) != 1 || p.Apps[0].Name != "solo" {
+		t.Fatalf("apps: %+v", p.Apps)
+	}
+	if len(p.Projects) != 1 {
+		t.Fatalf("projects: %+v", p.Projects)
+	}
+	proj := p.Projects[0]
+	if proj.Name != "shameless" || proj.State == "" || proj.URL != "https://shameless.example.com" || len(proj.Services) != 4 {
+		t.Fatalf("project: %+v", proj)
+	}
+	var exposed *memberApp
+	for i := range proj.Services {
+		if proj.Services[i].Service == "web" {
+			exposed = &proj.Services[i]
+		}
+	}
+	if exposed == nil || exposed.URL != "https://shameless.example.com" {
+		t.Fatalf("project services: %+v", proj.Services)
+	}
+
+	// Hiding every app of the project takes the project off the profile with them.
+	for _, svc := range st.Services {
+		if code := putJSON(t, admin, url+"/api/apps/"+itoa(svc.ID)+"/public", map[string]bool{"public": false}, nil); code != http.StatusOK {
+			t.Fatalf("hide %s: %d", svc.Name, code)
+		}
+	}
+	get(t, admin, url+"/api/members/"+itoa(members[0].ID), &p)
+	if len(p.Projects) != 0 || len(p.Apps) != 1 {
+		t.Fatalf("profile after hiding the project: %+v", p)
+	}
+}

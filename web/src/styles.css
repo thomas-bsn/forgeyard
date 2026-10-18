@@ -2538,6 +2538,38 @@ a.link-btn {
   white-space: nowrap;
 }
 
+/* A project in a profile's list: its head line, then its apps indented under it. */
+.member-project {
+  border-top: 1px solid var(--border);
+}
+
+.member-project:first-child {
+  border-top: 0;
+}
+
+.member-project-head {
+  border-top: 0;
+}
+
+.member-project-label {
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+.member-project-services {
+  border-top: 1px solid var(--border);
+  padding-left: 24px;
+}
+
+.member-project-services .mini-list-row {
+  padding-top: 7px;
+  padding-bottom: 7px;
+}
+
+.member-project-services .mini-list-row strong {
+  font-weight: 500;
+}
+
 .events.plain {
   padding: 0;
   border: 0;

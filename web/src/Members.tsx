@@ -1,9 +1,16 @@
 import { useEffect, useState } from 'react'
-import { api, errorMessage, type Member, type MemberProfile, type User } from './api'
+import { api, errorMessage, type Member, type MemberApp, type MemberProfile, type MemberProject, type User } from './api'
 import { Banner } from './Profile'
+import { kindLabels, ProjectLogo, projectStates } from './Projects'
 import { AppLogo, Avatar } from './ui'
 
 const roleLabels: Record<Member['role'], string> = { superadmin: 'superadmin', admin: 'admin', user: 'membre' }
+
+/** How many apps and projects a member shows: "3 apps · 1 projet". */
+function shownCounts(apps: number, projects: number): string {
+  const a = `${apps} app${apps > 1 ? 's' : ''}`
+  return projects === 0 ? a : `${a} · ${projects} projet${projects > 1 ? 's' : ''}`
+}
 
 /** Everyone signed up on the instance, to find people and open their profile. */
 export function MemberGrid() {
@@ -40,7 +47,7 @@ export function MemberGrid() {
             <span className="member-card-main">
               <strong>{m.displayName}</strong>
               <span className="muted">
-                {roleLabels[m.role]} · {m.publicApps} app{m.publicApps > 1 ? 's' : ''}
+                {roleLabels[m.role]} · {shownCounts(m.publicApps, m.publicProjects)}
               </span>
               {m.bio && <span className="member-bio">{m.bio}</span>}
             </span>
@@ -61,7 +68,54 @@ const stateText: Record<string, [string, string]> = {
   'node-offline': ['Hors ligne', 'dot-down'],
 }
 
-/** A member's public profile: who they are, the apps they show, and how to reach them. */
+/** One line of a profile's app list: its logo, state, name and address (or what kind it is). */
+function MemberAppRow({ app }: { app: MemberApp }) {
+  const [label, dot] = stateText[app.state] ?? ['En attente', '']
+  return (
+    <div className="mini-list-row">
+      <AppLogo url={app.logo.url} color={app.logo.color} name={app.name} size={32} />
+      <span className={`dot ${dot}`} title={label} />
+      <strong>{app.service || app.name}</strong>
+      {app.url ? (
+        <a className="member-app-url" href={app.url} target="_blank" rel="noopener noreferrer">
+          {app.url.replace(/^https?:\/\//, '')} ↗
+        </a>
+      ) : (
+        <span className="muted member-app-url">{app.kind ? (kindLabels[app.kind] ?? app.kind) : 'pas d’adresse web'}</span>
+      )}
+    </div>
+  )
+}
+
+/** A project on a profile: its name, state, address, and the apps it holds. */
+function MemberProjectRow({ project }: { project: MemberProject }) {
+  const st = projectStates[project.state] ?? { label: project.state, tone: '' }
+  const dot = st.tone === 'up' ? 'dot-up' : st.tone === 'warn' ? 'dot-warn' : st.tone === 'down' ? 'dot-down' : ''
+  return (
+    <div className="member-project">
+      <div className="mini-list-row member-project-head">
+        <ProjectLogo project={project} size={32} />
+        <span className={`dot ${dot}`} title={st.label} />
+        <strong>{project.name}</strong>
+        <span className="member-project-label">{st.label}</span>
+        {project.url ? (
+          <a className="member-app-url" href={project.url} target="_blank" rel="noopener noreferrer">
+            {project.url.replace(/^https?:\/\//, '')} ↗
+          </a>
+        ) : (
+          <span className="muted member-app-url">aucun service exposé</span>
+        )}
+      </div>
+      <div className="member-project-services">
+        {project.services.map((s) => (
+          <MemberAppRow key={s.id} app={s} />
+        ))}
+      </div>
+    </div>
+  )
+}
+
+/** A member's public profile: who they are, the apps and projects they show, and how to reach them. */
 export function MemberPage({ id, me }: { id: number; me: User }) {
   const [p, setP] = useState<MemberProfile | null>(null)
   const [error, setError] = useState('')
@@ -113,53 +167,62 @@ export function MemberPage({ id, me }: { id: number; me: User }) {
       </section>
 
       <div className="member-columns">
-        <section className="panel">
-          <h2>Apps</h2>
-          {!p.showApps ? (
-            <p className="muted">{self ? 'Vous avez choisi de ne pas afficher vos apps.' : `${p.displayName} n’affiche pas ses apps.`}</p>
-          ) : p.apps.length === 0 ? (
-            <p className="muted">Aucune app publique.</p>
-          ) : (
-            <div className="mini-list">
-              {p.apps.map((a) => {
-                const [label, dot] = stateText[a.state] ?? ['En attente', '']
-                return (
-                  <div key={a.id} className="mini-list-row">
-                    <AppLogo url={a.logo.url} color={a.logo.color} name={a.name} size={32} />
-                    <span className={`dot ${dot}`} title={label} />
-                    <strong>{a.name}</strong>
-                    {a.url ? (
-                      <a className="member-app-url" href={a.url} target="_blank" rel="noopener noreferrer">
-                        {a.url.replace(/^https?:\/\//, '')} ↗
-                      </a>
-                    ) : (
-                      <span className="muted member-app-url">pas d’adresse web</span>
-                    )}
-                  </div>
-                )
-              })}
-            </div>
-          )}
-        </section>
-        {p.showApps && (
+        {!p.showApps ? (
           <section className="panel">
-            <h2>Activité récente</h2>
-            {p.activity.length === 0 ? (
-              <p className="muted">Rien pour le moment.</p>
-            ) : (
-              <ol className="events plain">
-                {p.activity.map((e, i) => (
-                  <li key={i}>
-                    <time>{new Date(e.at * 1000).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short' })}</time>
-                    <span className={`dot ${{ info: '', success: 'dot-up', warning: 'dot-warn', error: 'dot-down' }[e.kind]}`} />
-                    <span>
-                      <b>{e.app}</b> · {e.message}
-                    </span>
-                  </li>
-                ))}
-              </ol>
-            )}
+            <h2>Apps et projets</h2>
+            <p className="muted">
+              {self ? 'Vous avez choisi de ne pas afficher vos apps ni vos projets.' : `${p.displayName} n’affiche ni ses apps ni ses projets.`}
+            </p>
           </section>
+        ) : (
+          <>
+            <section className="panel">
+              <h2>
+                Apps <span className="muted">{p.apps.length}</span>
+              </h2>
+              {p.apps.length === 0 ? (
+                <p className="muted">Aucune app seule.</p>
+              ) : (
+                <div className="mini-list">
+                  {p.apps.map((a) => (
+                    <MemberAppRow key={a.id} app={a} />
+                  ))}
+                </div>
+              )}
+            </section>
+            <section className="panel">
+              <h2>
+                Projets <span className="muted">{p.projects.length}</span>
+              </h2>
+              {p.projects.length === 0 ? (
+                <p className="muted">Aucun projet.</p>
+              ) : (
+                <div className="mini-list">
+                  {p.projects.map((proj) => (
+                    <MemberProjectRow key={proj.id} project={proj} />
+                  ))}
+                </div>
+              )}
+            </section>
+            <section className="panel">
+              <h2>Activité récente</h2>
+              {p.activity.length === 0 ? (
+                <p className="muted">Rien pour le moment.</p>
+              ) : (
+                <ol className="events plain">
+                  {p.activity.map((e, i) => (
+                    <li key={i}>
+                      <time>{new Date(e.at * 1000).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short' })}</time>
+                      <span className={`dot ${{ info: '', success: 'dot-up', warning: 'dot-warn', error: 'dot-down' }[e.kind]}`} />
+                      <span>
+                        <b>{e.app}</b> · {e.message}
+                      </span>
+                    </li>
+                  ))}
+                </ol>
+              )}
+            </section>
+          </>
         )}
       </div>
     </div>

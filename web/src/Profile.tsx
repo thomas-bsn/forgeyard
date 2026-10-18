@@ -369,10 +369,10 @@ function ProfilePanel({ user, onChange }: { user: User; onChange: () => void }) 
         <h2>Ce que voient les autres membres</h2>
         <div className="setting-row">
           <div className="header-title">
-            <strong>Mes apps sur mon profil</strong>
-            <p className="muted">Leur nom, leur adresse et leur état. Jamais leur configuration ni leurs logs. Chaque app peut aussi être masquée depuis sa page.</p>
+            <strong>Mes apps et projets sur mon profil</strong>
+            <p className="muted">Leur nom, leur adresse et leur état. Jamais leur configuration ni leurs logs. Chaque app peut aussi être masquée depuis sa page ; un projet s’affiche tant qu’une de ses apps est visible.</p>
           </div>
-          <Switch checked={showApps} onChange={setShowApps} label="Afficher mes apps sur mon profil" />
+          <Switch checked={showApps} onChange={setShowApps} label="Afficher mes apps et projets sur mon profil" />
         </div>
         <div className="setting-row">
           <div className="header-title">

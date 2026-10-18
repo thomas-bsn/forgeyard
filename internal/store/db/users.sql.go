@@ -355,7 +355,8 @@ func (q *Queries) ListMemberActivity(ctx context.Context, arg ListMemberActivity
 
 const listMembers = `-- name: ListMembers :many
 SELECT users.id, users.username, users.password_hash, users.discord_id, users.display_name, users.role, users.disabled, users.created_at, users.email, users.apps_suspended, users.discord_name, users.discord_avatar, users.name_from_discord, users.bio, users.avatar_updated_at, users.discord_banner, users.discord_accent, users.banner_updated_at, users.show_apps, users.show_email, users.notify_webhook,
-       (SELECT COUNT(*) FROM apps WHERE apps.owner_id = users.id AND apps.public = 1) AS public_apps
+       (SELECT COUNT(*) FROM apps WHERE apps.owner_id = users.id AND apps.public = 1 AND apps.stack_id = 0) AS public_apps,
+       (SELECT COUNT(DISTINCT apps.stack_id) FROM apps WHERE apps.owner_id = users.id AND apps.public = 1 AND apps.stack_id != 0) AS public_projects
 FROM users
 WHERE users.disabled = 0
 ORDER BY users.display_name COLLATE NOCASE
@@ -384,8 +385,11 @@ type ListMembersRow struct {
 	ShowEmail       int64
 	NotifyWebhook   string
 	PublicApps      int64
+	PublicProjects  int64
 }
 
+// public_apps counts the apps the member shows on their own (not a project's service); public_projects
+// counts the projects that show at least one of their apps.
 func (q *Queries) ListMembers(ctx context.Context) ([]ListMembersRow, error) {
 	rows, err := q.db.QueryContext(ctx, listMembers)
 	if err != nil {
@@ -418,6 +422,7 @@ func (q *Queries) ListMembers(ctx context.Context) ([]ListMembersRow, error) {
 			&i.ShowEmail,
 			&i.NotifyWebhook,
 			&i.PublicApps,
+			&i.PublicProjects,
 		); err != nil {
 			return nil, err
 		}

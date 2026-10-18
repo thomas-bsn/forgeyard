@@ -49,7 +49,13 @@ volumes:
 `
 
 /** A project's picture: the one it was given, else the logos of its first services, overlapping. */
-export function ProjectLogo({ project, size }: { project: Stack; size: number }) {
+export function ProjectLogo({
+  project,
+  size,
+}: {
+  project: { name: string; logo: Stack['logo']; services: { id: number; name: string; logo: App['logo'] }[] }
+  size: number
+}) {
   if (project.logo.mode !== 'auto') return <AppLogo url={project.logo.url} color={project.logo.color} name={project.name} size={size} />
   const small = Math.round(size * 0.68)
   return (
@@ -232,7 +238,7 @@ function usedVariables(compose: string): { name: string; required: boolean }[] {
   return [...out].map(([name, required]) => ({ name, required })).sort((x, y) => Number(y.required) - Number(x.required))
 }
 
-const kindLabels: Record<string, string> = { web: 'exposé', service: 'privé', job: 'job', sandbox: 'sandbox' }
+export const kindLabels: Record<string, string> = { web: 'exposé', service: 'privé', job: 'job', sandbox: 'sandbox' }
 
 export function ProjectFormModal({
   stack,
