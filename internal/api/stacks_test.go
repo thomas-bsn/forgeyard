@@ -1,12 +1,15 @@
 package api
 
 import (
+	"context"
+	"fmt"
 	"net/http"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/thomas-bsn/forgeyard/internal/agentpb"
+	"github.com/thomas-bsn/forgeyard/internal/auth"
 	"github.com/thomas-bsn/forgeyard/internal/dns"
 	"github.com/thomas-bsn/forgeyard/internal/dns/dnstest"
 	"github.com/thomas-bsn/forgeyard/internal/store/db"
@@ -203,6 +206,68 @@ func TestStackLifecycle(t *testing.T) {
 	get(t, admin, url+"/api/apps", &list)
 	if len(list) != 0 {
 		t.Fatalf("apps left: %d", len(list))
+	}
+}
+
+// TestStackReadOnlyForMembers: a member opens another member's project from a profile, read-only, and sees
+// only the apps its owner shows, never its compose file, its variables or its volumes.
+func TestStackReadOnlyForMembers(t *testing.T) {
+	url, server, admin, _ := setupStackServer(t)
+	var st stackResponse
+	if code := postJSON(t, admin, url+"/api/stacks", stackInput{Name: "shameless", Compose: shamelessCompose, Env: map[string]string{"DB_PASSWORD": "pw"}}, &st); code != http.StatusCreated {
+		t.Fatalf("create: %d", code)
+	}
+	hash, _ := auth.HashPassword("another-long-password")
+	if _, err := server.store.CreateLocalUser(context.Background(), db.CreateLocalUserParams{
+		Username: nullString("lea"), PasswordHash: nullString(hash), DisplayName: "Léa", Role: "user", CreatedAt: time.Now().Unix(),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	lea := newClient()
+	if resp := post(t, lea, url+"/api/auth/login", loginRequest{Username: "lea", Password: "another-long-password"}); resp.StatusCode != http.StatusOK {
+		t.Fatalf("login: %d", resp.StatusCode)
+	}
+
+	var view stackResponse
+	get(t, lea, url+"/api/stacks/"+itoa(st.ID), &view)
+	if len(view.Services) != 4 || view.URL != "https://shameless.example.com" || len(view.Volumes) != 0 || view.Compose != "" {
+		t.Fatalf("read-only view: %+v", view)
+	}
+	var raw map[string]any
+	get(t, lea, url+"/api/stacks/"+itoa(st.ID), &raw)
+	if _, ok := raw["env"]; ok || strings.Contains(fmt.Sprint(raw), "DB_PASSWORD") {
+		t.Fatalf("leaks the project's variables: %v", raw)
+	}
+
+	// What the owner hides leaves the view, address included.
+	byService := map[string]appResponse{}
+	for _, s := range st.Services {
+		byService[s.Service] = s
+	}
+	for _, name := range []string{"postgres", "api", "migrate"} {
+		putJSON(t, admin, url+"/api/apps/"+itoa(byService[name].ID)+"/public", map[string]bool{"public": false}, nil)
+	}
+	view = stackResponse{}
+	get(t, lea, url+"/api/stacks/"+itoa(st.ID), &view)
+	if len(view.Services) != 1 || view.Services[0].Service != "web" || view.URL != "https://shameless.example.com" {
+		t.Fatalf("view with hidden services: %+v", view)
+	}
+	putJSON(t, admin, url+"/api/apps/"+itoa(byService["web"].ID)+"/public", map[string]bool{"public": false}, nil)
+	view = stackResponse{}
+	get(t, lea, url+"/api/stacks/"+itoa(st.ID), &view)
+	if len(view.Services) != 0 || view.URL != "" {
+		t.Fatalf("view with everything hidden: %+v", view)
+	}
+
+	// Reading is all a member may do.
+	if code := putJSON(t, lea, url+"/api/stacks/"+itoa(st.ID), stackInput{Compose: shamelessCompose}, nil); code != http.StatusNotFound {
+		t.Fatalf("member edited a project: %d", code)
+	}
+	if code := postJSON(t, lea, url+"/api/stacks/"+itoa(st.ID)+"/stop", struct{}{}, nil); code != http.StatusNotFound {
+		t.Fatalf("member stopped a project: %d", code)
+	}
+	if code := del(t, lea, url+"/api/stacks/"+itoa(st.ID)); code != http.StatusNotFound {
+		t.Fatalf("member deleted a project: %d", code)
 	}
 }
 

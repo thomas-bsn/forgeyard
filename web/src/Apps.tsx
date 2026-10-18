@@ -116,12 +116,14 @@ export default function Apps({
 }) {
   const { apps, nodes, containers, projects, error, load } = useAppsData(admin)
 
-  // #/projects/3, and #/projects/3 from older links.
+  // #/projects/3, and #/stacks/3 from older links.
   if ((route[0] === 'projects' || route[0] === 'stacks') && route[1]) {
     if (!apps) return null
     const project = projects.find((p) => p.id === Number(route[1]))
-    if (!project) return <NotFound what="Ce projet n’existe plus." go={go} />
-    return <ProjectDetail key={project.id} stack={project} onChange={load} go={go} />
+    // A member's own project, or any project for an admin: the full page. Otherwise someone opened a
+    // project from a profile: read-only.
+    if (project) return <ProjectDetail key={project.id} stack={project} onChange={load} go={go} />
+    return <ProjectPage key={route[1]} id={Number(route[1])} go={go} />
   }
 
   if (route[0] === 'apps' && route[1]) {
@@ -148,6 +150,23 @@ function NotFound({ what, go }: { what: string; go: (path: string) => void }) {
       </button>
     </div>
   )
+}
+
+/**
+ * A project opened by someone who does not manage it: reached from a member's profile, shown read-only.
+ * The server only sends the apps its owner shows on their profile.
+ */
+function ProjectPage({ id, go }: { id: number; go: (path: string) => void }) {
+  const [stack, setStack] = useState<Stack | null>(null)
+  const [error, setError] = useState('')
+  useEffect(() => {
+    setStack(null)
+    setError('')
+    api.stack(id).then(setStack, (err) => setError(errorMessage(err)))
+  }, [id])
+  if (error) return <NotFound what="Ce projet n’existe plus." go={go} />
+  if (!stack) return null
+  return <ProjectDetail stack={stack} onChange={() => {}} go={go} readOnly />
 }
 
 type Kind = 'all' | 'apps' | 'external'

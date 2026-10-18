@@ -468,7 +468,17 @@ export function ProjectFormModal({
 
 type StackTab = 'services' | 'logs' | 'volumes' | 'compose'
 
-export function ProjectDetail({ stack, onChange, go }: { stack: Stack; onChange: () => void; go: (path: string) => void }) {
+export function ProjectDetail({
+  stack,
+  onChange,
+  go,
+  readOnly,
+}: {
+  stack: Stack
+  onChange: () => void
+  go: (path: string) => void
+  readOnly?: boolean // another member's project, opened from their profile
+}) {
   const [full, setFull] = useState<Stack | null>(null)
   const [tab, setTab] = useState<StackTab>('services')
   const [editing, setEditing] = useState(false)
@@ -478,8 +488,10 @@ export function ProjectDetail({ stack, onChange, go }: { stack: Stack; onChange:
   const [busy, setBusy] = useState(false)
 
   useEffect(() => {
+    // The compose file and variables come with the project's own page only.
+    if (readOnly) return
     api.stack(stack.id).then(setFull).catch((err) => setError(errorMessage(err)))
-  }, [stack.id, stack.updatedAt])
+  }, [stack.id, stack.updatedAt, readOnly])
 
   async function run(action: () => Promise<unknown>) {
     setBusy(true)
@@ -503,18 +515,22 @@ export function ProjectDetail({ stack, onChange, go }: { stack: Stack; onChange:
   return (
     <div className="detail">
       <aside className="panel detail-side">
-        <a href="#/apps" className="back-link">
-          ← Apps
+        <a href={readOnly ? `#/u/${stack.ownerId}` : '#/apps'} className="back-link">
+          ← {readOnly ? stack.ownerName : 'Apps'}
         </a>
         <div className="detail-title">
-          <button type="button" className="logo-button" onClick={() => setChoosingLogo(true)} aria-label="Changer le logo" title="Changer le logo">
+          {readOnly ? (
             <ProjectLogo project={stack} size={52} />
-            <span className="logo-edit" aria-hidden="true">
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z" />
-              </svg>
-            </span>
-          </button>
+          ) : (
+            <button type="button" className="logo-button" onClick={() => setChoosingLogo(true)} aria-label="Changer le logo" title="Changer le logo">
+              <ProjectLogo project={stack} size={52} />
+              <span className="logo-edit" aria-hidden="true">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z" />
+                </svg>
+              </span>
+            </button>
+          )}
           <div>
             <h1>{stack.name}</h1>
             <span className={`state-line state-${st.tone}`}>
@@ -528,25 +544,37 @@ export function ProjectDetail({ stack, onChange, go }: { stack: Stack; onChange:
             Ouvrir {stack.url.replace(/^https?:\/\//, '')}
           </a>
         ) : (
-          <p className="hint">Aucun service exposé : ajoutez x-forgeyard: {'{ expose: { port: 80 } }'} au service à publier.</p>
+          <p className="hint">
+            {readOnly ? 'Aucun service exposé.' : <>Aucun service exposé : ajoutez x-forgeyard: {'{ expose: { port: 80 } }'} au service à publier.</>}
+          </p>
         )}
         {failedJob && (
           <div className="banner banner-down">
             <span className="dot dot-down" />
             <span>
-              Le job <strong>{failedJob.service}</strong> a échoué : les services qui l’attendent ne démarrent pas. Voir{' '}
-              <button type="button" className="link-button" onClick={() => (setLogsOf(failedJob.id), setTab('logs'))}>
-                ses logs
-              </button>
-              , corrigez, puis redéployez.
+              Le job <strong>{failedJob.service}</strong> a échoué : les services qui l’attendent ne démarrent pas.
+              {readOnly ? null : (
+                <>
+                  {' '}
+                  Voir{' '}
+                  <button type="button" className="link-button" onClick={() => (setLogsOf(failedJob.id), setTab('logs'))}>
+                    ses logs
+                  </button>
+                  , corrigez, puis redéployez.
+                </>
+              )}
             </span>
           </div>
         )}
         <dl className="kv">
-          <dt>Node</dt>
-          <dd>{stack.nodeName}</dd>
-          <dt>Réseau</dt>
-          <dd className="mono">forgeyard-stack-{stack.id}</dd>
+          {!readOnly && (
+            <>
+              <dt>Node</dt>
+              <dd>{stack.nodeName}</dd>
+              <dt>Réseau</dt>
+              <dd className="mono">forgeyard-stack-{stack.id}</dd>
+            </>
+          )}
           <dt>Propriétaire</dt>
           <dd>
             <a href={`#/u/${stack.ownerId}`}>{stack.ownerName}</a>
@@ -555,79 +583,89 @@ export function ProjectDetail({ stack, onChange, go }: { stack: Stack; onChange:
           <dd>{since(stack.updatedAt)}</dd>
         </dl>
         {error && <p className="error">{error}</p>}
-        <div className="detail-actions">
-          {running ? (
-            <>
-              <button type="button" className="btn" disabled={busy} onClick={() => run(() => api.stackAction(stack.id, 'stop'))}>
-                Arrêter
+        {!readOnly && (
+          <>
+            <div className="detail-actions">
+              {running ? (
+                <>
+                  <button type="button" className="btn" disabled={busy} onClick={() => run(() => api.stackAction(stack.id, 'stop'))}>
+                    Arrêter
+                  </button>
+                  <button
+                    type="button"
+                    className={`btn ${redeploying ? 'btn-busy' : ''}`}
+                    aria-busy={redeploying}
+                    disabled={busy || redeploying}
+                    title="Recrée tous les services (images téléchargées à nouveau) et relance les jobs"
+                    onClick={() => {
+                      startRedeploy()
+                      run(() => api.stackAction(stack.id, 'redeploy'))
+                    }}
+                  >
+                    Redéployer
+                  </button>
+                </>
+              ) : (
+                <button type="button" className="btn btn-primary detail-actions-wide" disabled={busy} onClick={() => run(() => api.stackAction(stack.id, 'start'))}>
+                  Démarrer
+                </button>
+              )}
+              <button type="button" className="btn detail-actions-wide" disabled={busy || !full} onClick={() => setEditing(true)}>
+                Modifier le compose
               </button>
-              <button
-                type="button"
-                className={`btn ${redeploying ? 'btn-busy' : ''}`}
-                aria-busy={redeploying}
-                disabled={busy || redeploying}
-                title="Recrée tous les services (images téléchargées à nouveau) et relance les jobs"
-                onClick={() => {
-                  startRedeploy()
-                  run(() => api.stackAction(stack.id, 'redeploy'))
-                }}
-              >
-                Redéployer
-              </button>
-            </>
-          ) : (
-            <button type="button" className="btn btn-primary detail-actions-wide" disabled={busy} onClick={() => run(() => api.stackAction(stack.id, 'start'))}>
-              Démarrer
+            </div>
+            <button type="button" className="link-button danger-link" disabled={busy} onClick={() => setDeleting(true)}>
+              Supprimer le projet…
             </button>
-          )}
-          <button type="button" className="btn detail-actions-wide" disabled={busy || !full} onClick={() => setEditing(true)}>
-            Modifier le compose
-          </button>
-        </div>
-        <button type="button" className="link-button danger-link" disabled={busy} onClick={() => setDeleting(true)}>
-          Supprimer le projet…
-        </button>
+          </>
+        )}
       </aside>
 
       <main className="detail-main">
-        <div className="segmented" role="tablist" aria-label="Vues du projet">
-          {(
-            [
-              ['services', 'Apps du projet'],
-              ['logs', 'Logs'],
-              ['volumes', 'Volumes et sauvegardes'],
-              ['compose', 'Compose'],
-            ] as const
-          ).map(([value, text]) => (
-            <button key={value} type="button" role="tab" aria-selected={tab === value} className={tab === value ? 'on' : ''} onClick={() => setTab(value)}>
-              {text}
-            </button>
-          ))}
-        </div>
-        {tab === 'services' && <ServiceList services={stack.services} />}
-        {tab === 'logs' && (
+        {readOnly ? (
+          <ServiceList services={stack.services} readOnly />
+        ) : (
           <>
-            <div className="chips-row" role="group" aria-label="Service">
-              {stack.services.map((s) => (
-                <button key={s.id} type="button" className={`chip ${logsOf === s.id ? 'on' : ''}`} onClick={() => setLogsOf(s.id)}>
-                  <Dot tone={appTone(s)} />
-                  {s.service}
+            <div className="segmented" role="tablist" aria-label="Vues du projet">
+              {(
+                [
+                  ['services', 'Apps du projet'],
+                  ['logs', 'Logs'],
+                  ['volumes', 'Volumes et sauvegardes'],
+                  ['compose', 'Compose'],
+                ] as const
+              ).map(([value, text]) => (
+                <button key={value} type="button" role="tab" aria-selected={tab === value} className={tab === value ? 'on' : ''} onClick={() => setTab(value)}>
+                  {text}
                 </button>
               ))}
             </div>
-            {logsOf ? <Logs key={logsOf} url={`/api/apps/${logsOf}/logs`} /> : null}
-          </>
-        )}
-        {tab === 'volumes' && <VolumeList stack={stack} onChange={onChange} />}
-        {tab === 'compose' && full && (
-          <div className="panel compose-view">
-            <pre className="mono">{full.compose}</pre>
-            {full.env && Object.keys(full.env).length > 0 && (
-              <p className="muted">
-                Variables : <span className="mono">{Object.keys(full.env).join(', ')}</span>
-              </p>
+            {tab === 'services' && <ServiceList services={stack.services} />}
+            {tab === 'logs' && (
+              <>
+                <div className="chips-row" role="group" aria-label="Service">
+                  {stack.services.map((s) => (
+                    <button key={s.id} type="button" className={`chip ${logsOf === s.id ? 'on' : ''}`} onClick={() => setLogsOf(s.id)}>
+                      <Dot tone={appTone(s)} />
+                      {s.service}
+                    </button>
+                  ))}
+                </div>
+                {logsOf ? <Logs key={logsOf} url={`/api/apps/${logsOf}/logs`} /> : null}
+              </>
             )}
-          </div>
+            {tab === 'volumes' && <VolumeList stack={stack} onChange={onChange} />}
+            {tab === 'compose' && full && (
+              <div className="panel compose-view">
+                <pre className="mono">{full.compose}</pre>
+                {full.env && Object.keys(full.env).length > 0 && (
+                  <p className="muted">
+                    Variables : <span className="mono">{Object.keys(full.env).join(', ')}</span>
+                  </p>
+                )}
+              </div>
+            )}
+          </>
         )}
       </main>
 
@@ -661,7 +699,7 @@ export function ProjectDetail({ stack, onChange, go }: { stack: Stack; onChange:
   )
 }
 
-function ServiceList({ services }: { services: App[] }) {
+function ServiceList({ services, readOnly }: { services: App[]; readOnly?: boolean }) {
   return (
     <ol className="panel stack-services">
       {services.map((s) => (
@@ -669,9 +707,13 @@ function ServiceList({ services }: { services: App[] }) {
           <Dot tone={appTone(s)} />
           <span className="stack-service-main">
             <span className="stack-preview-head">
-              <a href={`#/apps/${s.id}`}>
+              {readOnly ? (
                 <strong>{s.service}</strong>
-              </a>
+              ) : (
+                <a href={`#/apps/${s.id}`}>
+                  <strong>{s.service}</strong>
+                </a>
+              )}
               <span className={`badge ${s.kind === 'web' ? 'badge-accent' : ''}`}>{s.kind === 'web' ? `exposé :${s.port}` : kindLabels[s.kind]}</span>
             </span>
             <span className="mono muted">{s.image}</span>

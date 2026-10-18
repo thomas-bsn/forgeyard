@@ -77,7 +77,7 @@ L'onglet **Membres** liste tous les inscrits (pour les admins, avec les demandes
 
 - la bannière (celle de Discord, sinon sa couleur de profil, ou une image envoyée), la photo, le nom, le rôle, la date d'inscription et la description ;
 - ses **apps seules** : nom, adresse et état seulement, jamais la configuration, les variables ni les logs ;
-- ses **projets** : une carte par projet (logo, état, adresse de son service exposé) avec ses apps rangées dedans. Un service d'un projet n'apparaît donc jamais comme une app isolée. Chacun peut masquer toutes ses apps et projets (Mon profil) ou une app à la fois (interrupteur « Visible sur le profil » sur la page de l'app) : un projet s'affiche tant qu'au moins une de ses apps est publique, et disparaît avec la dernière ;
+- ses **projets** : une seule ligne par projet (logo, état, nombre d'apps, adresse de son service exposé), qui ouvre la page du projet avec ses apps. C'est une vue en lecture seule : ni compose, ni variables, ni volumes, ni actions ; seules les apps que le membre affiche y apparaissent. Chacun peut masquer toutes ses apps et projets (Mon profil) ou une app à la fois (interrupteur « Visible sur le profil » sur la page de l'app) : un projet s'affiche tant qu'au moins une de ses apps est publique, et disparaît avec la dernière ;
 - leur **activité récente** (déploiements, mises en ligne, crashs de ces apps) ;
 - **« Écrire sur Discord »** (ouvre son profil Discord) et son email s'il a choisi de l'afficher.
 

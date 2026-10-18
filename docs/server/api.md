@@ -55,7 +55,7 @@ Toutes les écritures sont en JSON. Les routes sont déclarées dans `internal/a
 
 | `GET`, `POST /api/stacks` | Lister, créer un projet (`name`, `compose`, `env`, `nodeId` facultatif, admins seulement) ; un compose refusé répond 400 avec `errors: [{line, message}]` |
 | `POST /api/stacks/validate` | Vérifier un compose sans rien enregistrer : services dans l'ordre de démarrage, volumes, erreurs |
-| `GET`, `PUT`, `DELETE /api/stacks/{id}` | Voir (avec compose et variables), modifier (seuls les services changés sont redéployés), supprimer (`?volumes=1` supprime aussi les volumes) |
+| `GET`, `PUT`, `DELETE /api/stacks/{id}` | Voir (avec compose et variables pour son propriétaire et les admins ; pour un autre membre, en lecture seule avec seulement les apps qu'il affiche, sans volumes ni sauvegardes), modifier (seuls les services changés sont redéployés), supprimer (`?volumes=1` supprime aussi les volumes) |
 | `POST /api/stacks/{id}/{start\|stop\|redeploy}` | Actions sur tous les services |
 | `PUT`, `DELETE /api/stacks/{id}/backups/{volume}` | Planning de sauvegarde d'un volume (`schedule` `daily` ou `hourly`, `hour`, `keep`, `enabled`) |
 | `POST /api/stacks/{id}/backups/{volume}/run` | Sauvegarder maintenant (202) |

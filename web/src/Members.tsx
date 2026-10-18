@@ -87,31 +87,26 @@ function MemberAppRow({ app }: { app: MemberApp }) {
   )
 }
 
-/** A project on a profile: its name, state, address, and the apps it holds. */
+/** A project on a profile: one line, opening the project with its apps. */
 function MemberProjectRow({ project }: { project: MemberProject }) {
   const st = projectStates[project.state] ?? { label: project.state, tone: '' }
   const dot = st.tone === 'up' ? 'dot-up' : st.tone === 'warn' ? 'dot-warn' : st.tone === 'down' ? 'dot-down' : ''
+  const apps = project.services.length
   return (
-    <div className="member-project">
-      <div className="mini-list-row member-project-head">
-        <ProjectLogo project={project} size={32} />
-        <span className={`dot ${dot}`} title={st.label} />
-        <strong>{project.name}</strong>
-        <span className="member-project-label">{st.label}</span>
-        {project.url ? (
-          <a className="member-app-url" href={project.url} target="_blank" rel="noopener noreferrer">
-            {project.url.replace(/^https?:\/\//, '')} ↗
-          </a>
-        ) : (
-          <span className="muted member-app-url">aucun service exposé</span>
-        )}
-      </div>
-      <div className="member-project-services">
-        {project.services.map((s) => (
-          <MemberAppRow key={s.id} app={s} />
-        ))}
-      </div>
-    </div>
+    <a className="mini-list-row" href={`#/projects/${project.id}`}>
+      <ProjectLogo project={project} size={32} />
+      <span className={`dot ${dot}`} title={st.label} />
+      <strong>{project.name}</strong>
+      <span className="member-project-label">
+        {apps} app{apps > 1 ? 's' : ''} · {st.label}
+      </span>
+      <span className={project.url ? 'member-app-url' : 'muted member-app-url'}>
+        {project.url ? `${project.url.replace(/^https?:\/\//, '')} ↗` : 'aucun service exposé'}
+      </span>
+      <span className="row-chevron" aria-hidden="true">
+        ›
+      </span>
+    </a>
   )
 }
 

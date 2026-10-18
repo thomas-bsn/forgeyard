@@ -435,6 +435,26 @@ func (s *Server) stackFromPath(w http.ResponseWriter, r *http.Request) (db.Stack
 	return st, true
 }
 
+// stackReadable loads the stack named in the path for any signed-in user: a member may open another
+// member's project, read-only, the way they can see their profile.
+func (s *Server) stackReadable(w http.ResponseWriter, r *http.Request) (db.Stack, bool) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "projet introuvable")
+		return db.Stack{}, false
+	}
+	st, err := s.store.GetStack(r.Context(), id)
+	if errors.Is(err, sql.ErrNoRows) {
+		writeError(w, http.StatusNotFound, "projet introuvable")
+		return db.Stack{}, false
+	}
+	if err != nil {
+		s.internalError(w, r, err)
+		return db.Stack{}, false
+	}
+	return st, true
+}
+
 // describeStack builds a stack's response; withSource adds its compose file and variables.
 func (s *Server) describeStack(ctx context.Context, r *http.Request, st db.Stack, ownerName, nodeName string, withSource bool) (stackResponse, error) {
 	resp := stackResponse{ID: st.ID, Name: st.Name, OwnerID: st.OwnerID, OwnerName: ownerName, NodeID: st.NodeID, NodeName: nodeName,
@@ -588,9 +608,45 @@ func (s *Server) handleListStacks(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleGetStack(w http.ResponseWriter, r *http.Request) {
-	if st, ok := s.stackFromPath(w, r); ok {
-		s.writeStack(w, r, http.StatusOK, st)
+	st, ok := s.stackReadable(w, r)
+	if !ok {
+		return
 	}
+	ctx := r.Context()
+	owner, err := s.store.GetUserByID(ctx, st.OwnerID)
+	if err != nil {
+		s.internalError(w, r, err)
+		return
+	}
+	node, err := s.store.GetNode(ctx, st.NodeID)
+	if err != nil {
+		s.internalError(w, r, err)
+		return
+	}
+	manage := canManageStack(currentUser(r), st)
+	resp, err := s.describeStack(ctx, r, st, owner.DisplayName, node.Name, manage)
+	if err != nil {
+		s.internalError(w, r, err)
+		return
+	}
+	if !manage {
+		// Another member's project: only the apps its owner shows on their profile, and none of its
+		// volumes, backups or compose file.
+		services := make([]appResponse, 0, len(resp.Services))
+		url := ""
+		for _, svc := range resp.Services {
+			if !svc.Public {
+				continue
+			}
+			services = append(services, svc)
+			if svc.Kind == kindWeb && svc.URL != "" {
+				url = svc.URL
+			}
+		}
+		resp.Services, resp.URL, resp.Volumes = services, url, []stackVolumeInfo{}
+		resp.State = stackState(services)
+	}
+	writeJSON(w, http.StatusOK, resp)
 }
 
 // stackPreview is what a compose file gives, shown while it is typed.
