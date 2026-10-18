@@ -50,7 +50,11 @@ func bannerURL(u db.User) string {
 	case u.BannerUpdatedAt > 0:
 		return "/api/users/" + strconv.FormatInt(u.ID, 10) + "/banner?v=" + strconv.FormatInt(u.BannerUpdatedAt, 10)
 	case u.DiscordID.Valid && u.DiscordBanner != "":
-		return "https://cdn.discordapp.com/banners/" + u.DiscordID.String + "/" + u.DiscordBanner + ".png?size=600"
+		format := "png"
+		if strings.HasPrefix(u.DiscordBanner, "a_") {
+			format = "gif"
+		}
+		return "https://cdn.discordapp.com/banners/" + u.DiscordID.String + "/" + u.DiscordBanner + "." + format + "?size=600"
 	}
 	return ""
 }
