@@ -199,18 +199,20 @@ export function MemberPage({ id, me }: { id: number; me: User }) {
                 </div>
               )}
             </section>
-            <section className="panel">
+            <section className="panel member-activity">
               <h2>Activité récente</h2>
               {p.activity.length === 0 ? (
                 <p className="muted">Rien pour le moment.</p>
               ) : (
-                <ol className="events plain">
+                <ol className="events flow">
                   {p.activity.map((e, i) => (
                     <li key={i}>
                       <time>{new Date(e.at * 1000).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short' })}</time>
-                      <span className={`dot ${{ info: '', success: 'dot-up', warning: 'dot-warn', error: 'dot-down' }[e.kind]}`} />
-                      <span>
-                        <b>{e.app}</b> · {e.message}
+                      <span className="event-line">
+                        <span className={`dot ${{ info: '', success: 'dot-up', warning: 'dot-warn', error: 'dot-down' }[e.kind]}`} />
+                        <span className="event-text" title={`${e.app} · ${e.message}`}>
+                          <b>{e.app}</b> · {e.message}
+                        </span>
                       </span>
                     </li>
                   ))}
