@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react'
 import { api, errorMessage, type Member, type MemberApp, type MemberProfile, type MemberProject, type User } from './api'
+import { stateLabels } from './Apps'
 import { Banner } from './Profile'
 import { kindLabels, ProjectLogo, projectStates } from './Projects'
-import { AppLogo, Avatar } from './ui'
+import { AppLogo, Avatar, since } from './ui'
 
 const roleLabels: Record<Member['role'], string> = { superadmin: 'superadmin', admin: 'admin', user: 'membre' }
 
@@ -10,6 +11,11 @@ const roleLabels: Record<Member['role'], string> = { superadmin: 'superadmin', a
 function shownCounts(apps: number, projects: number): string {
   const a = `${apps} app${apps > 1 ? 's' : ''}`
   return projects === 0 ? a : `${a} · ${projects} projet${projects > 1 ? 's' : ''}`
+}
+
+/** A state with no colour of its own (arrêtée, terminée) gets a quiet grey dot rather than an empty one. */
+function dot(tone: string): string {
+  return `dot dot-${tone || 'idle'}`
 }
 
 /** Everyone signed up on the instance, to find people and open their profile. */
@@ -58,23 +64,13 @@ export function MemberGrid() {
   )
 }
 
-const stateText: Record<string, [string, string]> = {
-  running: ['En ligne', 'dot-up'],
-  stopped: ['Arrêtée', ''],
-  finished: ['Terminée', ''],
-  exited: ['Plantée', 'dot-down'],
-  restarting: ['Redémarre', 'dot-down'],
-  error: ['Erreur', 'dot-down'],
-  'node-offline': ['Hors ligne', 'dot-down'],
-}
-
 /** One line of a profile's app list: its logo, state, name and address (or what kind it is). */
 function MemberAppRow({ app }: { app: MemberApp }) {
-  const [label, dot] = stateText[app.state] ?? ['En attente', '']
+  const st = stateLabels[app.state]
   return (
     <div className="mini-list-row">
       <AppLogo url={app.logo.url} color={app.logo.color} name={app.name} size={32} />
-      <span className={`dot ${dot}`} title={label} />
+      <span className={dot(st.tone)} title={st.label} />
       <strong>{app.service || app.name}</strong>
       {app.url ? (
         <a className="member-app-url" href={app.url} target="_blank" rel="noopener noreferrer">
@@ -89,13 +85,12 @@ function MemberAppRow({ app }: { app: MemberApp }) {
 
 /** A project on a profile: one line, opening the project with its apps. */
 function MemberProjectRow({ project }: { project: MemberProject }) {
-  const st = projectStates[project.state] ?? { label: project.state, tone: '' }
-  const dot = st.tone === 'up' ? 'dot-up' : st.tone === 'warn' ? 'dot-warn' : st.tone === 'down' ? 'dot-down' : ''
+  const st = projectStates[project.state]
   const apps = project.services.length
   return (
     <a className="mini-list-row" href={`#/projects/${project.id}`}>
       <ProjectLogo project={project} size={32} />
-      <span className={`dot ${dot}`} title={st.label} />
+      <span className={dot(st.tone)} title={st.label} />
       <strong>{project.name}</strong>
       <span className="member-project-label">
         {apps} app{apps > 1 ? 's' : ''} · {st.label}
@@ -110,6 +105,8 @@ function MemberProjectRow({ project }: { project: MemberProject }) {
   )
 }
 
+const eventTones: Record<string, string> = { info: '', success: 'up', warning: 'warn', error: 'down' }
+
 /** A member's public profile: who they are, the apps and projects they show, and how to reach them. */
 export function MemberPage({ id, me }: { id: number; me: User }) {
   const [p, setP] = useState<MemberProfile | null>(null)
@@ -122,8 +119,12 @@ export function MemberPage({ id, me }: { id: number; me: User }) {
 
   if (error) return <div className="empty-state">{error}</div>
   if (!p) return null
+  return <MemberProfileView p={p} me={me} />
+}
+
+/** The profile itself, apart from the fetch: who they are, what they show, how to reach them. */
+function MemberProfileView({ p, me }: { p: MemberProfile; me: User }) {
   const self = p.id === me.id
-  const since = new Date(p.createdAt * 1000).toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' })
 
   return (
     <div className="member-page">
@@ -134,8 +135,9 @@ export function MemberPage({ id, me }: { id: number; me: User }) {
           <div className="member-head-main">
             <h1>{p.displayName}</h1>
             <span className="muted">
-              {roleLabels[p.role]} · membre depuis {since}
+              {roleLabels[p.role]} · membre depuis {new Date(p.createdAt * 1000).toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' })}
             </span>
+            {p.bio && <p className="member-bio-full">{p.bio}</p>}
           </div>
           <div className="row-actions">
             {self ? (
@@ -158,7 +160,6 @@ export function MemberPage({ id, me }: { id: number; me: User }) {
             )}
           </div>
         </div>
-        {p.bio && <p className="member-bio-full">{p.bio}</p>}
       </section>
 
       <div className="member-columns">
@@ -171,12 +172,12 @@ export function MemberPage({ id, me }: { id: number; me: User }) {
           </section>
         ) : (
           <>
-            <section className="panel">
+            <section className="panel member-lists">
               <h2>
-                Apps <span className="muted">{p.apps.length}</span>
+                Apps <span className="section-count">{p.apps.length}</span>
               </h2>
               {p.apps.length === 0 ? (
-                <p className="muted">Aucune app seule.</p>
+                <p className="muted">Aucune app seule : celles des projets sont listées dans leur projet.</p>
               ) : (
                 <div className="mini-list">
                   {p.apps.map((a) => (
@@ -184,10 +185,8 @@ export function MemberPage({ id, me }: { id: number; me: User }) {
                   ))}
                 </div>
               )}
-            </section>
-            <section className="panel">
               <h2>
-                Projets <span className="muted">{p.projects.length}</span>
+                Projets <span className="section-count">{p.projects.length}</span>
               </h2>
               {p.projects.length === 0 ? (
                 <p className="muted">Aucun projet.</p>
@@ -199,20 +198,18 @@ export function MemberPage({ id, me }: { id: number; me: User }) {
                 </div>
               )}
             </section>
-            <section className="panel member-activity">
+            <section className="panel">
               <h2>Activité récente</h2>
               {p.activity.length === 0 ? (
                 <p className="muted">Rien pour le moment.</p>
               ) : (
-                <ol className="events flow">
+                <ol className="timeline">
                   {p.activity.map((e, i) => (
                     <li key={i}>
-                      <time>{new Date(e.at * 1000).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short' })}</time>
-                      <span className="event-line">
-                        <span className={`dot ${{ info: '', success: 'dot-up', warning: 'dot-warn', error: 'dot-down' }[e.kind]}`} />
-                        <span className="event-text" title={`${e.app} · ${e.message}`}>
-                          <b>{e.app}</b> · {e.message}
-                        </span>
+                      <span className={dot(eventTones[e.kind])} />
+                      <span className="timeline-when">{since(e.at)}</span>
+                      <span className="timeline-what">
+                        <b>{e.app}</b> · {e.message}
                       </span>
                     </li>
                   ))}

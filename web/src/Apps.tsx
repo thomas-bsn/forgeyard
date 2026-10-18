@@ -10,7 +10,8 @@ const Terminal = lazy(() => import('./Terminal'))
 const POLL_MS = 3000
 const USAGE_POLL_MS = 15000
 
-const stateLabels: Record<AppState, { label: string; tone: 'up' | 'warn' | 'down' | '' }> = {
+/** What a state is called and how it is coloured, everywhere an app is shown. */
+export const stateLabels: Record<AppState, { label: string; tone: 'up' | 'warn' | 'down' | '' }> = {
   pending: { label: 'En attente', tone: '' },
   pulling: { label: 'Téléchargement de l’image…', tone: 'warn' },
   building: { label: 'Construction de l’image…', tone: 'warn' },

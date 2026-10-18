@@ -318,6 +318,11 @@ details.field[open] > summary {
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--warn) 25%, transparent);
 }
 
+/* A state with no colour of its own (arrêtée, terminée): grey, rather than a dot you cannot see at all. */
+.dot-idle {
+  background: var(--muted);
+}
+
 /* A state that is still moving (download, build, start, update): the dot becomes a spinner. */
 .dot-spin {
   box-sizing: border-box;
@@ -2512,14 +2517,17 @@ a.link-btn {
   flex: 1;
   min-width: 180px;
   display: grid;
+  gap: 2px;
 }
 
 .member-head-main h1 {
   font-size: 1.5rem;
 }
 
+/* The bio sits in the column of the name, so it starts where the name does rather than under the banner. */
 .member-bio-full {
-  padding: 12px 14px 4px;
+  margin: 8px 0 0;
+  max-width: 62ch;
   white-space: pre-line;
 }
 
@@ -2528,6 +2536,73 @@ a.link-btn {
   grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
   gap: 16px;
   align-items: start;
+}
+
+/* Apps and projects share a column: a heading sits close to its list, the next heading a bit further. */
+.member-lists {
+  gap: 10px;
+}
+
+.member-lists h2:not(:first-child) {
+  margin-top: 8px;
+}
+
+/** How many of them a heading counts, next to its title. */
+.section-count {
+  margin-left: 8px;
+  padding: 2px 8px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--bg);
+  color: var(--muted);
+  font-size: 0.76rem;
+  font-weight: 500;
+  vertical-align: middle;
+}
+
+/* A member's recent activity, as a timeline: a rail of dots, each event under the previous one. */
+.timeline {
+  display: grid;
+  gap: 16px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.timeline li {
+  position: relative;
+  display: grid;
+  gap: 2px;
+  padding-left: 24px;
+}
+
+.timeline li::before {
+  content: '';
+  position: absolute;
+  left: 4px;
+  top: 18px;
+  bottom: -16px;
+  width: 1px;
+  background: var(--border);
+}
+
+.timeline li:last-child::before {
+  display: none;
+}
+
+.timeline .dot {
+  position: absolute;
+  left: 0;
+  top: 5px;
+}
+
+.timeline-when {
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+.timeline-what {
+  font-size: 0.9rem;
 }
 
 .member-app-url {
@@ -2552,47 +2627,6 @@ a.link-btn {
 
 .mini-list-row:hover .row-chevron {
   color: var(--accent);
-}
-
-/* A member's recent activity: a strip of cards that scrolls sideways, on the whole width below the
-   apps and projects. */
-.member-activity {
-  grid-column: 1 / -1;
-}
-
-.events.flow {
-  display: flex;
-  gap: 10px;
-  padding: 0;
-  overflow-x: auto;
-  overflow-y: hidden;
-}
-
-.events.flow li {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  gap: 4px;
-  flex: 0 0 auto;
-  width: 240px;
-  padding: 10px 12px;
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  background: var(--bg);
-}
-
-.events.flow .event-line {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-width: 0;
-}
-
-.events.flow .event-text {
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-  font-size: 0.88rem;
 }
 
 .user-link {
