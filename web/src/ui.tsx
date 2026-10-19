@@ -337,12 +337,15 @@ export function Avatar({ url, name, size = 32 }: { url?: string; name: string; s
 }
 
 /** Colours an app's initial is drawn on, picked from its name when none was chosen. */
-export const LOGO_COLORS = ['#4f46e5', '#0891b2', '#16a34a', '#d97706', '#dc2626', '#9333ea', '#db2777', '#0d9488']
+const NAME_COLORS = ['#4f46e5', '#0891b2', '#16a34a', '#d97706', '#dc2626', '#9333ea', '#db2777', '#0d9488']
+
+/** The colours to choose from: the automatic ones, and black (never picked from a name). */
+export const LOGO_COLORS = [...NAME_COLORS, '#000000']
 
 function nameColor(name: string): string {
   let h = 0
   for (const ch of name) h = (h * 31 + ch.charCodeAt(0)) >>> 0
-  return LOGO_COLORS[h % LOGO_COLORS.length]
+  return NAME_COLORS[h % NAME_COLORS.length]
 }
 
 /** An app's logo: its image (from Docker Hub or uploaded), else its initial on a colour. */
