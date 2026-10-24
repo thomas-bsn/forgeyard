@@ -1326,7 +1326,11 @@ function AppFormModal({
       </div>
       {!initial && source !== 'compose' && (
         <div className="field">
-          <Switch checked={useBinds} onChange={(value) => { setUseBinds(value); if (!value && !admin) setNodeId(0) }} label="Utiliser des bind mounts" />
+          <div className="setting-row">
+            <Switch checked={useBinds} onChange={(value) => { setUseBinds(value); if (!value && !admin) setNodeId(0) }} label="Utiliser un dossier de la machine (bind mount)" />
+            <strong>Utiliser un dossier de la machine (bind mount)</strong>
+          </div>
+          <small>Monte un dossier existant sur la machine dans le conteneur. Les volumes ci-dessous restent gérés par Forgeyard.</small>
           {useBinds && <>
             <small>La soumission crée une demande. Seul le superadmin pourra autoriser ces accès avant la création de l’app.</small>
             <label className="field"><span>Machine contenant les fichiers</span>
