@@ -28,16 +28,19 @@ type bindRequestInput struct {
 }
 
 type bindRequestResponse struct {
-	ID         int64            `json:"id"`
-	AuthorID   int64            `json:"authorId"`
-	AuthorName string           `json:"authorName"`
-	NodeName   string           `json:"nodeName"`
-	Config     bindRequestInput `json:"config"`
-	EnvKeys    []string         `json:"envKeys"`
-	Status     string           `json:"status"`
-	Reason     string           `json:"reason"`
-	CreatedAt  int64            `json:"createdAt"`
-	DecidedAt  int64            `json:"decidedAt"`
+	ID              int64            `json:"id"`
+	AuthorID        int64            `json:"authorId"`
+	AuthorName      string           `json:"authorName"`
+	NodeName        string           `json:"nodeName"`
+	Config          bindRequestInput `json:"config"`
+	EnvKeys         []string         `json:"envKeys"`
+	Status          string           `json:"status"`
+	Reason          string           `json:"reason"`
+	CreatedAt       int64            `json:"createdAt"`
+	DecidedAt       int64            `json:"decidedAt"`
+	AppID           int64            `json:"appId,omitempty"`
+	DeploymentState string           `json:"deploymentState,omitempty"`
+	DeploymentError string           `json:"deploymentError,omitempty"`
 }
 
 func (in *bindRequestInput) validate() string {
@@ -143,11 +146,28 @@ func (s *Server) handleCreateBindRequest(w http.ResponseWriter, r *http.Request)
 		s.internalError(w, r, err)
 		return
 	}
+	if currentUser(r).Role == "superadmin" {
+		_ = s.approveBindRequest(r, request)
+		request, err = s.store.GetBindRequest(r.Context(), request.ID)
+		if err != nil {
+			s.internalError(w, r, err)
+			return
+		}
+	}
 	s.writeBindRequest(w, r, request, http.StatusCreated)
 }
 
 func (s *Server) bindResponse(r *http.Request, row db.BindRequest) (bindRequestResponse, error) {
 	out := bindRequestResponse{ID: row.ID, AuthorID: row.AuthorID, Status: row.Status, Reason: row.Reason, CreatedAt: row.CreatedAt, DecidedAt: row.DecidedAt, EnvKeys: []string{}}
+	if row.AppID.Valid {
+		out.AppID = row.AppID.Int64
+		if state, ok := s.nodes.AppStatus(out.AppID); ok {
+			out.DeploymentState = state.Status.GetState()
+			out.DeploymentError = state.Status.GetError()
+		} else {
+			out.DeploymentState = "pending"
+		}
+	}
 	if err := json.Unmarshal([]byte(row.Config), &out.Config); err != nil {
 		return out, err
 	}

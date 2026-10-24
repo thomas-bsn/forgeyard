@@ -49,8 +49,9 @@ var sandboxIdle = []string{"sh", "-c", "trap 'exit 0' TERM INT; while :; do slee
 
 // Reconciler makes the node's Docker match the desired state sent by the control plane.
 type Reconciler struct {
-	dc     *docker.Client
-	logger *slog.Logger
+	dc             *docker.Client
+	logger         *slog.Logger
+	protectedPaths []string
 
 	mu         sync.Mutex
 	desired    *agentpb.DesiredState // nil until the control plane sent one: nothing is removed before
@@ -221,6 +222,10 @@ func appHash(app *agentpb.AppSpec, ingressMode string) string {
 	if g := gpuHash(app.GetGpu()); g != "" {
 		parts = append(parts, g)
 	}
+	if len(app.GetBindMounts()) > 0 {
+		raw, _ := proto.MarshalOptions{Deterministic: true}.Marshal(&agentpb.ValidateBindMounts{Mounts: app.GetBindMounts()})
+		parts = append(parts, string(raw), strconv.FormatBool(app.GetBindAuthorized()))
+	}
 	return specHash(parts...)
 }
 
@@ -250,6 +255,12 @@ func stackHash(st *agentpb.StackService) string {
 func (r *Reconciler) ensureApp(ctx context.Context, app *agentpb.AppSpec, ingressMode string) error {
 	name := containerName(app.GetId())
 	hash := appHash(app, ingressMode)
+	if app.GetRunning() && len(app.GetBindMounts()) > 0 {
+		if err := r.checkAppBinds(ctx, app); err != nil {
+			_ = r.dc.Stop(ctx, name)
+			return fmt.Errorf("bind mounts : %w", err)
+		}
+	}
 
 	ct, err := r.dc.Inspect(ctx, name)
 	exists := err == nil
@@ -273,7 +284,7 @@ func (r *Reconciler) ensureApp(ctx context.Context, app *agentpb.AppSpec, ingres
 	if exists && ct.Config.Labels[labelSpec] != hash {
 		// Without data of its own, the next version starts next to the running one. With volumes, two
 		// versions must not write the same files: the running one stops first. A job runs anew.
-		if app.GetRunning() && ct.State.Running && len(app.GetVolumes()) == 0 && len(app.GetStack().GetVolumes()) == 0 &&
+		if app.GetRunning() && ct.State.Running && len(app.GetVolumes()) == 0 && len(app.GetBindMounts()) == 0 && len(app.GetStack().GetVolumes()) == 0 &&
 			!app.GetSandbox() && !app.GetStack().GetJob() {
 			return r.rollOut(ctx, app, hash, ingressMode)
 		}
@@ -357,6 +368,11 @@ func appContainerConfig(app *agentpb.AppSpec, hash, ingressMode string) map[stri
 	if app.GetStack() != nil {
 		stackConfig(app, config, config["HostConfig"].(map[string]any), config["Labels"].(map[string]string))
 	}
+	if binds := bindDockerMounts(app); len(binds) > 0 {
+		host := config["HostConfig"].(map[string]any)
+		existing, _ := host["Mounts"].([]map[string]any)
+		host["Mounts"] = append(existing, binds...)
+	}
 	// Without a GPU request, the container is created exactly as before: no DeviceRequests.
 	if g := app.GetGpu(); g != nil {
 		config["HostConfig"].(map[string]any)["DeviceRequests"] = gpuDeviceRequests(g)
@@ -383,7 +399,7 @@ func appContainer(app *agentpb.AppSpec, hash, ingressMode string) map[string]any
 		"RestartPolicy": map[string]any{"Name": "unless-stopped"},
 		"Memory":        memory,
 		"MemorySwap":    memory, // no swap beyond the limit
-		// The isolation rules of the architecture: no privileges, no host mounts, no host network.
+		// No privileges or host network. Host mounts are explicitly approved and revalidated.
 		"Privileged":  false,
 		"SecurityOpt": []string{"no-new-privileges:true"},
 		"LogConfig":   map[string]any{"Type": "json-file", "Config": map[string]string{"max-size": "10m", "max-file": "3"}},

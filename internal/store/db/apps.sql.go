@@ -64,7 +64,7 @@ func (q *Queries) CountAppsByNode(ctx context.Context) ([]CountAppsByNodeRow, er
 const createApp = `-- name: CreateApp :one
 INSERT INTO apps (name, owner_id, node_id, kind, image, dockerfile, port, env_sealed, memory_mb, volumes, gpu, created_at, updated_at)
 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-RETURNING id, name, owner_id, node_id, image, port, env_sealed, running, memory_mb, generation, dns_name, created_at, updated_at, public, logo_mode, logo_color, logo_updated_at, crash_suspended, moving_from, moved_at, dockerfile, kind, port_source, volumes, stack_id, service, service_spec, gpu
+RETURNING id, name, owner_id, node_id, image, port, env_sealed, running, memory_mb, generation, dns_name, created_at, updated_at, public, logo_mode, logo_color, logo_updated_at, crash_suspended, moving_from, moved_at, dockerfile, kind, port_source, volumes, stack_id, service, service_spec, gpu, bind_mounts, bind_authorized
 `
 
 type CreateAppParams struct {
@@ -129,6 +129,8 @@ func (q *Queries) CreateApp(ctx context.Context, arg CreateAppParams) (App, erro
 		&i.Service,
 		&i.ServiceSpec,
 		&i.Gpu,
+		&i.BindMounts,
+		&i.BindAuthorized,
 	)
 	return i, err
 }
@@ -152,7 +154,7 @@ func (q *Queries) DeleteAppLogoImage(ctx context.Context, appID int64) error {
 }
 
 const finishMove = `-- name: FinishMove :one
-UPDATE apps SET moving_from = 0 WHERE id = ? AND moving_from != 0 RETURNING id, name, owner_id, node_id, image, port, env_sealed, running, memory_mb, generation, dns_name, created_at, updated_at, public, logo_mode, logo_color, logo_updated_at, crash_suspended, moving_from, moved_at, dockerfile, kind, port_source, volumes, stack_id, service, service_spec, gpu
+UPDATE apps SET moving_from = 0 WHERE id = ? AND moving_from != 0 RETURNING id, name, owner_id, node_id, image, port, env_sealed, running, memory_mb, generation, dns_name, created_at, updated_at, public, logo_mode, logo_color, logo_updated_at, crash_suspended, moving_from, moved_at, dockerfile, kind, port_source, volumes, stack_id, service, service_spec, gpu, bind_mounts, bind_authorized
 `
 
 func (q *Queries) FinishMove(ctx context.Context, id int64) (App, error) {
@@ -187,12 +189,14 @@ func (q *Queries) FinishMove(ctx context.Context, id int64) (App, error) {
 		&i.Service,
 		&i.ServiceSpec,
 		&i.Gpu,
+		&i.BindMounts,
+		&i.BindAuthorized,
 	)
 	return i, err
 }
 
 const getApp = `-- name: GetApp :one
-SELECT id, name, owner_id, node_id, image, port, env_sealed, running, memory_mb, generation, dns_name, created_at, updated_at, public, logo_mode, logo_color, logo_updated_at, crash_suspended, moving_from, moved_at, dockerfile, kind, port_source, volumes, stack_id, service, service_spec, gpu FROM apps WHERE id = ?
+SELECT id, name, owner_id, node_id, image, port, env_sealed, running, memory_mb, generation, dns_name, created_at, updated_at, public, logo_mode, logo_color, logo_updated_at, crash_suspended, moving_from, moved_at, dockerfile, kind, port_source, volumes, stack_id, service, service_spec, gpu, bind_mounts, bind_authorized FROM apps WHERE id = ?
 `
 
 func (q *Queries) GetApp(ctx context.Context, id int64) (App, error) {
@@ -227,12 +231,14 @@ func (q *Queries) GetApp(ctx context.Context, id int64) (App, error) {
 		&i.Service,
 		&i.ServiceSpec,
 		&i.Gpu,
+		&i.BindMounts,
+		&i.BindAuthorized,
 	)
 	return i, err
 }
 
 const getAppByName = `-- name: GetAppByName :one
-SELECT id, name, owner_id, node_id, image, port, env_sealed, running, memory_mb, generation, dns_name, created_at, updated_at, public, logo_mode, logo_color, logo_updated_at, crash_suspended, moving_from, moved_at, dockerfile, kind, port_source, volumes, stack_id, service, service_spec, gpu FROM apps WHERE name = ?
+SELECT id, name, owner_id, node_id, image, port, env_sealed, running, memory_mb, generation, dns_name, created_at, updated_at, public, logo_mode, logo_color, logo_updated_at, crash_suspended, moving_from, moved_at, dockerfile, kind, port_source, volumes, stack_id, service, service_spec, gpu, bind_mounts, bind_authorized FROM apps WHERE name = ?
 `
 
 func (q *Queries) GetAppByName(ctx context.Context, name string) (App, error) {
@@ -267,6 +273,8 @@ func (q *Queries) GetAppByName(ctx context.Context, name string) (App, error) {
 		&i.Service,
 		&i.ServiceSpec,
 		&i.Gpu,
+		&i.BindMounts,
+		&i.BindAuthorized,
 	)
 	return i, err
 }
@@ -300,7 +308,7 @@ func (q *Queries) GetImageLogo(ctx context.Context, repo string) (ImageLogo, err
 }
 
 const listApps = `-- name: ListApps :many
-SELECT apps.id, apps.name, apps.owner_id, apps.node_id, apps.image, apps.port, apps.env_sealed, apps.running, apps.memory_mb, apps.generation, apps.dns_name, apps.created_at, apps.updated_at, apps.public, apps.logo_mode, apps.logo_color, apps.logo_updated_at, apps.crash_suspended, apps.moving_from, apps.moved_at, apps.dockerfile, apps.kind, apps.port_source, apps.volumes, apps.stack_id, apps.service, apps.service_spec, apps.gpu, users.display_name AS owner_name, users.apps_suspended AS owner_suspended, nodes.name AS node_name
+SELECT apps.id, apps.name, apps.owner_id, apps.node_id, apps.image, apps.port, apps.env_sealed, apps.running, apps.memory_mb, apps.generation, apps.dns_name, apps.created_at, apps.updated_at, apps.public, apps.logo_mode, apps.logo_color, apps.logo_updated_at, apps.crash_suspended, apps.moving_from, apps.moved_at, apps.dockerfile, apps.kind, apps.port_source, apps.volumes, apps.stack_id, apps.service, apps.service_spec, apps.gpu, apps.bind_mounts, apps.bind_authorized, users.display_name AS owner_name, users.apps_suspended AS owner_suspended, nodes.name AS node_name
 FROM apps
 JOIN users ON users.id = apps.owner_id
 JOIN nodes ON nodes.id = apps.node_id
@@ -352,6 +360,8 @@ func (q *Queries) ListApps(ctx context.Context) ([]ListAppsRow, error) {
 			&i.App.Service,
 			&i.App.ServiceSpec,
 			&i.App.Gpu,
+			&i.App.BindMounts,
+			&i.App.BindAuthorized,
 			&i.OwnerName,
 			&i.OwnerSuspended,
 			&i.NodeName,
@@ -370,7 +380,7 @@ func (q *Queries) ListApps(ctx context.Context) ([]ListAppsRow, error) {
 }
 
 const listAppsByNode = `-- name: ListAppsByNode :many
-SELECT id, name, owner_id, node_id, image, port, env_sealed, running, memory_mb, generation, dns_name, created_at, updated_at, public, logo_mode, logo_color, logo_updated_at, crash_suspended, moving_from, moved_at, dockerfile, kind, port_source, volumes, stack_id, service, service_spec, gpu FROM apps WHERE node_id = ? ORDER BY id
+SELECT id, name, owner_id, node_id, image, port, env_sealed, running, memory_mb, generation, dns_name, created_at, updated_at, public, logo_mode, logo_color, logo_updated_at, crash_suspended, moving_from, moved_at, dockerfile, kind, port_source, volumes, stack_id, service, service_spec, gpu, bind_mounts, bind_authorized FROM apps WHERE node_id = ? ORDER BY id
 `
 
 func (q *Queries) ListAppsByNode(ctx context.Context, nodeID int64) ([]App, error) {
@@ -411,6 +421,8 @@ func (q *Queries) ListAppsByNode(ctx context.Context, nodeID int64) ([]App, erro
 			&i.Service,
 			&i.ServiceSpec,
 			&i.Gpu,
+			&i.BindMounts,
+			&i.BindAuthorized,
 		); err != nil {
 			return nil, err
 		}
@@ -426,7 +438,7 @@ func (q *Queries) ListAppsByNode(ctx context.Context, nodeID int64) ([]App, erro
 }
 
 const listAppsByOwner = `-- name: ListAppsByOwner :many
-SELECT apps.id, apps.name, apps.owner_id, apps.node_id, apps.image, apps.port, apps.env_sealed, apps.running, apps.memory_mb, apps.generation, apps.dns_name, apps.created_at, apps.updated_at, apps.public, apps.logo_mode, apps.logo_color, apps.logo_updated_at, apps.crash_suspended, apps.moving_from, apps.moved_at, apps.dockerfile, apps.kind, apps.port_source, apps.volumes, apps.stack_id, apps.service, apps.service_spec, apps.gpu, users.display_name AS owner_name, users.apps_suspended AS owner_suspended, nodes.name AS node_name
+SELECT apps.id, apps.name, apps.owner_id, apps.node_id, apps.image, apps.port, apps.env_sealed, apps.running, apps.memory_mb, apps.generation, apps.dns_name, apps.created_at, apps.updated_at, apps.public, apps.logo_mode, apps.logo_color, apps.logo_updated_at, apps.crash_suspended, apps.moving_from, apps.moved_at, apps.dockerfile, apps.kind, apps.port_source, apps.volumes, apps.stack_id, apps.service, apps.service_spec, apps.gpu, apps.bind_mounts, apps.bind_authorized, users.display_name AS owner_name, users.apps_suspended AS owner_suspended, nodes.name AS node_name
 FROM apps
 JOIN users ON users.id = apps.owner_id
 JOIN nodes ON nodes.id = apps.node_id
@@ -479,6 +491,8 @@ func (q *Queries) ListAppsByOwner(ctx context.Context, ownerID int64) ([]ListApp
 			&i.App.Service,
 			&i.App.ServiceSpec,
 			&i.App.Gpu,
+			&i.App.BindMounts,
+			&i.App.BindAuthorized,
 			&i.OwnerName,
 			&i.OwnerSuspended,
 			&i.NodeName,
@@ -497,7 +511,7 @@ func (q *Queries) ListAppsByOwner(ctx context.Context, ownerID int64) ([]ListApp
 }
 
 const listAppsByOwnerID = `-- name: ListAppsByOwnerID :many
-SELECT id, name, owner_id, node_id, image, port, env_sealed, running, memory_mb, generation, dns_name, created_at, updated_at, public, logo_mode, logo_color, logo_updated_at, crash_suspended, moving_from, moved_at, dockerfile, kind, port_source, volumes, stack_id, service, service_spec, gpu FROM apps WHERE owner_id = ? ORDER BY id
+SELECT id, name, owner_id, node_id, image, port, env_sealed, running, memory_mb, generation, dns_name, created_at, updated_at, public, logo_mode, logo_color, logo_updated_at, crash_suspended, moving_from, moved_at, dockerfile, kind, port_source, volumes, stack_id, service, service_spec, gpu, bind_mounts, bind_authorized FROM apps WHERE owner_id = ? ORDER BY id
 `
 
 func (q *Queries) ListAppsByOwnerID(ctx context.Context, ownerID int64) ([]App, error) {
@@ -538,6 +552,8 @@ func (q *Queries) ListAppsByOwnerID(ctx context.Context, ownerID int64) ([]App, 
 			&i.Service,
 			&i.ServiceSpec,
 			&i.Gpu,
+			&i.BindMounts,
+			&i.BindAuthorized,
 		); err != nil {
 			return nil, err
 		}
@@ -553,7 +569,7 @@ func (q *Queries) ListAppsByOwnerID(ctx context.Context, ownerID int64) ([]App, 
 }
 
 const listAppsForNode = `-- name: ListAppsForNode :many
-SELECT id, name, owner_id, node_id, image, port, env_sealed, running, memory_mb, generation, dns_name, created_at, updated_at, public, logo_mode, logo_color, logo_updated_at, crash_suspended, moving_from, moved_at, dockerfile, kind, port_source, volumes, stack_id, service, service_spec, gpu FROM apps WHERE node_id = ?1 OR moving_from = ?1 ORDER BY id
+SELECT id, name, owner_id, node_id, image, port, env_sealed, running, memory_mb, generation, dns_name, created_at, updated_at, public, logo_mode, logo_color, logo_updated_at, crash_suspended, moving_from, moved_at, dockerfile, kind, port_source, volumes, stack_id, service, service_spec, gpu, bind_mounts, bind_authorized FROM apps WHERE node_id = ?1 OR moving_from = ?1 ORDER BY id
 `
 
 // The apps a node runs: its own, and the ones leaving it for another node.
@@ -595,6 +611,8 @@ func (q *Queries) ListAppsForNode(ctx context.Context, nodeID int64) ([]App, err
 			&i.Service,
 			&i.ServiceSpec,
 			&i.Gpu,
+			&i.BindMounts,
+			&i.BindAuthorized,
 		); err != nil {
 			return nil, err
 		}
@@ -610,7 +628,7 @@ func (q *Queries) ListAppsForNode(ctx context.Context, nodeID int64) ([]App, err
 }
 
 const listPublicAppsByOwner = `-- name: ListPublicAppsByOwner :many
-SELECT id, name, owner_id, node_id, image, port, env_sealed, running, memory_mb, generation, dns_name, created_at, updated_at, public, logo_mode, logo_color, logo_updated_at, crash_suspended, moving_from, moved_at, dockerfile, kind, port_source, volumes, stack_id, service, service_spec, gpu FROM apps WHERE owner_id = ? AND public = 1 ORDER BY name
+SELECT id, name, owner_id, node_id, image, port, env_sealed, running, memory_mb, generation, dns_name, created_at, updated_at, public, logo_mode, logo_color, logo_updated_at, crash_suspended, moving_from, moved_at, dockerfile, kind, port_source, volumes, stack_id, service, service_spec, gpu, bind_mounts, bind_authorized FROM apps WHERE owner_id = ? AND public = 1 ORDER BY name
 `
 
 func (q *Queries) ListPublicAppsByOwner(ctx context.Context, ownerID int64) ([]App, error) {
@@ -651,6 +669,8 @@ func (q *Queries) ListPublicAppsByOwner(ctx context.Context, ownerID int64) ([]A
 			&i.Service,
 			&i.ServiceSpec,
 			&i.Gpu,
+			&i.BindMounts,
+			&i.BindAuthorized,
 		); err != nil {
 			return nil, err
 		}
@@ -666,7 +686,7 @@ func (q *Queries) ListPublicAppsByOwner(ctx context.Context, ownerID int64) ([]A
 }
 
 const moveApp = `-- name: MoveApp :one
-UPDATE apps SET moving_from = ?, node_id = ?, moved_at = ?, updated_at = ? WHERE id = ? RETURNING id, name, owner_id, node_id, image, port, env_sealed, running, memory_mb, generation, dns_name, created_at, updated_at, public, logo_mode, logo_color, logo_updated_at, crash_suspended, moving_from, moved_at, dockerfile, kind, port_source, volumes, stack_id, service, service_spec, gpu
+UPDATE apps SET moving_from = ?, node_id = ?, moved_at = ?, updated_at = ? WHERE id = ? RETURNING id, name, owner_id, node_id, image, port, env_sealed, running, memory_mb, generation, dns_name, created_at, updated_at, public, logo_mode, logo_color, logo_updated_at, crash_suspended, moving_from, moved_at, dockerfile, kind, port_source, volumes, stack_id, service, service_spec, gpu, bind_mounts, bind_authorized
 `
 
 type MoveAppParams struct {
@@ -715,6 +735,8 @@ func (q *Queries) MoveApp(ctx context.Context, arg MoveAppParams) (App, error) {
 		&i.Service,
 		&i.ServiceSpec,
 		&i.Gpu,
+		&i.BindMounts,
+		&i.BindAuthorized,
 	)
 	return i, err
 }
@@ -810,7 +832,7 @@ func (q *Queries) SetAppPublic(ctx context.Context, arg SetAppPublicParams) erro
 }
 
 const setAppRunning = `-- name: SetAppRunning :one
-UPDATE apps SET running = ?, generation = generation + ?, updated_at = ? WHERE id = ? RETURNING id, name, owner_id, node_id, image, port, env_sealed, running, memory_mb, generation, dns_name, created_at, updated_at, public, logo_mode, logo_color, logo_updated_at, crash_suspended, moving_from, moved_at, dockerfile, kind, port_source, volumes, stack_id, service, service_spec, gpu
+UPDATE apps SET running = ?, generation = generation + ?, updated_at = ? WHERE id = ? RETURNING id, name, owner_id, node_id, image, port, env_sealed, running, memory_mb, generation, dns_name, created_at, updated_at, public, logo_mode, logo_color, logo_updated_at, crash_suspended, moving_from, moved_at, dockerfile, kind, port_source, volumes, stack_id, service, service_spec, gpu, bind_mounts, bind_authorized
 `
 
 type SetAppRunningParams struct {
@@ -857,6 +879,8 @@ func (q *Queries) SetAppRunning(ctx context.Context, arg SetAppRunningParams) (A
 		&i.Service,
 		&i.ServiceSpec,
 		&i.Gpu,
+		&i.BindMounts,
+		&i.BindAuthorized,
 	)
 	return i, err
 }
@@ -876,7 +900,7 @@ func (q *Queries) StopAppsByOwner(ctx context.Context, arg StopAppsByOwnerParams
 }
 
 const suspendCrashingApp = `-- name: SuspendCrashingApp :one
-UPDATE apps SET running = 0, crash_suspended = 1, updated_at = ? WHERE id = ? AND running = 1 RETURNING id, name, owner_id, node_id, image, port, env_sealed, running, memory_mb, generation, dns_name, created_at, updated_at, public, logo_mode, logo_color, logo_updated_at, crash_suspended, moving_from, moved_at, dockerfile, kind, port_source, volumes, stack_id, service, service_spec, gpu
+UPDATE apps SET running = 0, crash_suspended = 1, updated_at = ? WHERE id = ? AND running = 1 RETURNING id, name, owner_id, node_id, image, port, env_sealed, running, memory_mb, generation, dns_name, created_at, updated_at, public, logo_mode, logo_color, logo_updated_at, crash_suspended, moving_from, moved_at, dockerfile, kind, port_source, volumes, stack_id, service, service_spec, gpu, bind_mounts, bind_authorized
 `
 
 type SuspendCrashingAppParams struct {
@@ -916,6 +940,8 @@ func (q *Queries) SuspendCrashingApp(ctx context.Context, arg SuspendCrashingApp
 		&i.Service,
 		&i.ServiceSpec,
 		&i.Gpu,
+		&i.BindMounts,
+		&i.BindAuthorized,
 	)
 	return i, err
 }
@@ -923,7 +949,7 @@ func (q *Queries) SuspendCrashingApp(ctx context.Context, arg SuspendCrashingApp
 const updateAppConfig = `-- name: UpdateAppConfig :one
 UPDATE apps SET image = ?, dockerfile = ?, port = ?, env_sealed = ?, memory_mb = ?, volumes = ?, gpu = ?, generation = generation + 1, updated_at = ?
 WHERE id = ?
-RETURNING id, name, owner_id, node_id, image, port, env_sealed, running, memory_mb, generation, dns_name, created_at, updated_at, public, logo_mode, logo_color, logo_updated_at, crash_suspended, moving_from, moved_at, dockerfile, kind, port_source, volumes, stack_id, service, service_spec, gpu
+RETURNING id, name, owner_id, node_id, image, port, env_sealed, running, memory_mb, generation, dns_name, created_at, updated_at, public, logo_mode, logo_color, logo_updated_at, crash_suspended, moving_from, moved_at, dockerfile, kind, port_source, volumes, stack_id, service, service_spec, gpu, bind_mounts, bind_authorized
 `
 
 type UpdateAppConfigParams struct {
@@ -980,6 +1006,8 @@ func (q *Queries) UpdateAppConfig(ctx context.Context, arg UpdateAppConfigParams
 		&i.Service,
 		&i.ServiceSpec,
 		&i.Gpu,
+		&i.BindMounts,
+		&i.BindAuthorized,
 	)
 	return i, err
 }

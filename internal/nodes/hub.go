@@ -116,6 +116,7 @@ type Live struct {
 	// AgentVersion is the commit the agent was built from; SelfUpdate whether it can replace itself.
 	AgentVersion string
 	SelfUpdate   bool
+	BindMounts   bool
 	// UpdatingSince is when it was asked to update (zero when not), UpdateError why its last update failed.
 	UpdatingSince time.Time
 	UpdateError   string
@@ -131,6 +132,7 @@ type session struct {
 	out           chan *agentpb.ServerMessage // the stream's only sender reads it
 	agentVersion  string
 	selfUpdate    bool
+	bindMounts    bool
 	updatingSince time.Time
 	updateError   string
 	updateStep    string
@@ -173,8 +175,9 @@ type Hub struct {
 	logStreams map[string]chan *agentpb.LogLine       // by stream ID
 	execs      map[string]*execStream                 // terminals, by session ID
 	tunnels    map[string]*tunnelWaiter               // tunnels asked for, until their agent opens them
-	backups    map[string]pendingBackup               // backup jobs waiting for their result, by job ID
-	gpuUsage   map[string][]GpuSample                 // by node and GPU (ExternalKey), oldest first
+	bindChecks map[string]pendingBindCheck
+	backups    map[string]pendingBackup // backup jobs waiting for their result, by job ID
+	gpuUsage   map[string][]GpuSample   // by node and GPU (ExternalKey), oldest first
 }
 
 // pendingBackup is a backup job sent to a node, waiting for its result.
@@ -186,7 +189,7 @@ type pendingBackup struct {
 // NewHub returns an empty Hub.
 func NewHub(st *store.Store, logger *slog.Logger) *Hub {
 	return &Hub{
-		store: st, logger: logger, sessions: make(map[int64]*session),
+		bindChecks: make(map[string]pendingBindCheck), store: st, logger: logger, sessions: make(map[int64]*session),
 		statuses: make(map[int64]AppStatus), usage: make(map[int64][]UsageSample), extUsage: make(map[string][]UsageSample),
 		externals: make(map[int64][]*agentpb.ExternalContainer), logStreams: make(map[string]chan *agentpb.LogLine),
 		execs: make(map[string]*execStream), tunnels: make(map[string]*tunnelWaiter), backups: make(map[string]pendingBackup), gpuUsage: make(map[string][]GpuSample),
@@ -362,7 +365,7 @@ func (h *Hub) Live(nodeID int64) (live Live, ok bool) {
 	}
 	return Live{
 		ConnectedAt: s.connectedAt, Metrics: append([]*agentpb.Metrics(nil), s.metrics...),
-		AgentVersion: s.agentVersion, SelfUpdate: s.selfUpdate, UpdatingSince: s.updatingSince, UpdateError: s.updateError, UpdateStep: s.updateStep,
+		AgentVersion: s.agentVersion, SelfUpdate: s.selfUpdate, BindMounts: s.bindMounts, UpdatingSince: s.updatingSince, UpdateError: s.updateError, UpdateStep: s.updateStep,
 		Topology: s.topology,
 	}, true
 }
@@ -536,7 +539,7 @@ func (h *Hub) Connect(stream agentpb.AgentService_ConnectServer) error {
 	defer cancel()
 	sess := h.register(node.ID, cancel)
 	h.mu.Lock()
-	sess.agentVersion, sess.selfUpdate = hello.GetAgentVersion(), hello.GetSelfUpdate()
+	sess.agentVersion, sess.selfUpdate, sess.bindMounts = hello.GetAgentVersion(), hello.GetSelfUpdate(), hello.GetBindMounts()
 	h.mu.Unlock()
 	defer func() {
 		if h.unregister(node.ID, sess) && h.NodeChanged != nil {
@@ -612,6 +615,17 @@ func (h *Hub) Connect(stream agentpb.AgentService_ConnectServer) error {
 				if sess.uninstalled != nil {
 					select {
 					case sess.uninstalled <- m.Uninstalled.GetError():
+					default:
+					}
+				}
+				h.mu.Unlock()
+			case *agentpb.AgentMessage_BindValidationResult:
+				h.mu.Lock()
+				check, ok := h.bindChecks[m.BindValidationResult.GetId()]
+				if ok && check.nodeID == node.ID {
+					delete(h.bindChecks, m.BindValidationResult.GetId())
+					select {
+					case check.ch <- m.BindValidationResult:
 					default:
 					}
 				}

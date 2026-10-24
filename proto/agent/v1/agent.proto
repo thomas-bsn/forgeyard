@@ -36,6 +36,7 @@ message AgentMessage {
     Uninstalled uninstalled = 10;
     BackupResult backup_result = 11;
     NodeGpus node_gpus = 12;
+    BindValidationResult bind_validation_result = 13;
   }
 }
 
@@ -143,6 +144,7 @@ message ServerMessage {
     DropStack drop_stack = 14;
     BackupJob backup_job = 15;
     ProbeGpus probe_gpus = 16;
+    ValidateBindMounts validate_bind_mounts = 17;
   }
 }
 
@@ -238,6 +240,7 @@ message Hello {
   NodeInfo info = 2;
   // self_update: the agent runs in a container it can replace (not one Docker Compose manages).
   bool self_update = 3;
+  bool bind_mounts = 4; // agent enforces approved bind mounts and validates host paths
 }
 
 message NodeInfo {
@@ -322,6 +325,9 @@ message AppSpec {
   // the same GPUs and their memory.
   GpuRequest gpu = 15;
   reserved 16; // git_commit: apps deployed by git push, removed
+  repeated BindMount bind_mounts = 17;
+  bool bind_authorized = 18;
+  repeated string protected_host_paths = 19;
 }
 
 message GpuRequest {
@@ -488,4 +494,21 @@ message ExecOutput {
   bool closed = 3;    // the shell ended: nothing follows
   int32 exit_code = 4;
   string error = 5;   // why it could not start or broke
+}
+
+// Sources are host-absolute canonical paths, never paths in the agent container.
+message BindMount {
+ string source = 1;
+ string target = 2;
+ bool read_only = 3;
+}
+message ValidateBindMounts {
+ string id = 1;
+ repeated BindMount mounts = 2;
+ repeated string protected_host_paths = 3;
+}
+message BindValidationResult {
+ string id = 1;
+ string error = 2;
+ repeated BindMount mounts = 3;
 }

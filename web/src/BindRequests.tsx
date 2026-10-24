@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react'
-import { api, errorMessage, type BindRequest } from './api'
+import { api, errorMessage, type BindRequest, type BindMount } from './api'
 import { since } from './ui'
 
-const statusLabels: Record<string, string> = { pending: 'En attente du superadmin', cancelled: 'Annulée', refused: 'Refusée' }
+const statusLabels: Record<string, string> = { pending: 'En attente du superadmin', cancelled: 'Annulée', refused: 'Refusée', approving: 'Approbation et création en cours', failed: 'Création impossible', created: 'App créée' }
 
 export default function BindRequests({ superadmin, route, go }: { superadmin: boolean; route: string[]; go: (path: string) => void }) {
   const review = superadmin && route[1] === 'review'
@@ -11,6 +11,7 @@ export default function BindRequests({ superadmin, route, go }: { superadmin: bo
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
   const [reason, setReason] = useState('')
+  const [validated, setValidated] = useState<BindMount[] | null>(null)
   const [secrets, setSecrets] = useState<Record<string, string> | null>(null)
   const request = requests.find((r) => r.id === selected)
   const load = () => api.bindRequests(review).then((rows) => { setRequests(rows); setError('') }, (err) => setError(errorMessage(err)))
@@ -21,7 +22,7 @@ export default function BindRequests({ superadmin, route, go }: { superadmin: bo
     const timer = setInterval(refresh, 15000)
     return () => { live = false; clearInterval(timer) }
   }, [review])
-  useEffect(() => { setSecrets(null); setReason('') }, [selected, review])
+  useEffect(() => { setSecrets(null); setReason(''); setValidated(null) }, [selected, review])
   async function act(action: () => Promise<unknown>) {
     setBusy(true); setError('')
     try { await action(); await load() } catch (err) { setError(errorMessage(err)) }
@@ -40,6 +41,13 @@ export default function BindRequests({ superadmin, route, go }: { superadmin: bo
       <button type="button" className="link-button" onClick={() => go(base)}>← Retour aux demandes</button>
       <h2>{request.config.name}</h2>
       <p>{statusLabels[request.status] ?? request.status}</p>
+      {request.appId && <p><a className="btn" href={`#/apps/${request.appId}`}>Ouvrir l’app</a> · Déploiement : {request.deploymentState ?? 'en attente'}</p>}
+      {request.deploymentError && <p className="error" role="alert">{request.deploymentError}</p>}
+      {review && (request.status === 'pending' || request.status === 'failed') && <div className="actions">
+        <button className="btn" type="button" disabled={busy} onClick={() => act(async () => setValidated(await api.validateBindRequest(request.id)))}>Vérifier les chemins sur le node</button>
+        <button className="btn btn-primary" type="button" disabled={busy} onClick={() => act(() => request.status === 'failed' ? api.retryBindRequest(request.id) : api.approveBindRequest(request.id))}>{request.status === 'failed' ? 'Relancer la création' : 'Approuver et créer'}</button>
+      </div>}
+      {validated && <div><h3>Chemins vérifiés par l’agent</h3><p className="muted">L’approbation vérifiera à nouveau les chemins.</p><ul>{validated.map((m,i) => <li key={i}><code>{m.source}</code> → <code>{m.target}</code> ({m.readOnly ? 'lecture seule' : 'lecture / écriture'})</li>)}</ul></div>}
       {request.reason && <p><strong>Motif :</strong> {request.reason}</p>}
       <dl className="aside-facts"><dt>Auteur</dt><dd>{request.authorName}</dd><dt>Node</dt><dd>{request.nodeName}</dd><dt>Image</dt><dd>{request.config.image}</dd><dt>Port</dt><dd>{request.config.port}</dd><dt>Mémoire</dt><dd>{request.config.memoryMb} Mo</dd></dl>
       <h3>Montages demandés</h3>

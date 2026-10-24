@@ -45,7 +45,9 @@ TLS 1.3 mutuel avec la CA privée de Forgeyard, empreinte de la CA vérifiée av
 
 ## Conteneurs des apps
 
-Pas de mode privilégié, `no-new-privileges`, limite mémoire sans swap, pas de montage de l'hôte ni de réseau de l'hôte (l'utilisateur ne choisit que l'image, le port, les variables et la mémoire).
+Pas de mode privilégié, `no-new-privileges`, limite mémoire sans swap, pas de réseau de l'hôte. Les montages de l'hôte ne sont permis qu'après approbation du superadmin, pour des chemins, destinations, modes d'accès et un node précis. Les sources sont vérifiées par l'agent avant approbation puis au déploiement, avec refus des chemins sensibles et sans création automatique de dossier manquant. Les agents anciens ne peuvent pas exécuter ces apps.
+
+L'agent protège les montages internes des conteneurs Forgeyard et ses données d'identité natives. Sur un node local natif, le server transmet aussi son répertoire de données. `FORGEYARD_PROTECTED_HOST_PATHS` permet d'ajouter des chemins hôtes protégés (séparateur du système, `:` sous Linux), notamment pour une installation native répartie ou des secrets supplémentaires. Les chemins réels sont comparés après résolution des liens symboliques, y compris pour les répertoires englobants.
 
 ## Limites connues
 

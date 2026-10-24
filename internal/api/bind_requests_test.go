@@ -10,7 +10,8 @@ import (
 )
 
 func TestBindRequestSubmission(t *testing.T) {
-	base, _, admin, node := setupStackServer(t)
+	base, server, superadmin, node := setupStackServer(t)
+	admin := bindTestUser(t, server, base, "requester", "admin")
 	input := map[string]any{"name": "media", "image": "nginx:alpine", "port": 80, "memoryMb": 128, "env": map[string]string{"TOKEN": "private-value"}, "nodeId": node.nodeID, "bindMounts": []map[string]any{{"source": "/srv/media", "target": "/media"}}}
 	var submitted map[string]any
 	if code := postJSON(t, admin, base+"/api/bind-requests", input, &submitted); code != http.StatusCreated {
@@ -40,18 +41,18 @@ func TestBindRequestSubmission(t *testing.T) {
 		t.Fatalf("read-only must be the default: %+v", mounts)
 	}
 	var revealed map[string]string
-	if code := postJSON(t, admin, base+"/api/admin/bind-requests/"+itoa(id)+"/reveal", struct{}{}, &revealed); code != http.StatusOK || revealed["TOKEN"] != "private-value" {
+	if code := postJSON(t, superadmin, base+"/api/admin/bind-requests/"+itoa(id)+"/reveal", struct{}{}, &revealed); code != http.StatusOK || revealed["TOKEN"] != "private-value" {
 		t.Fatalf("reveal: %d %+v", code, revealed)
 	}
 	// A pending request reserves no name, including against another pending request.
 	if code := postJSON(t, admin, base+"/api/bind-requests", input, nil); code != http.StatusCreated {
 		t.Fatalf("same name: %d", code)
 	}
-	// There is no endpoint to mutate a submitted configuration or approve in this slice.
+	// Submitted configuration cannot be changed in place.
 	if code := putJSON(t, admin, base+"/api/bind-requests/"+itoa(id), input, nil); code != http.StatusNotFound {
 		t.Fatalf("immutable request: %d", code)
 	}
-	if code := postJSON(t, admin, base+"/api/admin/bind-requests/"+itoa(id)+"/approve", struct{}{}, nil); code != http.StatusNotFound {
+	if code := postJSON(t, admin, base+"/api/admin/bind-requests/"+itoa(id)+"/approve", struct{}{}, nil); code != http.StatusForbidden {
 		t.Fatalf("premature approve: %d", code)
 	}
 	delete(input, "bindMounts")
@@ -136,4 +137,39 @@ func TestBindRequestPermissionsAndDecisions(t *testing.T) {
 	if code := postJSON(t, owner, base+"/api/bind-requests", input, nil); code != http.StatusBadRequest {
 		t.Fatalf("status injection: %d", code)
 	}
+}
+
+func TestBindApprovalRequiresLiveCompatibleAgent(t *testing.T) {
+	base, _, admin, node := setupStackServer(t)
+	var row map[string]any
+	input := map[string]any{"name": "approved-media", "image": "nginx:alpine", "port": 80, "nodeId": node.nodeID, "bindMounts": []map[string]any{{"source": "/srv/media", "target": "/media"}}}
+	if code := postJSON(t, admin, base+"/api/bind-requests", input, &row); code != http.StatusCreated {
+		t.Fatalf("submit: %d", code)
+	}
+	id := int64(row["id"].(float64))
+	if code := postJSON(t, admin, base+"/api/admin/bind-requests/"+itoa(id)+"/approve", struct{}{}, nil); code != http.StatusConflict {
+		t.Fatalf("incompatible agent must block approval: %d", code)
+	}
+	var apps []appResponse
+	get(t, admin, base+"/api/apps", &apps)
+	if len(apps) != 0 {
+		t.Fatalf("incompatible agent created app: %+v", apps)
+	}
+}
+
+func bindTestUser(t *testing.T, server *Server, base, name, role string) *http.Client {
+	t.Helper()
+	hash, err := auth.HashPassword("another-long-password")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = server.store.CreateLocalUser(context.Background(), db.CreateLocalUserParams{Username: nullString(name), PasswordHash: nullString(hash), DisplayName: name, Role: role, CreatedAt: time.Now().Unix()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	c := newClient()
+	if code := post(t, c, base+"/api/auth/login", loginRequest{Username: name, Password: "another-long-password"}).StatusCode; code != http.StatusOK {
+		t.Fatalf("login: %d", code)
+	}
+	return c
 }

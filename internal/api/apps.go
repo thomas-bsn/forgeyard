@@ -249,9 +249,17 @@ func (s *Server) desiredState(ctx context.Context, nodeID int64) (*agentpb.Desir
 		if err != nil {
 			return nil, fmt.Errorf("app %s: %w", a.Name, err)
 		}
+		binds := appBinds(a)
+		running := a.Running != 0
+		if len(binds) > 0 {
+			live, online := s.nodes.Live(nodeID)
+			if !online || !live.BindMounts || a.BindAuthorized == 0 {
+				running = false
+			}
+		}
 		d.Apps = append(d.Apps, &agentpb.AppSpec{
 			Id: a.ID, Name: a.Name, Image: a.Image, Port: int32(a.Port), Env: env,
-			Hostname: webHost(c, a), Running: a.Running != 0,
+			Hostname: webHost(c, a), Running: running, BindMounts: binds, BindAuthorized: a.BindAuthorized != 0, ProtectedHostPaths: s.protectedBindPaths(node),
 			MemoryBytes: a.MemoryMb << 20, Generation: a.Generation, Leaving: a.MovingFrom == nodeID,
 			Dockerfile: a.Dockerfile, Sandbox: a.Kind == kindSandbox, Volumes: appVolumes(a), Stack: stacks[a.ID], Gpu: appGpu(a).spec(),
 		})
@@ -444,6 +452,8 @@ func (s *Server) setAppRecord(ctx context.Context, c dnsConfig, p dns.Provider, 
 
 type appResponse struct {
 	ID             int64             `json:"id"`
+	BindMounts     []bindMount       `json:"bindMounts,omitempty"`
+	BindAuthorized bool              `json:"bindAuthorized"`
 	Name           string            `json:"name"`
 	OwnerID        int64             `json:"ownerId"`
 	OwnerName      string            `json:"ownerName"`
@@ -489,7 +499,7 @@ type appResponse struct {
 // own machine when that node has no public IP set.
 func (s *Server) toAppResponse(a db.App, ownerName string, ownerSuspended bool, nodeName string, c dnsConfig, node *db.Node, localHost string) appResponse {
 	resp := appResponse{
-		ID: a.ID, Name: a.Name, OwnerID: a.OwnerID, OwnerName: ownerName, NodeID: a.NodeID, NodeName: nodeName,
+		BindMounts: bindAPI(appBinds(a)), BindAuthorized: a.BindAuthorized != 0, ID: a.ID, Name: a.Name, OwnerID: a.OwnerID, OwnerName: ownerName, NodeID: a.NodeID, NodeName: nodeName,
 		Image: a.Image, Port: a.Port, MemoryMB: a.MemoryMb, Running: a.Running != 0, UpdatedAt: a.UpdatedAt, StackID: a.StackID, Service: a.Service,
 		State: "pending", Suspended: ownerSuspended, Public: a.Public != 0, Logo: toAppLogo(a), CrashSuspended: a.CrashSuspended != 0, MovingFrom: a.MovingFrom,
 	}
@@ -535,6 +545,12 @@ func (s *Server) toAppResponse(a db.App, ownerName string, ownerSuspended bool, 
 			if host != "" {
 				resp.URL = "http://" + net.JoinHostPort(host, strconv.Itoa(int(resp.HostPort)))
 			}
+		}
+	}
+	if len(appBinds(a)) > 0 {
+		if live, online := s.nodes.Live(a.NodeID); online && !live.BindMounts {
+			resp.State = "error"
+			resp.Error = "l'agent doit être mis à jour pour appliquer les bind mounts approuvés"
 		}
 	}
 	return resp
@@ -851,6 +867,18 @@ func (s *Server) handleUpdateApp(w http.ResponseWriter, r *http.Request) {
 	in.Kind = a.Kind // set at creation
 	if msg := in.validate(false); msg != "" {
 		writeError(w, http.StatusBadRequest, msg)
+		return
+	}
+	for _, target := range in.Volumes {
+		for _, m := range appBinds(a) {
+			if target == m.GetTarget() || strings.HasPrefix(target, m.GetTarget()+"/") || strings.HasPrefix(m.GetTarget(), target+"/") {
+				writeError(w, http.StatusConflict, "ce volume chevauche un bind mount approuvé")
+				return
+			}
+		}
+	}
+	if in.NodeID != 0 && in.NodeID != a.NodeID && len(appBinds(a)) > 0 {
+		writeError(w, http.StatusConflict, "le changement de node nécessite une nouvelle approbation")
 		return
 	}
 	if in.GPU != nil {
