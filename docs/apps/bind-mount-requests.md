@@ -9,7 +9,7 @@ Conception validée à l'issue de l'entretien et de la confirmation de la synth�
 - La demande conserve la configuration soumise. Aucune app n'est créée ni déployée avant l'approbation.
 - Seul le superadmin peut approuver. L'approbation déclenche la création de l'app à partir de la configuration conservée, sans nouvelle saisie par le demandeur.
 - Chaque montage demandé indique le chemin source sur l'hôte, la destination dans le conteneur et le mode lecture seule ou lecture/écriture. La lecture seule est le défaut. La demande désigne un node précis.
-- Le parcours couvre les apps Image Docker, Dockerfile, Sandbox et les projets Docker Compose. Une demande de projet couvre l'ensemble de ses services.
+- Le parcours app couvre Image Docker, Dockerfile et Sandbox ; le parcours projet couvre Docker Compose et l'ensemble de ses services.
 - Lorsque le superadmin soumet lui-même une création avec bind mounts, sa soumission vaut approbation et cette approbation est enregistrée ; il peut créer directement.
 - L'autorisation porte sur les montages. Le propriétaire et les admins conservent la gestion habituelle de l'app, notamment image, variables, terminal et SSH, avec accès aux fichiers montés dans le mode approuvé.
 - Changer une source, une destination, un mode d'accès ou le node exige une nouvelle approbation. L'app conserve sa configuration approuvée pendant l'attente.
@@ -40,7 +40,7 @@ Voir [Portée de l'approbation des bind mounts](../adr/0001-bind-mount-approval-
 
 ## État actuel vérifié
 
-- Les apps sont créées directement par `internal/api/apps.go`.
+- Les apps sont créées directement par `internal/api/apps.go`. Avec une demande, le Dockerfile et le type Sandbox sont conservés dans la configuration figée ; le Dockerfile n'est construit qu'après approbation. Une Sandbox n'a ni port web ni adresse DNS et garde ses accès SSH/terminal habituels.
 - Les apps seules utilisent des volumes Docker nommés ; les projets Compose rejettent les bind mounts dans `internal/compose/compose.go`.
 - `internal/api/httputil.go` distingue déjà les admins du superadmin.
 - Les admins peuvent actuellement modifier toutes les apps et accéder à leur terminal et à SSH.

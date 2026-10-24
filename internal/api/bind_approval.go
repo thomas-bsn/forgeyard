@@ -94,6 +94,9 @@ func (s *Server) approveBindRequest(r *http.Request, row db.BindRequest) (result
 	if msg := in.validate(); msg != "" {
 		return errors.New(msg)
 	}
+	if in.Dockerfile != "" {
+		in.Image = builtImage(in.Name, in.Dockerfile)
+	}
 	node, err := s.pickNode(ctx, row.NodeID)
 	if err != nil {
 		return errors.New("ce node n'est pas en ligne pour vérifier les montages")

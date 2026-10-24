@@ -150,6 +150,43 @@ func TestSuperadminBindSubmissionAutoApprovesAndReportsFailure(t *testing.T) {
 	}
 }
 
+func TestSuperadminBindSubmissionAutoApprovesDockerfileAndSandbox(t *testing.T) {
+	for _, tc := range []struct {
+		name, kind, image, dockerfile string
+		port                          int
+	}{
+		{name: "root-file", kind: kindWeb, dockerfile: "FROM alpine:3.21\nRUN echo ok", port: 8080},
+		{name: "root-box", kind: kindSandbox, image: "debian:bookworm"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			base, server, superadmin, _ := setupStackServer(t)
+			node := connectFakeAgent(t, base, server, superadmin, "auto-source-node", func(h *agentpb.Hello) { h.BindMounts = true })
+			node.desired(t)
+			states := answerBindChecks(node, func(check *agentpb.ValidateBindMounts) *agentpb.BindValidationResult {
+				return &agentpb.BindValidationResult{Mounts: check.Mounts}
+			})
+			input := map[string]any{"name": tc.name, "kind": tc.kind, "image": tc.image, "dockerfile": tc.dockerfile, "port": tc.port, "nodeId": node.nodeID, "bindMounts": []map[string]any{{"source": "/srv/files", "target": "/files"}}}
+			var request bindRequestResponse
+			if code := postJSON(t, superadmin, base+"/api/bind-requests", input, &request); code != http.StatusCreated || request.Status != "created" || request.AppID == 0 {
+				t.Fatalf("auto-approved request: %d %+v", code, request)
+			}
+			select {
+			case desired := <-states:
+				app := desired.Apps[0]
+				wantImage := tc.image
+				if tc.dockerfile != "" {
+					wantImage = builtImage(tc.name, tc.dockerfile)
+				}
+				if app.Image != wantImage || app.Dockerfile != tc.dockerfile || app.GetSandbox() != (tc.kind == kindSandbox) || len(app.BindMounts) != 1 {
+					t.Fatalf("auto-approved source spec: %v", app)
+				}
+			case <-time.After(5 * time.Second):
+				t.Fatal("auto-approval did not deploy")
+			}
+		})
+	}
+}
+
 func TestBindApprovalConcurrentDecisionCreatesOnce(t *testing.T) {
 	base, server, admin, _ := setupStackServer(t)
 	owner := bindTestUser(t, server, base, "author", "user")
@@ -267,5 +304,70 @@ func TestBindApprovalRechecksNameAtDecision(t *testing.T) {
 	get(t, owner, base+"/api/bind-requests/"+itoa(row.ID), &row)
 	if row.Status != "failed" || row.Reason == "" || row.AppID != 0 {
 		t.Fatalf("request result: %+v", row)
+	}
+}
+
+func TestBindApprovalPreservesDockerfileAndSandboxSources(t *testing.T) {
+	for _, tc := range []struct {
+		name           string
+		config         map[string]any
+		wantKind       string
+		wantImage      string
+		wantDockerfile string
+		wantPort       int32
+	}{
+		{name: "Dockerfile", config: map[string]any{"name": "bound-dockerfile", "dockerfile": "FROM nginx:alpine\\nRUN echo approved", "port": 8080, "memoryMb": 256}, wantKind: "web", wantImage: builtImage("bound-dockerfile", "FROM nginx:alpine\\nRUN echo approved"), wantDockerfile: "FROM nginx:alpine\\nRUN echo approved", wantPort: 8080},
+		{name: "Sandbox", config: map[string]any{"name": "bound-sandbox", "kind": "sandbox", "image": "debian:bookworm", "memoryMb": 256}, wantKind: "sandbox", wantImage: "debian:bookworm", wantPort: 0},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			base, server, superadmin, _ := setupStackServer(t)
+			node := connectFakeAgent(t, base, server, superadmin, "source-node", func(h *agentpb.Hello) { h.BindMounts = true })
+			node.desired(t)
+			states := answerBindChecks(node, func(check *agentpb.ValidateBindMounts) *agentpb.BindValidationResult {
+				return &agentpb.BindValidationResult{Mounts: check.Mounts}
+			})
+			owner := bindTestUser(t, server, base, "source-owner", "user")
+			input := map[string]any{"nodeId": node.nodeID, "bindMounts": []map[string]any{{"source": "/srv/files", "target": "/files"}}}
+			for k, v := range tc.config {
+				input[k] = v
+			}
+			var req bindRequestResponse
+			if code := postJSON(t, owner, base+"/api/bind-requests", input, &req); code != http.StatusCreated {
+				t.Fatalf("submit: %d", code)
+			}
+			if req.Status != "pending" || req.AppID != 0 {
+				t.Fatalf("request created resource early: %+v", req)
+			}
+			var before []appResponse
+			if code := get(t, owner, base+"/api/apps", &before); code != http.StatusOK || len(before) != 0 {
+				t.Fatalf("app visible before approval: %d %+v", code, before)
+			}
+			var saved bindRequestResponse
+			if code := get(t, owner, base+"/api/bind-requests/"+itoa(req.ID), &saved); code != http.StatusOK || saved.Config.Dockerfile != tc.wantDockerfile || saved.Config.Kind != tc.wantKind {
+				t.Fatalf("saved source config: %d %+v", code, saved.Config)
+			}
+			url := base + "/api/admin/bind-requests/" + itoa(req.ID) + "/approve"
+			if code := postJSON(t, superadmin, url, struct{}{}, &req); code != http.StatusOK || req.Status != "created" {
+				t.Fatalf("approve: %d %+v", code, req)
+			}
+			select {
+			case desired := <-states:
+				if len(desired.Apps) != 1 {
+					t.Fatalf("desired apps: %v", desired.Apps)
+				}
+				app := desired.Apps[0]
+				if app.GetSandbox() != (tc.wantKind == "sandbox") || app.Image != tc.wantImage || app.Dockerfile != tc.wantDockerfile || app.Port != tc.wantPort || len(app.BindMounts) != 1 || !app.BindMounts[0].ReadOnly {
+					t.Fatalf("approved source: %v", app)
+				}
+				if tc.wantKind == "sandbox" && (app.Hostname != "" || app.Sandbox == false) {
+					t.Fatalf("sandbox must remain private and SSH-oriented: %v", app)
+				}
+				if tc.wantKind == "sandbox" && app.Running && app.Port != 0 {
+					t.Fatalf("sandbox exposed web port: %v", app)
+				}
+			case <-time.After(5 * time.Second):
+				t.Fatal("no deployment after approval")
+			}
+		})
 	}
 }

@@ -429,7 +429,7 @@ export type AppInput = {
 }
 
 export type BindMount = { source: string; target: string; readOnly: boolean }
-export type BindNode = { id: number; name: string; online: boolean }
+export type BindNode = { id: number; name: string; online: boolean; cpus: number; apps: number }
 export type BindRequestInput = AppInput & { bindMounts: BindMount[]; logoImage?: string }
 export type BindRequest = {
   id: number; authorId: number; authorName: string; nodeName: string

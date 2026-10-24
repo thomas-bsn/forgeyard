@@ -1118,7 +1118,7 @@ function AppFormModal({
           gpu,
         },
         logo || undefined,
-        useBinds && source === 'image' ? bindMounts : undefined,
+        useBinds ? bindMounts : undefined,
       )
     } catch (err) {
       setError(errorMessage(err))
@@ -1135,6 +1135,7 @@ function AppFormModal({
   const setCount = env.filter((v) => v.key.trim()).length
 
   const chosen = typeof node === 'object' ? node : undefined
+  const previewNode = useBinds ? bindNode : chosen
   // The memory limit is a ceiling, not a reservation: an app uses what it needs, so a limit above the free
   // memory only warns. Without a measure yet, the row is left out rather than shown as full.
   const free = chosen?.freeMemoryBytes || undefined
@@ -1191,13 +1192,13 @@ function AppFormModal({
             <dd>{useBinds ? (bindNode?.name ?? 'à choisir') : typeof node === 'string' ? node : chosen ? chosen.name : 'le plus puissant (auto)'}</dd>
           </>
         )}
-        {chosen && (
+        {previewNode && (
           <>
             <dt>Machine</dt>
             <dd>
-              {chosen.cpus} CPU · {chosen.apps} app{chosen.apps > 1 ? 's' : ''}
+              {previewNode.cpus} CPU · {previewNode.apps} app{previewNode.apps > 1 ? 's' : ''}
             </dd>
-            {free !== undefined && (
+            {!useBinds && free !== undefined && (
               <>
                 <dt>Mémoire libre</dt>
                 <dd className={overFree ? 'state-warn' : ''}>{formatBytes(free)}</dd>
@@ -1207,6 +1208,7 @@ function AppFormModal({
         )}
         <dt>Données</dt>
         <dd>{useBinds ? `${bindMounts.length} accès hôte${keptCount ? ` · ${keptCount} volume(s)` : ''}` : sandbox ? '/root gardé' : keptCount ? `${keptCount} volume${keptCount > 1 ? 's' : ''}` : 'non gardées'}</dd>
+        {useBinds && <><dt>Approbation</dt><dd>En attente du superadmin avant création</dd></>}
         <dt>Source</dt>
         <dd>{sandbox ? 'Linux, accès SSH' : source === 'dockerfile' ? 'construite' : 'téléchargée'}</dd>
       </dl>
@@ -1220,7 +1222,7 @@ function AppFormModal({
       <span className="aside-spacer" />
       {error && <p className="error">{error}</p>}
       <button type="submit" className="btn btn-primary btn-block btn-big" disabled={busy}>
-        {busy ? 'Envoi…' : useBinds && source === 'image' ? 'Soumettre la demande' : submitLabel}
+        {busy ? 'Envoi…' : useBinds ? 'Soumettre la demande' : submitLabel}
       </button>
       <button type="button" className="link-button aside-cancel" onClick={onClose} disabled={busy}>
         Annuler
@@ -1314,7 +1316,7 @@ function AppFormModal({
           <input type="number" min={64} max={16384} step={64} value={memory} onChange={(e) => setMemory(e.target.value)} required />
         </label>
       </div>
-      {!initial && source === 'image' && (
+      {!initial && source !== 'compose' && (
         <div className="field">
           <Switch checked={useBinds} onChange={(value) => { setUseBinds(value); if (!value && !admin) setNodeId(0) }} label="Utiliser des bind mounts" />
           {useBinds && <>

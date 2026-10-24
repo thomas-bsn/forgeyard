@@ -47,9 +47,6 @@ func (in *bindRequestInput) validate() string {
 	if msg := in.appInput.validate(true); msg != "" {
 		return msg
 	}
-	if in.Kind != kindWeb || in.Dockerfile != "" {
-		return "les demandes de bind mounts sont disponibles pour les apps Image Docker"
-	}
 	if in.NodeID <= 0 {
 		return "choisissez le node où se trouvent les fichiers"
 	}
@@ -101,12 +98,23 @@ func (s *Server) handleBindNodeChoices(w http.ResponseWriter, r *http.Request) {
 		ID     int64  `json:"id"`
 		Name   string `json:"name"`
 		Online bool   `json:"online"`
+		Cpus   int64  `json:"cpus"`
+		Apps   int64  `json:"apps"`
+	}
+	counts, err := s.store.CountAppsByNode(r.Context())
+	if err != nil {
+		s.internalError(w, r, err)
+		return
+	}
+	appCounts := map[int64]int64{}
+	for _, count := range counts {
+		appCounts[count.NodeID] = count.Count
 	}
 	out := []choice{}
 	for _, n := range nodes {
 		if n.Status == "active" {
 			_, online := s.nodes.Live(n.ID)
-			out = append(out, choice{n.ID, n.Name, online})
+			out = append(out, choice{n.ID, n.Name, online, n.Cpus, appCounts[n.ID]})
 		}
 	}
 	writeJSON(w, http.StatusOK, out)
