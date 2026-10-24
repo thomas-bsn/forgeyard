@@ -452,7 +452,13 @@ export function ProjectFormModal({
           <small>Le service exposé prend ce nom (son sous-domaine), les autres « {shownName}-service ».</small>
         </label>
       )}
-      {!stack && <Switch checked={useBindMounts} onChange={setUseBindMounts} label="Utiliser des bind mounts (approbation du superadmin requise)" />}
+      {!stack && <div className="field">
+        <div className="setting-row">
+          <Switch checked={useBindMounts} onChange={setUseBindMounts} label="Utiliser des bind mounts dans le Compose" />
+          <strong>Utiliser des dossiers de la machine (bind mounts)</strong>
+        </div>
+        <small>Les bind mounts du Compose donnent accès aux dossiers du node. La création du projet sera soumise au superadmin pour approbation.</small>
+      </div>}
       <label className="field">
         <span>docker-compose.yml</span>
         <textarea
