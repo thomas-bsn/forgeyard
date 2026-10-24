@@ -59,6 +59,7 @@ export default function Dashboard({
   // An app, a project or an external container opens under Apps, a member's profile under Members.
   const aliases: Record<string, string> = { containers: 'apps', projects: 'apps', stacks: 'apps', users: 'members', u: 'members' }
   const page = aliases[route[0]] ?? route[0] ?? 'apps'
+  const pageLabels: Record<string, string> = { apps: 'Apps', nodes: 'Nodes', members: 'Membres', support: 'Support', 'bind-requests': 'Demandes', settings: 'Réglages', profile: 'Mon profil' }
   const tab = (value: string, label: string, count?: number) => (
     <a href={`#/${value}`} className={`chip ${page === value ? 'on' : ''}`} aria-current={page === value ? 'page' : undefined}>
       {label}
@@ -85,7 +86,8 @@ export default function Dashboard({
       </header>
 
       <div className="dashboard-content">
-        {page === 'apps' && <Apps admin={admin} superadmin={user.role === 'superadmin'} userId={user.id} layout={instance.appsLayout} route={route.length ? route : ['apps']} go={go} />}
+        <div className="workspace-breadcrumb"><a href="#/apps">Forgeyard</a><span aria-hidden="true">›</span><a href={`#/${page}`}>{pageLabels[page] ?? 'Apps'}</a>{route[1] && <><span aria-hidden="true">›</span><span>{route[1]}</span></>}</div>
+        {page === 'apps' && <Apps admin={admin} superadmin={user.role === 'superadmin'} userId={user.id} route={route.length ? route : ['apps']} go={go} />}
         {page === 'nodes' && (admin ? <Nodes localSupported={instance.localNodeSupported} /> : <VisibleNodes />)}
         {route[0] === 'u' && route[1] ? (
           <MemberPage id={Number(route[1])} me={user} />

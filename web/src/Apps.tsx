@@ -2,7 +2,7 @@ import { lazy, Suspense, useEffect, useRef, useState, type FormEvent, type React
 import { api, errorMessage, type BindMount, type BindNode, type App, type AppEvent, type AppInput, type AppState, type AppUsage, type Container, type GpuRequest, type Node, type NodeChoice, type NodeGpus, type Stack } from './api'
 import { AppLogo, AreaChart, CopyField, formatBytes, LOGO_COLORS, Modal, since, Switch, upFor, useRedeploy } from './ui'
 import { ImageCropper } from './Cropper'
-import { ProjectCard, ProjectDetail, ProjectFormModal, ProjectLogo, projectStates } from './Projects'
+import { ProjectDetail, ProjectFormModal, ProjectLogo, projectStates } from './Projects'
 import { AppNetworkTab } from './Network'
 // xterm.js is large: it loads only when a terminal opens.
 const Terminal = lazy(() => import('./Terminal'))
@@ -106,14 +106,12 @@ export default function Apps({
   admin,
   superadmin,
   userId,
-  layout,
   route,
   go,
 }: {
   admin: boolean
   superadmin: boolean
   userId: number
-  layout: AppsLayout
   route: string[]
   go: (path: string) => void
 }) {
@@ -141,7 +139,7 @@ export default function Apps({
     if (!c) return <NotFound what="Ce conteneur n’existe plus, ou son node est hors ligne." go={go} />
     return <ContainerDetail container={c} superadmin={superadmin} onChange={load} go={go} />
   }
-  return <AppList apps={apps} nodes={nodes} containers={containers} projects={projects} admin={admin} superadmin={superadmin} layout={layout} error={error} onChange={load} go={go} />
+  return <AppList apps={apps} nodes={nodes} containers={containers} projects={projects} admin={admin} superadmin={superadmin} error={error} onChange={load} go={go} />
 }
 
 function NotFound({ what, go }: { what: string; go: (path: string) => void }) {
@@ -220,8 +218,6 @@ function toItems(apps: App[], containers: Container[], projects: Stack[]): Item[
   })
 }
 
-export type AppsLayout = 'sidebar' | 'nodes' | 'launcher'
-
 /** The node picked in the Apps tab, remembered across visits; "all" shows every node. */
 function useSelectedNode(): [string, (v: string) => void] {
   const [value, setValue] = useState(() => {
@@ -251,7 +247,6 @@ function AppList({
   projects,
   admin,
   superadmin,
-  layout,
   error,
   onChange,
   go,
@@ -262,7 +257,6 @@ function AppList({
   projects: Stack[]
   admin: boolean
   superadmin: boolean
-  layout: AppsLayout
   error: string
   onChange: () => void
   go: (path: string) => void
@@ -289,7 +283,6 @@ function AppList({
     )
   const byKind = inNode.filter((i) => (kind === 'all' || (kind === 'external') === i.external) && (only === 'all' || i.external || (only === 'projects') === !!i.project))
   const shown = byKind.filter((i) => (stateFilter === 'all' || i.group === stateFilter) && matchesQuery(i))
-  const count = (f: StateFilter) => byKind.filter((i) => i.group === f).length
   const problems = (id?: number) => all.filter((i) => (id === undefined || nodeOf(i) === id) && i.group === 'problem').length
 
   const newApp = (
@@ -328,32 +321,6 @@ function AppList({
         ))}
       </select>
     ) : null
-  const stateFilters = (
-    <div className="segmented segmented-small" role="group" aria-label="État">
-      {(
-        [
-          ['all', 'Toutes', byKind.length],
-          ['up', 'En ligne', count('up')],
-          ['stopped', 'Arrêtées', count('stopped')],
-          ['problem', 'En erreur', count('problem')],
-        ] as const
-      ).map(([value, label, n]) => (
-        <button key={value} type="button" aria-pressed={stateFilter === value} className={stateFilter === value ? 'on' : ''} onClick={() => setStateFilter(value)}>
-          {value !== 'all' && <span className={`state-dot ${value}`} />}
-          {label} <span className={`filter-pill ${value}`}>{n}</span>
-        </button>
-      ))}
-    </div>
-  )
-
-  const filters = (
-    <div className="filters">
-      {searchBox}
-      {typeFilters}
-      {stateFilters}
-    </div>
-  )
-
   const empty =
     apps && shown.length === 0 ? (
       <div className="empty-state">
@@ -368,8 +335,6 @@ function AppList({
       </div>
     ) : null
 
-  const title = node ? node.name : admin ? 'Toutes les apps' : 'Mes apps'
-  const nodeDot = (n: Node) => <Dot tone={n.state === 'online' ? 'up' : n.state === 'offline' ? 'down' : ''} />
   const createModal =
     creating === 'compose' ? (
       <ProjectFormModal
@@ -413,222 +378,54 @@ function AppList({
       )
     )
 
-  if (layout === 'launcher') {
-    return (
-      <div className="section">
-        <div className="launcher-bar">
-          {admin && (
-            <nav className="launcher-tabs" role="tablist" aria-label="Nodes">
-              {choices.map((n) => (
-                <button key={n.id} type="button" role="tab" aria-selected={node?.id === n.id} className={node?.id === n.id ? 'on' : ''} onClick={() => setPicked(String(n.id))}>
-                  {nodeDot(n)}
-                  {n.name}
-                  <span className="muted">{all.filter((i) => nodeOf(i) === n.id).length}</span>
-                </button>
-              ))}
-              <button type="button" role="tab" aria-selected={!node} className={!node ? 'on' : ''} onClick={() => setPicked('all')}>
-                Tous
-              </button>
-            </nav>
-          )}
-          {!admin && <h1 className="toolbar-title">Mes apps</h1>}
-          {newApp}
+  // Reference A: one overview, Compose projects with their services, then standalone apps.
+  const overviewProjects = shown.filter((i) => i.project)
+  const overviewSingles = shown.filter((i) => !i.project)
+  const onlineApps = inNode.filter((i) => i.app?.state === 'running').length
+  const onlineNodes = choices.filter((n) => n.state === 'online').length
+  const overview = (
+    <div className="overview-page">
+      <div className="overview-heading"><div><h1>Apps</h1><p>Gère tes apps, projets Compose et conteneurs.</p></div>{newApp}</div>
+      {admin && <div className="overview-stats">
+        <div className="overview-stat"><strong>{onlineApps}</strong><span>Apps en ligne</span></div>
+        <div className="overview-stat"><strong>{inNode.filter((i) => !!i.project).length}</strong><span>Projets Compose</span></div>
+        <div className="overview-stat"><strong>{problems(node?.id)}</strong><span>À vérifier</span></div>
+        <div className="overview-stat"><strong>{onlineNodes}</strong><span>Nodes actifs</span></div>
+      </div>}
+      <div className="overview-filters">
+        {searchBox}
+        <div className="overview-state-filters" role="group" aria-label="Filtrer par état">
+          {([['all', 'Tout'], ['up', 'En ligne'], ['problem', 'À vérifier'], ['stopped', 'Arrêtées']] as const).map(([value, label]) => (
+            <button key={value} type="button" className={stateFilter === value ? 'selected' : ''} aria-pressed={stateFilter === value} onClick={() => setStateFilter(value)}>{label}{value === 'all' && <span>{byKind.length}</span>}</button>
+          ))}
         </div>
-        {filters}
-        {error && <p className="error">{error}</p>}
-        {empty}
-        {shown.length > 0 && (
-          <Sectioned
-            items={shown}
-            className="launcher-grid"
-            render={(i) => (
-              <WithMenu key={i.key} item={i} admin={admin} onChange={onChange} place="launcher">
-                <LauncherIcon item={i} />
-              </WithMenu>
-            )}
-            extra={
-              <button type="button" className="launcher-icon launcher-new" onClick={() => setCreating('image')}>
-                <span className="launcher-plus" aria-hidden="true">
-                  +
-                </span>
-                <span>Nouvelle app</span>
-              </button>
-            }
-          />
-        )}
-        {createModal}
+        <span className="spacer" />
+        {admin && <select aria-label="Filtrer par node" value={picked} onChange={(e) => setPicked(e.target.value)}><option value="all">Tous les nodes</option>{choices.map((n) => <option key={n.id} value={n.id}>{n.name}</option>)}</select>}
+        {typeFilters}
       </div>
-    )
-  }
-
-  if (layout === 'nodes') {
-    return (
-      <div className="section">
-        <div className="toolbar">
-          <h1 className="toolbar-title">Apps</h1>
-          {newApp}
-        </div>
-        {admin && (
-          <div className="node-picker">
-            {choices.map((n) => {
-              const list = all.filter((i) => nodeOf(i) === n.id)
-              const p = problems(n.id)
-              return (
-                <button key={n.id} type="button" aria-pressed={node?.id === n.id} className={`node-pick ${node?.id === n.id ? 'on' : ''}`} onClick={() => setPicked(String(n.id))}>
-                  <span className="node-pick-head">
-                    {nodeDot(n)}
-                    <strong>{n.name}</strong>
-                    {n.isLocal && <span className="muted">cette machine</span>}
-                  </span>
-                  <span className="logo-stack">
-                    {list.slice(0, 4).map((i) => (
-                      <ItemLogo key={i.key} item={i} size={28} />
-                    ))}
-                    {list.length > 4 && <span className="logo-more">+{list.length - 4}</span>}
-                  </span>
-                  <span className="muted node-pick-meta">
-                    {list.length} app{list.length > 1 ? 's' : ''}
-                    {p > 0 ? <span className="text-down"> · {p} en erreur</span> : n.state === 'offline' ? ' · hors ligne' : ''}
-                  </span>
-                </button>
-              )
-            })}
-            <button type="button" aria-pressed={!node} className={`node-pick node-pick-all ${!node ? 'on' : ''}`} onClick={() => setPicked('all')}>
-              <span className="node-pick-head">
-                <strong>Tous les nodes</strong>
-              </span>
-              <span className="muted node-pick-meta">Les {all.length} apps ensemble, pour chercher sans savoir où elles tournent.</span>
-            </button>
-          </div>
-        )}
-        <section className="panel apps-panel">
-          <div className="apps-panel-head">
-            <h2>{title}</h2>
-            <span className="muted">{countText(inNode)}</span>
-          </div>
-          {filters}
-          {error && <p className="error">{error}</p>}
-          {empty}
-          {shown.length > 0 && (
-            <Sectioned
-              items={shown}
-              className="tile-grid"
-              render={(i) => (
-                <WithMenu key={i.key} item={i} admin={admin} onChange={onChange} place="tile">
-                  <AppTile item={i} />
-                </WithMenu>
-              )}
-            />
-          )}
-        </section>
-        {createModal}
-      </div>
-    )
-  }
-
-  // "sidebar", the default: nodes on the left with the health of each, the picked node's apps on the right.
-  const stateTiles = (
-    <div className="state-tiles" role="group" aria-label="État">
-      {(
-        [
-          ['all', 'Toutes', byKind.length],
-          ['up', 'En ligne', count('up')],
-          ['stopped', 'Arrêtées', count('stopped')],
-          ['problem', 'En erreur', count('problem')],
-        ] as const
-      ).map(([value, label, n]) => (
-        <button key={value} type="button" aria-pressed={stateFilter === value} className={`state-tile ${value === 'problem' && n > 0 ? 'alert' : ''}`} onClick={() => setStateFilter(value)}>
-          <strong>{n}</strong>
-          <span>
-            {value !== 'all' && <span className={`state-dot ${value}`} />}
-            {label}
-          </span>
-        </button>
-      ))}
+      {error && <p className="error" role="alert">{error}</p>}
+      {empty}
+      {overviewProjects.length > 0 && <>
+        <div className="overview-section-title"><h2>Projets <span>{overviewProjects.length}</span></h2><span className="muted">Services regroupés par projet</span></div>
+        <div className="overview-project-list">{overviewProjects.map((item) => <OverviewProject key={item.key} project={item.project!} admin={admin} />)}</div>
+      </>}
+      {overviewSingles.length > 0 && <>
+        <div className="overview-section-title"><h2>{overviewProjects.length ? 'Apps seules' : 'Apps'} <span>{overviewSingles.length}</span></h2></div>
+        <div className="overview-table-wrap"><table className="overview-table"><thead><tr><th>App</th><th>Image</th><th>Node</th><th>État</th><th><span className="sr-only">Actions</span></th></tr></thead><tbody>
+          {overviewSingles.map((item) => <tr key={item.key}><td><a href={itemHref(item)} className="overview-app-name">{item.name}</a>{item.app?.url && <small>{item.app.url.replace(/^https?:\/\//, '')}</small>}</td><td className="mono">{item.app?.image ?? item.container?.image ?? '—'}</td><td>{nodes.find((n) => n.id === nodeOf(item))?.name ?? '—'}</td><td><span className={`overview-status ${item.tone}`}>{itemState(item)}</span></td><td>{item.app && <WithMenu item={item} admin={admin} onChange={onChange} place="table"><span /></WithMenu>}</td></tr>)}
+        </tbody></table></div>
+      </>}
     </div>
   )
-  const nodeNavButton = (n: Node | undefined) => {
-    const list = n ? all.filter((i) => nodeOf(i) === n.id) : all
-    const bad = problems(n?.id)
-    const m = n?.metrics
-    return (
-      <button key={n?.id ?? 'all'} type="button" aria-current={(n?.id ?? undefined) === node?.id ? 'page' : undefined} onClick={() => setPicked(n ? String(n.id) : 'all')}>
-        <span className="node-nav-head">
-          {n ? nodeDot(n) : <Dot tone="" />}
-          <span className="node-nav-name">{n ? n.name : 'Tous les nodes'}</span>
-          {bad > 0 && <span className="problem-count">{bad}</span>}
-          <span className="muted">{list.length}</span>
-        </span>
-        {n && m && n.state !== 'offline' && (
-          <span className="node-nav-meters">
-            <MiniMeter label="CPU" text={`${m.cpuPercent.toFixed(0)} %`} pct={m.cpuPercent} />
-            <MiniMeter label="RAM" text={`${((m.memoryUsedBytes / (n.memoryBytes || 1)) * 100).toFixed(0)} %`} pct={(m.memoryUsedBytes / (n.memoryBytes || 1)) * 100} />
-          </span>
-        )}
-        {n?.state === 'offline' && <span className="muted node-nav-offline">hors ligne</span>}
-      </button>
-    )
-  }
-  return (
-    <div className={admin ? 'apps-split' : 'section'}>
-      {admin && (
-        <nav className="node-nav" aria-label="Nodes">
-          <span className="node-nav-title">Nodes</span>
-          {nodeNavButton(undefined)}
-          {choices.map((n) => nodeNavButton(n))}
-        </nav>
-      )}
-      <main className="apps-main">
-        <div className="toolbar">
-          <h1 className="toolbar-title">
-            {title} <span className="muted">{countText(inNode)}</span>
-          </h1>
-          {searchBox}
-          {typeFilters}
-          {newApp}
-        </div>
-        {stateTiles}
-        {error && <p className="error">{error}</p>}
-        {empty}
-        {shown.length > 0 && (
-          <Sectioned
-            items={shown}
-            className="card-grid"
-            render={(i) => (
-              <WithMenu key={i.key} item={i} admin={admin} onChange={onChange} place="card">
-                <AppCard item={i} admin={admin} />
-              </WithMenu>
-            )}
-          />
-        )}
-      </main>
-      {createModal}
-    </div>
-  )
+  return <>{overview}{createModal}</>
 }
 
-function MiniMeter({ label, text, pct }: { label: string; text: string; pct: number }) {
-  const tone = pct >= 90 ? 'down' : pct >= 75 ? 'warn' : 'ok'
-  return (
-    <div className="mini-meter">
-      <div className="meter-label">
-        <span>{label}</span>
-        <span className="muted">{text}</span>
-      </div>
-      <div className="meter-track">
-        <div className={`meter-fill meter-${tone}`} style={{ width: `${Math.min(100, pct)}%` }} />
-      </div>
-    </div>
-  )
-}
-
-function ItemLogo({ item, size }: { item: Item; size: number }) {
-  if (item.project) return <ProjectLogo project={item.project} size={size} />
-  return item.app ? (
-    <AppLogo url={item.app.logo.url} color={item.app.logo.color} name={item.name} size={size} faded={item.group === 'stopped'} />
-  ) : (
-    <AppLogo url={item.container?.logoUrl} name={item.name} size={size} faded={item.group === 'stopped'} />
-  )
+function OverviewProject({ project, admin }: { project: Stack; admin: boolean }) {
+  const state = projectStates[project.state] ?? { label: project.state, tone: '' }
+  return <a href={`#/projects/${project.id}`} className={`overview-project ${state.tone === 'down' ? 'has-error' : ''}`}>
+    <div className="overview-project-head"><ProjectLogo project={project} size={42} /><span className="overview-project-title"><strong>{project.name}</strong><small>{project.nodeName}{admin && project.ownerName ? ` · ${project.ownerName}` : ''}</small></span><span className={`overview-status ${state.tone}`}>{state.label}</span></div>
+    <div className="overview-services">{project.services.slice(0, 6).map((service) => <span className="overview-service" key={service.id}><span className="overview-service-line"><strong>{service.service}</strong><span className={service.kind === 'web' ? 'overview-service-tag public' : 'overview-service-tag'}>{service.kind === 'web' ? 'Exposé' : 'Privé'}</span></span><small>{service.image} · {service.memoryMb} Mo</small></span>)}{project.services.length > 6 && <span className="muted">et {project.services.length - 6} autres services</span>}</div>
+  </a>
 }
 
 function itemHref(i: Item): string {
@@ -648,7 +445,7 @@ function deleteQuestion(app: App): string {
 }
 
 /** An app of the list with a "⋯" menu of its actions; external containers have none. */
-function WithMenu({ item, admin, onChange, place, children }: { item: Item; admin: boolean; onChange: () => void; place: 'card' | 'tile' | 'launcher'; children: ReactNode }) {
+function WithMenu({ item, admin, onChange, place, children }: { item: Item; admin: boolean; onChange: () => void; place: 'table'; children: ReactNode }) {
   const app = item.app
   const [open, setOpen] = useState(false)
   const [moving, setMoving] = useState(false)
@@ -752,97 +549,6 @@ function WithMenu({ item, admin, onChange, place, children }: { item: Item; admi
         />
       )}
     </div>
-  )
-}
-
-/** "3 apps · 1 projet": how many single apps (and external containers) and projects a list holds. */
-function countText(items: Item[]): string {
-  const apps = items.filter((i) => !i.project).length
-  const projects = items.length - apps
-  const text = `${apps} app${apps > 1 ? 's' : ''}`
-  return projects ? `${text} · ${projects} projet${projects > 1 ? 's' : ''}` : text
-}
-
-/** The items of a list, projects first under their own title when there are both projects and single apps. */
-function Sectioned({ items, className, render, extra }: { items: Item[]; className: string; render: (i: Item) => ReactNode; extra?: ReactNode }) {
-  const projects = items.filter((i) => i.project)
-  const singles = items.filter((i) => !i.project)
-  if (projects.length === 0 || singles.length === 0)
-    return (
-      <div className={className}>
-        {items.map(render)}
-        {extra}
-      </div>
-    )
-  return (
-    <>
-      <h2 className="list-section">
-        Projets <span className="muted">· docker-compose</span>
-      </h2>
-      <div className={className}>{projects.map(render)}</div>
-      <h2 className="list-section">Apps</h2>
-      <div className={className}>
-        {singles.map(render)}
-        {extra}
-      </div>
-    </>
-  )
-}
-
-/** View B: logo, name, owner, state and address. */
-function AppCard({ item: i, admin }: { item: Item; admin: boolean }) {
-  if (i.project) return <ProjectCard project={i.project} admin={admin} />
-  const address =
-    i.app?.kind === 'sandbox'
-      ? 'sandbox · accès SSH'
-      : i.app?.kind === 'service' || i.app?.kind === 'job'
-        ? `${i.app.kind === 'job' ? 'job' : 'service'} ${i.app.service} · projet, sans adresse`
-        : (i.app?.url?.replace(/^https?:\/\//, '') ?? (i.container?.ports.length ? i.container.ports.join(' · ') : ''))
-  return (
-    <a href={itemHref(i)} className={`app-card ${i.tone === 'down' ? 'app-card-down' : ''} ${i.external ? 'app-card-external' : ''}`}>
-      <span className="app-card-head">
-        <ItemLogo item={i} size={44} />
-        <span className="app-card-title">
-          <strong>{i.name}</strong>
-          <span className="muted">{i.external ? 'externe' : admin ? i.app!.ownerName : i.app!.image}</span>
-        </span>
-        <span className="app-card-state">
-          <Dot tone={i.tone} />
-          {itemState(i)}
-        </span>
-      </span>
-      <span className={address ? 'app-card-url' : 'muted app-card-meta'}>{address || 'pas d’adresse web'}</span>
-    </a>
-  )
-}
-
-/** View A: logo, name and state. */
-function AppTile({ item: i }: { item: Item }) {
-  return (
-    <a href={itemHref(i)} className={`app-tile ${i.tone === 'down' ? 'app-card-down' : ''} ${i.external ? 'app-card-external' : ''}`}>
-      <ItemLogo item={i} size={40} />
-      <span className="app-tile-text">
-        <strong>{i.name}</strong>
-        <span className={`app-tile-state state-${i.tone}`}>
-          {i.external && 'externe · '}
-          {itemState(i)}
-        </span>
-      </span>
-    </a>
-  )
-}
-
-/** View C: a big logo with a state badge, like a phone's home screen. */
-function LauncherIcon({ item: i }: { item: Item }) {
-  return (
-    <a href={itemHref(i)} className="launcher-icon" title={`${i.name} · ${itemState(i)}`}>
-      <span className="launcher-logo">
-        <ItemLogo item={i} size={64} />
-        <span className={`launcher-badge ${i.tone ? `dot-${i.tone}` : ''}`} aria-hidden="true" />
-      </span>
-      <strong>{i.name}</strong>
-      {i.external && <span className="muted launcher-sub">externe</span>}
-    </a>
   )
 }
 

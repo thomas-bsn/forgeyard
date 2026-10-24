@@ -69,6 +69,9 @@ export default function Nodes({ localSupported }: { localSupported: boolean }) {
 
   const online = nodes?.filter((n) => n.state === 'online').length ?? 0
   const joined = nodes?.filter((n) => n.state !== 'pending').length ?? 0
+  const freeMemory = (nodes ?? []).reduce((sum, n) => sum + Math.max(0, n.memoryBytes - (n.metrics?.memoryUsedBytes ?? 0)), 0)
+  const deployed = new Set([...apps.map((a) => `${a.nodeId}:${a.id}`), ...containers.map((c) => `${c.nodeId}:${c.id}`)]).size
+  const outdated = nodes?.filter((n) => n.agentOutdated || n.updateError).length ?? 0
 
   return (
     <div className="section">
@@ -99,6 +102,12 @@ export default function Nodes({ localSupported }: { localSupported: boolean }) {
         <button type="button" className="btn btn-primary" onClick={() => setAdding(true)}>
           + Ajouter un node
         </button>
+      </div>
+      <div className="overview-stats node-overview-stats">
+        <div className="overview-stat"><strong>{online}</strong><span>Connectés</span></div>
+        <div className="overview-stat"><strong>{formatBytes(freeMemory)}</strong><span>Mémoire disponible</span></div>
+        <div className="overview-stat"><strong>{deployed}</strong><span>Apps déployées</span></div>
+        <div className="overview-stat"><strong>{outdated}</strong><span>Mise à jour requise</span></div>
       </div>
       {error && <p className="error">{error}</p>}
       {nodes && nodes.length === 0 && (
