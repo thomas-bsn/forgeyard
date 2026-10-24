@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"time"
 
 	"github.com/thomas-bsn/forgeyard/internal/store/db"
@@ -48,9 +49,9 @@ func (s *Server) notifyBindRequest(row db.BindRequest, event bindRequestEvent) {
 		if err != nil || !events["requests"] {
 			return
 		}
-		n := notification{Title: title, Text: fmt.Sprintf("Demande #%d · membre #%d. %s", id, authorID, text), Path: "#/bind-requests/" + itoa(id), Color: color}
+		n := notification{Title: title, Text: fmt.Sprintf("Demande #%d · membre #%d. %s", id, authorID, text), Path: "#/bind-requests/" + strconv.FormatInt(id, 10), Color: color}
 		s.notifyUser(authorID, n)
-		n.Path = "#/bind-requests/review/" + itoa(id)
+		n.Path = "#/bind-requests/review/" + strconv.FormatInt(id, 10)
 		if event == bindRequestSubmitted {
 			n.Title = "Demande de bind mounts à examiner par le superadmin"
 		}
