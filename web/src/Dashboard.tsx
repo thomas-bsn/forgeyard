@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { api, type Instance, type User } from './api'
-import { Avatar, Logo, useRoute, useTheme } from './ui'
+import { Avatar, Logo, useRoute, useThemePreference } from './ui'
 import Settings from './Settings'
 import Nodes from './Nodes'
 import Apps from './Apps'
@@ -66,7 +66,7 @@ export default function Dashboard({
   )
 
   return (
-    <div className="page">
+    <div className="dashboard-shell">
       <header className="topbar">
         <a href="#/apps" className="brand-link">
           <Logo size={32} src={instance.iconUrl} />
@@ -83,17 +83,19 @@ export default function Dashboard({
         <UserMenu user={user} admin={admin} pending={pending} onLogout={logout} />
       </header>
 
-      {page === 'apps' && <Apps admin={admin} superadmin={user.role === 'superadmin'} userId={user.id} layout={instance.appsLayout} route={route.length ? route : ['apps']} go={go} />}
-      {page === 'nodes' && admin && <Nodes localSupported={instance.localNodeSupported} />}
-      {route[0] === 'u' && route[1] ? (
-        <MemberPage id={Number(route[1])} me={user} />
-      ) : (
-        page === 'members' && (admin ? <Users me={user} onRequestsChange={setPending} /> : <MemberGrid />)
-      )}
-      {page === 'settings' && admin && <Settings superadmin={user.role === 'superadmin'} section={route[1]} onRenamed={onRefresh} />}
-      {page === 'bind-requests' && <BindRequests superadmin={user.role === 'superadmin'} route={route} go={go} />}
-      {page === 'support' && <Support me={user} admin={admin} route={route} go={go} />}
-      {page === 'profile' && <Profile user={user} section={route[1]} onChange={onRefresh} />}
+      <div className="dashboard-content">
+        {page === 'apps' && <Apps admin={admin} superadmin={user.role === 'superadmin'} userId={user.id} layout={instance.appsLayout} route={route.length ? route : ['apps']} go={go} />}
+        {page === 'nodes' && admin && <Nodes localSupported={instance.localNodeSupported} />}
+        {route[0] === 'u' && route[1] ? (
+          <MemberPage id={Number(route[1])} me={user} />
+        ) : (
+          page === 'members' && (admin ? <Users me={user} onRequestsChange={setPending} /> : <MemberGrid />)
+        )}
+        {page === 'settings' && admin && <Settings superadmin={user.role === 'superadmin'} section={route[1]} onRenamed={onRefresh} />}
+        {page === 'bind-requests' && <BindRequests superadmin={user.role === 'superadmin'} route={route} go={go} />}
+        {page === 'support' && <Support me={user} admin={admin} route={route} go={go} />}
+        {page === 'profile' && <Profile user={user} section={route[1]} onChange={onRefresh} />}
+      </div>
     </div>
   )
 }
@@ -101,7 +103,7 @@ export default function Dashboard({
 /** The signed-in user's picture, opening a menu: profile, instance settings, theme, docs, sign out. */
 function UserMenu({ user, admin, pending, onLogout }: { user: User; admin: boolean; pending: number; onLogout: () => void }) {
   const [open, setOpen] = useState(false)
-  const [theme, toggleTheme] = useTheme()
+  const [theme, setTheme] = useThemePreference()
   const box = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -124,8 +126,10 @@ function UserMenu({ user, admin, pending, onLogout }: { user: User; admin: boole
 
   return (
     <div className="user-menu" ref={box}>
-      <button type="button" className="user-button" aria-haspopup="menu" aria-expanded={open} aria-label="Menu du compte" onClick={() => setOpen(!open)}>
+      <button type="button" className="user-button" aria-haspopup="menu" aria-expanded={open} aria-label={`Menu du profil de ${user.displayName}`} onClick={() => setOpen(!open)}>
         <Avatar url={user.avatarUrl} name={user.displayName} size={36} />
+        <span className="user-name">{user.displayName}</span>
+        <svg className="user-chevron" width="14" height="14" viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="m5 7.5 5 5 5-5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" /></svg>
         {pending > 0 && <span className="user-dot" aria-hidden="true" />}
       </button>
       {open && (
@@ -148,10 +152,20 @@ function UserMenu({ user, admin, pending, onLogout }: { user: User; admin: boole
             </a>
           )}
           <hr />
-          <button type="button" role="menuitem" onClick={toggleTheme}>
-            Thème : {theme === 'dark' ? 'sombre' : 'clair'}
-            <span className="muted">changer</span>
-          </button>
+          <div className="menu-theme" role="group" aria-label="Apparence">
+            <span className="menu-theme-label">Apparence</span>
+            <div className="menu-theme-options">
+              {([
+                ['system', 'Système'],
+                ['light', 'Clair'],
+                ['dark', 'Sombre'],
+              ] as const).map(([value, label]) => (
+                <button key={value} type="button" role="menuitemradio" aria-checked={theme === value} className={theme === value ? 'selected' : ''} onClick={() => { setTheme(value); close() }}>
+                  {label}
+                </button>
+              ))}
+            </div>
+          </div>
           <a role="menuitem" href={DOCS_URL} target="_blank" rel="noopener noreferrer" onClick={close}>
             Documentation
           </a>

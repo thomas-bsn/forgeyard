@@ -2187,6 +2187,102 @@ button.row:hover {
   flex-wrap: wrap;
 }
 
+/* The signed-in workspace uses the horizontal navigation from the Compose prototype. */
+.dashboard-shell {
+  min-height: 100vh;
+  background: var(--bg);
+}
+
+.dashboard-shell .topbar {
+  position: sticky;
+  top: 0;
+  z-index: 30;
+  min-height: 68px;
+  flex-wrap: nowrap;
+  gap: 24px;
+  padding: 0 clamp(16px, 3vw, 42px);
+  border-bottom: 1px solid var(--border);
+  background: var(--card);
+}
+
+.dashboard-shell .brand-link {
+  flex: 0 0 auto;
+}
+
+.dashboard-shell .user-button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 9px 5px 5px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--card);
+  color: var(--text);
+}
+
+.dashboard-shell .user-button:hover,
+.dashboard-shell .user-button[aria-expanded='true'] {
+  border-color: var(--accent);
+}
+
+.dashboard-shell .user-name {
+  max-width: 150px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.84rem;
+  font-weight: 600;
+}
+
+.dashboard-shell .user-chevron {
+  color: var(--muted);
+}
+
+.dashboard-shell .tabs {
+  align-self: stretch;
+  flex: 1 1 auto;
+  min-width: 0;
+  flex-wrap: nowrap;
+  gap: 4px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.dashboard-shell .tabs::-webkit-scrollbar {
+  display: none;
+}
+
+.dashboard-shell .tabs .chip {
+  align-self: stretch;
+  flex: 0 0 auto;
+  padding: 0 13px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
+  background: transparent;
+  color: var(--muted);
+  font-size: 0.88rem;
+  font-weight: 600;
+}
+
+.dashboard-shell .tabs .chip:hover {
+  color: var(--text);
+  background: color-mix(in srgb, var(--accent) 5%, transparent);
+}
+
+.dashboard-shell .tabs .chip.on {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+  background: transparent;
+}
+
+.dashboard-content {
+  width: 100%;
+  max-width: 1600px;
+  margin: 0 auto;
+  padding: 30px clamp(16px, 3vw, 42px) 56px;
+}
+
 .brand-link {
   display: flex;
   align-items: center;
@@ -2264,6 +2360,194 @@ button.row:hover {
 
 .menu-head .muted {
   font-size: 0.8rem;
+}
+
+.menu-theme {
+  display: grid;
+  gap: 7px;
+  padding: 9px 10px 10px;
+}
+
+.menu-theme-label {
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 650;
+}
+
+.menu-theme-options {
+  display: flex;
+  gap: 2px;
+  padding: 3px;
+  border-radius: 9px;
+  background: var(--bg);
+}
+
+.menu-theme-options button,
+.menu-theme-options button:hover {
+  justify-content: center;
+  flex: 1 1 0;
+  min-width: 0;
+  padding: 6px 5px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  color: var(--muted);
+  font-size: 0.76rem;
+  text-align: center;
+  background: transparent;
+}
+
+.menu-theme-options button.selected {
+  border-color: var(--border);
+  background: var(--card);
+  color: var(--accent);
+  box-shadow: 0 1px 3px rgb(0 0 0 / 0.08);
+}
+
+@media (max-width: 760px) {
+  .dashboard-shell .topbar {
+    gap: 10px;
+    padding: 0 12px;
+  }
+
+  .dashboard-shell .brand-name {
+    display: none;
+  }
+
+  .dashboard-shell .user-name,
+  .dashboard-shell .user-chevron {
+    display: none;
+  }
+
+  .dashboard-shell .user-button {
+    padding: 2px;
+    border: 0;
+  }
+
+  .dashboard-shell .tabs .chip {
+    padding: 0 10px;
+    font-size: 0.8rem;
+  }
+
+  .dashboard-content {
+    padding-top: 22px;
+  }
+}
+
+/* Shared workspace rhythm for Apps, Nodes, Members, Support, Requests and Settings. */
+.dashboard-content > .section,
+.dashboard-content > .apps-split,
+.dashboard-content > .detail,
+.dashboard-content > .settings-layout {
+  gap: 18px;
+}
+
+.dashboard-content h1,
+.dashboard-content .toolbar-title {
+  letter-spacing: -0.035em;
+}
+
+.dashboard-content .toolbar {
+  gap: 14px;
+  margin-bottom: 4px;
+}
+
+.dashboard-content .toolbar-title {
+  font-size: 1.65rem;
+}
+
+.dashboard-content .panel,
+.dashboard-content .app-card,
+.dashboard-content .node-pick,
+.dashboard-content .member-card,
+.dashboard-content .apps-panel {
+  border-radius: 14px;
+}
+
+.dashboard-content .panel {
+  padding: 22px;
+}
+
+.dashboard-content .app-card {
+  padding: 16px;
+  gap: 10px;
+  transition: border-color 120ms ease, box-shadow 120ms ease, transform 120ms ease;
+}
+
+.dashboard-content .app-card:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 8px 20px color-mix(in srgb, var(--text) 8%, transparent);
+}
+
+.dashboard-content .node-pick {
+  padding: 17px;
+}
+
+.dashboard-content .node-pick.on {
+  padding: 16px;
+}
+
+.dashboard-content .data-table th,
+.dashboard-content .table th {
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.055em;
+  text-transform: uppercase;
+}
+
+.dashboard-content .data-table td,
+.dashboard-content .table td {
+  padding-top: 13px;
+  padding-bottom: 13px;
+}
+
+.dashboard-content [role='tablist'] {
+  border-radius: 0;
+}
+
+.dashboard-content .segmented[role='tablist'] {
+  gap: 9px;
+  padding: 0;
+  border: 0;
+  border-bottom: 1px solid var(--border);
+  background: transparent;
+}
+
+.dashboard-content .segmented[role='tablist'] button {
+  margin-bottom: -1px;
+  padding: 9px 11px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
+  background: transparent;
+}
+
+.dashboard-content .segmented[role='tablist'] button.on {
+  border-bottom-color: var(--accent);
+  background: transparent;
+  color: var(--accent);
+}
+
+.dashboard-content .btn {
+  font-weight: 600;
+}
+
+.dashboard-content .field input,
+.dashboard-content .field select,
+.dashboard-content .field textarea,
+.dashboard-content input:not([type='checkbox']):not([type='radio']):not([type='file']),
+.dashboard-content select,
+.dashboard-content textarea {
+  border-radius: 9px;
+}
+
+@media (max-width: 720px) {
+  .dashboard-content .panel {
+    padding: 17px;
+  }
+
+  .dashboard-content .toolbar-title {
+    font-size: 1.45rem;
+  }
 }
 
 .menu a,
