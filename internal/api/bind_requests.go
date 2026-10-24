@@ -143,6 +143,7 @@ func (s *Server) handleCreateBindRequest(w http.ResponseWriter, r *http.Request)
 		s.internalError(w, r, err)
 		return
 	}
+	s.notifyBindRequest(request, bindRequestSubmitted)
 	if currentUser(r).Role == "superadmin" {
 		_ = s.approveBindRequest(r, request)
 		request, err = s.store.GetBindRequest(r.Context(), request.ID)
@@ -296,6 +297,11 @@ func (s *Server) handleDecideBindRequest(w http.ResponseWriter, r *http.Request)
 	if err != nil {
 		s.internalError(w, r, err)
 		return
+	}
+	if row.Status == "refused" {
+		s.notifyBindRequest(row, bindRequestRefused)
+	} else {
+		s.notifyBindRequest(row, bindRequestCancelled)
 	}
 	s.writeBindRequest(w, r, row, http.StatusOK)
 }

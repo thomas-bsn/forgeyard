@@ -71,7 +71,9 @@ func (s *Server) approveBindRequest(r *http.Request, row db.BindRequest) (result
 		if result != nil {
 			cleanup, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancel()
-			_ = s.store.FailBindRequest(cleanup, db.FailBindRequestParams{Reason: result.Error(), ID: row.ID})
+			if err := s.store.FailBindRequest(cleanup, db.FailBindRequestParams{Reason: result.Error(), ID: row.ID}); err == nil {
+				s.notifyBindRequest(row, bindRequestFailed)
+			}
 		}
 	}()
 	row, err = s.store.GetBindRequest(ctx, row.ID)
@@ -192,6 +194,7 @@ func (s *Server) approveBindRequest(r *http.Request, row db.BindRequest) (result
 		if err != nil {
 			return fmt.Errorf("création de l'app : %w", err)
 		}
+		s.notifyBindRequest(row, bindRequestApproved)
 	}
 	if p, e := s.dnsProvider(c); e != nil && in.Kind == kindWeb {
 		return e
@@ -229,6 +232,7 @@ func (s *Server) approveBindRequest(r *http.Request, row db.BindRequest) (result
 	}
 	s.appEvent(app.ID, eventInfo, "Bind mounts approuvés par "+currentUser(r).DisplayName)
 	s.push(ctx, node.ID)
+	s.notifyBindRequest(row, bindRequestCreated)
 	return nil
 }
 
