@@ -218,7 +218,7 @@ export default function Settings({ superadmin, section, onRenamed }: { superadmi
 }
 
 const notifyKinds: { key: keyof NotifySettings['events']; title: string; text: string }[] = [
-  { key: 'requests', title: 'Demandes de compte', text: 'Quelqu’un se connecte avec Discord et attend votre validation.' },
+  { key: 'requests', title: 'Demandes de compte et de bind mounts', text: 'Inscriptions Discord et suivi des demandes de bind mounts, dont l’approbation est réservée au superadmin.' },
   { key: 'support', title: 'Support', text: 'Une demande d’aide, ou un nouveau message d’un membre sur la sienne.' },
   { key: 'crashes', title: 'Apps suspendues', text: 'Une app plante 3 fois en 5 minutes : Forgeyard l’arrête.' },
   { key: 'nodes', title: 'Nodes hors ligne', text: 'Un node ne répond plus depuis une minute, puis quand il revient.' },
