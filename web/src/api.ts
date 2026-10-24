@@ -426,6 +426,15 @@ export type AppInput = {
   gpu?: GpuRequest
 }
 
+export type BindMount = { source: string; target: string; readOnly: boolean }
+export type BindNode = { id: number; name: string; online: boolean }
+export type BindRequestInput = AppInput & { bindMounts: BindMount[]; logoImage?: string }
+export type BindRequest = {
+  id: number; authorId: number; authorName: string; nodeName: string
+  config: Omit<BindRequestInput, 'env'> & { env?: null }
+  envKeys: string[]; status: string; reason: string; createdAt: number; decidedAt: number
+}
+
 /** The GPUs of its node an app may use: all, or some by ID. Access only, not a reservation. */
 export type GpuRequest = { vendor: 'nvidia'; all: boolean; ids?: string[] }
 
@@ -558,6 +567,13 @@ export const api = {
     request<DiscordSettings>('PUT', '/api/admin/settings/discord', { clientId, clientSecret }),
   apps: () => request<App[]>('GET', '/api/apps'),
   app: (id: number) => request<App>('GET', `/api/apps/${id}`),
+  bindNodes: () => request<BindNode[]>('GET', '/api/bind-requests/nodes'),
+  bindRequests: (review = false) => request<BindRequest[]>('GET', review ? '/api/admin/bind-requests' : '/api/bind-requests'),
+  bindRequest: (id: number) => request<BindRequest>('GET', `/api/bind-requests/${id}`),
+  createBindRequest: (input: BindRequestInput) => request<BindRequest>('POST', '/api/bind-requests', input),
+  cancelBindRequest: (id: number) => request<BindRequest>('POST', `/api/bind-requests/${id}/cancel`, {}),
+  refuseBindRequest: (id: number, reason: string) => request<BindRequest>('POST', `/api/admin/bind-requests/${id}/refuse`, { reason }),
+  revealBindRequest: (id: number) => request<Record<string, string>>('POST', `/api/admin/bind-requests/${id}/reveal`, {}),
   createApp: (input: AppInput) => request<App>('POST', '/api/apps', input),
   gpus: () => request<(NodeGpus & { nodeId: number; nodeName: string })[]>('GET', '/api/gpus'),
   imagePorts: (image: string) => request<{ ports: number[]; volumes: string[]; volumesFrom?: 'image' | 'known'; hub?: string; error?: string }>('GET', `/api/images/ports?image=${encodeURIComponent(image)}`),

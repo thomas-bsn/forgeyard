@@ -1,0 +1,284 @@
+package api
+
+import (
+	"database/sql"
+	"encoding/json"
+	"errors"
+	"net/http"
+	"path"
+	"sort"
+	"strconv"
+	"strings"
+	"time"
+
+	"github.com/thomas-bsn/forgeyard/internal/store/db"
+)
+
+// bindMount names a specific access on the node's host filesystem. A missing mode is read-only.
+type bindMount struct {
+	Source   string `json:"source"`
+	Target   string `json:"target"`
+	ReadOnly *bool  `json:"readOnly"`
+}
+
+type bindRequestInput struct {
+	appInput
+	BindMounts []bindMount `json:"bindMounts"`
+	LogoImage  string      `json:"logoImage,omitempty"`
+}
+
+type bindRequestResponse struct {
+	ID         int64            `json:"id"`
+	AuthorID   int64            `json:"authorId"`
+	AuthorName string           `json:"authorName"`
+	NodeName   string           `json:"nodeName"`
+	Config     bindRequestInput `json:"config"`
+	EnvKeys    []string         `json:"envKeys"`
+	Status     string           `json:"status"`
+	Reason     string           `json:"reason"`
+	CreatedAt  int64            `json:"createdAt"`
+	DecidedAt  int64            `json:"decidedAt"`
+}
+
+func (in *bindRequestInput) validate() string {
+	if msg := in.appInput.validate(true); msg != "" {
+		return msg
+	}
+	if in.Kind != kindWeb || in.Dockerfile != "" {
+		return "les demandes de bind mounts sont disponibles pour les apps Image Docker"
+	}
+	if in.NodeID <= 0 {
+		return "choisissez le node où se trouvent les fichiers"
+	}
+	if len(in.BindMounts) == 0 || len(in.BindMounts) > 10 {
+		return "indiquez entre 1 et 10 bind mounts"
+	}
+	targets := map[string]bool{}
+	for _, target := range in.Volumes {
+		targets[target] = true
+	}
+	for i := range in.BindMounts {
+		m := &in.BindMounts[i]
+		m.Source = strings.TrimSpace(m.Source)
+		m.Target = strings.TrimSpace(m.Target)
+		if !strings.HasPrefix(m.Source, "/") || !strings.HasPrefix(m.Target, "/") || len(m.Source) > 4096 || len(m.Target) > 200 || strings.ContainsAny(m.Source+m.Target, "\x00\n\r") {
+			return "les sources et destinations des bind mounts doivent être des chemins absolus"
+		}
+		m.Source = path.Clean(m.Source)
+		m.Target = path.Clean(m.Target)
+		if m.Target == "/" || m.Target == "/proc" || m.Target == "/sys" || m.Target == "/dev" || strings.HasPrefix(m.Target, "/proc/") || strings.HasPrefix(m.Target, "/sys/") || strings.HasPrefix(m.Target, "/dev/") {
+			return "destination impossible : " + m.Target
+		}
+		if targets[m.Target] {
+			return "destination de montage en double : " + m.Target
+		}
+		targets[m.Target] = true
+		if m.ReadOnly == nil {
+			ro := true
+			m.ReadOnly = &ro
+		}
+	}
+	if in.LogoImage != "" {
+		if _, _, err := decodeDataURL(in.LogoImage, maxAvatarBytes); err != nil {
+			return "logo invalide"
+		}
+	}
+	return ""
+}
+
+// Only active nodes accept apps. Offline active nodes remain selectable for a request; approval will
+// require a live agent to verify the paths, rather than silently choosing a different machine.
+func (s *Server) handleBindNodeChoices(w http.ResponseWriter, r *http.Request) {
+	nodes, err := s.store.ListNodes(r.Context())
+	if err != nil {
+		s.internalError(w, r, err)
+		return
+	}
+	type choice struct {
+		ID     int64  `json:"id"`
+		Name   string `json:"name"`
+		Online bool   `json:"online"`
+	}
+	out := []choice{}
+	for _, n := range nodes {
+		if n.Status == "active" {
+			_, online := s.nodes.Live(n.ID)
+			out = append(out, choice{n.ID, n.Name, online})
+		}
+	}
+	writeJSON(w, http.StatusOK, out)
+}
+
+func (s *Server) handleCreateBindRequest(w http.ResponseWriter, r *http.Request) {
+	var in bindRequestInput
+	if !decodeJSON(w, r, &in) {
+		return
+	}
+	if msg := in.validate(); msg != "" {
+		writeError(w, http.StatusBadRequest, msg)
+		return
+	}
+	if currentUser(r).AppsSuspended != 0 {
+		writeError(w, http.StatusForbidden, errSuspended)
+		return
+	}
+	n, err := s.store.GetNode(r.Context(), in.NodeID)
+	if err != nil || n.Status != "active" {
+		writeError(w, http.StatusBadRequest, "ce node n'accepte pas de déploiements")
+		return
+	}
+	sealed, err := s.sealEnv(in.Env)
+	if err != nil {
+		s.internalError(w, r, err)
+		return
+	}
+	in.Env = nil
+	config, err := json.Marshal(in)
+	if err != nil {
+		s.internalError(w, r, err)
+		return
+	}
+	request, err := s.store.CreateBindRequest(r.Context(), db.CreateBindRequestParams{AuthorID: currentUser(r).ID, NodeID: in.NodeID, Config: string(config), EnvSealed: sealed, CreatedAt: time.Now().Unix()})
+	if err != nil {
+		s.internalError(w, r, err)
+		return
+	}
+	s.writeBindRequest(w, r, request, http.StatusCreated)
+}
+
+func (s *Server) bindResponse(r *http.Request, row db.BindRequest) (bindRequestResponse, error) {
+	out := bindRequestResponse{ID: row.ID, AuthorID: row.AuthorID, Status: row.Status, Reason: row.Reason, CreatedAt: row.CreatedAt, DecidedAt: row.DecidedAt, EnvKeys: []string{}}
+	if err := json.Unmarshal([]byte(row.Config), &out.Config); err != nil {
+		return out, err
+	}
+	// Never expose saved environment values in ordinary list or detail responses.
+	out.Config.Env = nil
+	env, err := s.openEnv(row.EnvSealed)
+	if err != nil {
+		return out, err
+	}
+	for k := range env {
+		out.EnvKeys = append(out.EnvKeys, k)
+	}
+	sort.Strings(out.EnvKeys)
+	if author, err := s.store.GetUserByID(r.Context(), row.AuthorID); err == nil {
+		out.AuthorName = author.DisplayName
+	}
+	if node, err := s.store.GetNode(r.Context(), row.NodeID); err == nil {
+		out.NodeName = node.Name
+	}
+	return out, nil
+}
+
+func (s *Server) writeBindRequest(w http.ResponseWriter, r *http.Request, row db.BindRequest, status int) {
+	out, err := s.bindResponse(r, row)
+	if err != nil {
+		s.internalError(w, r, err)
+		return
+	}
+	writeJSON(w, status, out)
+}
+
+func (s *Server) handleListBindRequests(w http.ResponseWriter, r *http.Request) {
+	var rows []db.BindRequest
+	var err error
+	if strings.HasPrefix(r.URL.Path, "/api/admin/") {
+		rows, err = s.store.ListBindRequests(r.Context())
+	} else {
+		rows, err = s.store.ListOwnBindRequests(r.Context(), currentUser(r).ID)
+	}
+	if err != nil {
+		s.internalError(w, r, err)
+		return
+	}
+	out := []bindRequestResponse{}
+	for _, row := range rows {
+		resp, err := s.bindResponse(r, row)
+		if err != nil {
+			s.internalError(w, r, err)
+			return
+		}
+		out = append(out, resp)
+	}
+	writeJSON(w, http.StatusOK, out)
+}
+
+func (s *Server) loadBindRequest(w http.ResponseWriter, r *http.Request) (db.BindRequest, bool) {
+	id, parseErr := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if parseErr != nil {
+		writeError(w, http.StatusNotFound, "demande introuvable")
+		return db.BindRequest{}, false
+	}
+	row, err := s.store.GetBindRequest(r.Context(), id)
+	if errors.Is(err, sql.ErrNoRows) || (err == nil && row.AuthorID != currentUser(r).ID && currentUser(r).Role != "superadmin") {
+		writeError(w, http.StatusNotFound, "demande introuvable")
+		return db.BindRequest{}, false
+	}
+	if err != nil {
+		s.internalError(w, r, err)
+		return db.BindRequest{}, false
+	}
+	return row, true
+}
+
+func (s *Server) handleGetBindRequest(w http.ResponseWriter, r *http.Request) {
+	row, ok := s.loadBindRequest(w, r)
+	if !ok {
+		return
+	}
+	s.writeBindRequest(w, r, row, http.StatusOK)
+}
+
+func (s *Server) handleRevealBindRequest(w http.ResponseWriter, r *http.Request) {
+	row, ok := s.loadBindRequest(w, r)
+	if !ok {
+		return
+	}
+	env, err := s.openEnv(row.EnvSealed)
+	if err != nil {
+		s.internalError(w, r, err)
+		return
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	writeJSON(w, http.StatusOK, env)
+}
+
+func (s *Server) handleDecideBindRequest(w http.ResponseWriter, r *http.Request) {
+	row, ok := s.loadBindRequest(w, r)
+	if !ok {
+		return
+	}
+	status, reason := "cancelled", ""
+	if strings.HasSuffix(r.URL.Path, "/refuse") {
+		var in struct {
+			Reason string `json:"reason"`
+		}
+		if !decodeJSON(w, r, &in) {
+			return
+		}
+		reason = strings.TrimSpace(in.Reason)
+		if reason == "" || len(reason) > 2000 {
+			writeError(w, http.StatusBadRequest, "un motif de refus est obligatoire (2000 caractères maximum)")
+			return
+		}
+		status = "refused"
+	} else if row.AuthorID != currentUser(r).ID {
+		writeError(w, http.StatusForbidden, "seul l'auteur peut annuler sa demande")
+		return
+	}
+	changed, err := s.store.DecideBindRequest(r.Context(), db.DecideBindRequestParams{Status: status, Reason: reason, DecidedAt: time.Now().Unix(), DecidedBy: sql.NullInt64{Int64: currentUser(r).ID, Valid: true}, ID: row.ID})
+	if err != nil {
+		s.internalError(w, r, err)
+		return
+	}
+	if changed == 0 {
+		writeError(w, http.StatusConflict, "cette demande n'est plus en attente")
+		return
+	}
+	row, err = s.store.GetBindRequest(r.Context(), row.ID)
+	if err != nil {
+		s.internalError(w, r, err)
+		return
+	}
+	s.writeBindRequest(w, r, row, http.StatusOK)
+}
