@@ -212,3 +212,11 @@ L'onglet **Terminal** de la page d'une app (et d'un conteneur externe, pour le s
 - Chaque ligne affiche discrètement sa date et son heure (fournies par Docker).
 - L'UI se reconnecte toute seule 2 s après une coupure (« Reconnexion… ») et garde les 2000 dernières lignes.
 - Le bouton **En direct** met le flux en pause pour lire tranquillement. Le défilement automatique ne suit que si on est en bas.
+
+## Demandes de bind mounts
+
+À la création d'une app Image Docker, l'option **Utiliser des bind mounts** permet de soumettre une demande avec un node précis et, pour chaque montage, une source absolue sur l'hôte, une destination dans le conteneur et un accès en lecture seule (défaut) ou lecture/écriture. Les nodes actifs restent proposés même hors ligne, avec leur disponibilité affichée.
+
+La soumission conserve la configuration et les variables chiffrées sans créer d'app ni réserver son nom. **Mes demandes** affiche le suivi et permet d'annuler une demande en attente. Pour modifier une configuration soumise, il faut faire une nouvelle demande. Seul le superadmin accède à la file de traitement, peut révéler explicitement les variables secrètes et refuser avec un motif obligatoire. Les valeurs secrètes ne figurent pas dans les réponses ordinaires.
+
+Cette première tranche couvre la soumission, le suivi et le refus. L'approbation et le déploiement avec bind mounts seront ajoutés par la tranche suivante ; aucun montage de l'hôte n'est encore effectué.

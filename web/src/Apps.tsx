@@ -1,5 +1,5 @@
 import { lazy, Suspense, useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react'
-import { api, errorMessage, type App, type AppEvent, type AppInput, type AppState, type AppUsage, type Container, type GpuRequest, type Node, type NodeChoice, type NodeGpus, type Stack } from './api'
+import { api, errorMessage, type BindMount, type BindNode, type App, type AppEvent, type AppInput, type AppState, type AppUsage, type Container, type GpuRequest, type Node, type NodeChoice, type NodeGpus, type Stack } from './api'
 import { AppLogo, AreaChart, CopyField, formatBytes, LOGO_COLORS, Modal, since, Switch, upFor, useRedeploy } from './ui'
 import { ImageCropper } from './Cropper'
 import { ProjectCard, ProjectDetail, ProjectFormModal, ProjectLogo, projectStates } from './Projects'
@@ -388,7 +388,13 @@ function AppList({
           onCompose={() => setCreating('compose')}
           submitLabel="Créer et démarrer"
           onClose={() => setCreating(null)}
-          onSubmit={async (input, logo) => {
+          onSubmit={async (input, logo, bindMounts) => {
+            if (bindMounts) {
+              const request = await api.createBindRequest({ ...input, bindMounts, logoImage: logo })
+              setCreating(null)
+              go(`bind-requests/${request.id}`)
+              return
+            }
             const app = await api.createApp(input)
             if (logo) await api.setAppLogo(app.id, { mode: 'custom', image: logo }).catch(() => {})
             setCreating(null)
@@ -993,7 +999,7 @@ function AppFormModal({
   // Admins pick the node of a new app; users' apps go to the recommended one.
   admin?: boolean
   // logo: a framed picture chosen at creation, as a data URL.
-  onSubmit: (input: AppInput, logo?: string) => Promise<void>
+  onSubmit: (input: AppInput, logo?: string, bindMounts?: BindMount[]) => Promise<void>
   onClose: () => void
 }) {
   const [source, setSource] = useState<Source>(initialSource ?? (initial?.kind === 'sandbox' ? 'sandbox' : initial?.dockerfile ? 'dockerfile' : 'image'))
@@ -1003,6 +1009,22 @@ function AppFormModal({
   const [logo, setLogo] = useState('')
   const [choices, setChoices] = useState<NodeChoice[]>([])
   const [nodeId, setNodeId] = useState(0)
+  const [useBinds, setUseBinds] = useState(false)
+  const [bindMounts, setBindMounts] = useState<BindMount[]>([{ source: '', target: '', readOnly: true }])
+  const [bindNodes, setBindNodes] = useState<BindNode[]>([])
+  const [bindNodeError, setBindNodeError] = useState('')
+  useEffect(() => {
+    if (!useBinds) return
+    let live = true
+    api.bindNodes().then((nodes) => {
+      if (!live) return
+      setBindNodes(nodes)
+      setBindNodeError('')
+      setNodeId((id) => nodes.some((n) => n.id === id) ? id : (nodes[0]?.id ?? 0))
+    }, (err) => live && setBindNodeError(errorMessage(err)))
+    return () => { live = false }
+  }, [useBinds])
+
   const [domain, setDomain] = useState('')
   useEffect(() => {
     if (initial) return
@@ -1096,6 +1118,7 @@ function AppFormModal({
           gpu,
         },
         logo || undefined,
+        useBinds && source === 'image' ? bindMounts : undefined,
       )
     } catch (err) {
       setError(errorMessage(err))
@@ -1147,7 +1170,7 @@ function AppFormModal({
           </span>
         )}
       </div>
-      {choices.length > 1 && (
+      {!useBinds && choices.length > 1 && (
         <label className="field">
           <span>Node</span>
           <select value={nodeId} onChange={(e) => setNodeId(Number(e.target.value))}>
@@ -1196,7 +1219,7 @@ function AppFormModal({
       <span className="aside-spacer" />
       {error && <p className="error">{error}</p>}
       <button type="submit" className="btn btn-primary btn-block btn-big" disabled={busy}>
-        {busy ? 'Envoi…' : submitLabel}
+        {busy ? 'Envoi…' : useBinds && source === 'image' ? 'Soumettre la demande' : submitLabel}
       </button>
       <button type="button" className="link-button aside-cancel" onClick={onClose} disabled={busy}>
         Annuler
@@ -1289,6 +1312,29 @@ function AppFormModal({
           <input type="number" min={64} max={16384} step={64} value={memory} onChange={(e) => setMemory(e.target.value)} required />
         </label>
       </div>
+      {!initial && source === 'image' && (
+        <div className="field">
+          <label><input type="checkbox" checked={useBinds} onChange={(e) => setUseBinds(e.target.checked)} /> Utiliser des bind mounts</label>
+          {useBinds && <>
+            <small>La soumission crée une demande. Seul le superadmin pourra autoriser ces accès avant la création de l’app.</small>
+            <label className="field"><span>Machine contenant les fichiers</span>
+              <select value={nodeId || ''} onChange={(e) => setNodeId(Number(e.target.value))} required>
+                <option value="" disabled>Choisir un node</option>
+                {bindNodes.map((n) => <option key={n.id} value={n.id}>{n.name} · {n.online ? 'en ligne' : 'hors ligne'}</option>)}
+              </select>
+            </label>
+            {bindNodeError && <p className="error">{bindNodeError}</p>}
+            {!bindNodeError && bindNodes.length === 0 && <p className="muted">Aucun node disponible pour une demande.</p>}
+            {bindMounts.map((m, i) => <div className="panel" key={i}>
+              <label className="field"><span>Source sur l’hôte</span><input className="mono" placeholder="/srv/media" value={m.source} onChange={(e) => setBindMounts(bindMounts.map((x,j) => j === i ? {...x, source:e.target.value} : x))} required /></label>
+              <label className="field"><span>Destination dans le conteneur</span><input className="mono" placeholder="/media" value={m.target} onChange={(e) => setBindMounts(bindMounts.map((x,j) => j === i ? {...x, target:e.target.value} : x))} required /></label>
+              <label className="field"><span>Accès</span><select value={m.readOnly ? 'ro' : 'rw'} onChange={(e) => setBindMounts(bindMounts.map((x,j) => j === i ? {...x, readOnly:e.target.value === 'ro'} : x))}><option value="ro">Lecture seule</option><option value="rw">Lecture / écriture</option></select></label>
+              <button type="button" className="link-button" disabled={bindMounts.length === 1} onClick={() => setBindMounts(bindMounts.filter((_,j) => j !== i))}>Retirer ce montage</button>
+            </div>)}
+            <button type="button" className="btn btn-small" disabled={bindMounts.length >= 10} onClick={() => setBindMounts([...bindMounts,{source:'',target:'',readOnly:true}])}>+ Ajouter un montage</button>
+          </>}
+        </div>
+      )}
       <details className="field" open={envOpen} onToggle={(e) => setEnvOpen(e.currentTarget.open)}>
         <summary>
           Variables d’environnement <span className="muted">{setCount ? `· ${setCount}` : '· aucune'}</span>

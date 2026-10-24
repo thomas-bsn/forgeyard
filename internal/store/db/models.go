@@ -103,6 +103,19 @@ type Banner struct {
 	Data        []byte
 }
 
+type BindRequest struct {
+	ID        int64
+	AuthorID  int64
+	NodeID    int64
+	Config    string
+	EnvSealed string
+	Status    string
+	Reason    string
+	CreatedAt int64
+	DecidedAt int64
+	DecidedBy sql.NullInt64
+}
+
 type ContainerEvent struct {
 	ID      int64
 	NodeID  int64
