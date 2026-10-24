@@ -10,6 +10,180 @@ import (
 	"database/sql"
 )
 
+const applyBindChangeApp = `-- name: ApplyBindChangeApp :execrows
+UPDATE apps SET bind_mounts = ?, bind_authorized = 1, node_id = ?, running = ?, generation = generation + 1, updated_at = ?
+WHERE id = ? AND bind_mounts = ? AND node_id = ? AND bind_authorized = 1
+`
+
+type ApplyBindChangeAppParams struct {
+	BindMounts   string
+	NodeID       int64
+	Running      int64
+	UpdatedAt    int64
+	ID           int64
+	BindMounts_2 string
+	NodeID_2     int64
+}
+
+func (q *Queries) ApplyBindChangeApp(ctx context.Context, arg ApplyBindChangeAppParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, applyBindChangeApp,
+		arg.BindMounts,
+		arg.NodeID,
+		arg.Running,
+		arg.UpdatedAt,
+		arg.ID,
+		arg.BindMounts_2,
+		arg.NodeID_2,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
+const applyBindChangeAppAfterRevocation = `-- name: ApplyBindChangeAppAfterRevocation :execrows
+UPDATE apps SET bind_mounts = ?, bind_authorized = 1, node_id = ?, running = ?, generation = generation + 1, updated_at = ?
+WHERE id = ? AND bind_mounts = ? AND node_id = ? AND bind_authorized = 0
+`
+
+type ApplyBindChangeAppAfterRevocationParams struct {
+	BindMounts   string
+	NodeID       int64
+	Running      int64
+	UpdatedAt    int64
+	ID           int64
+	BindMounts_2 string
+	NodeID_2     int64
+}
+
+func (q *Queries) ApplyBindChangeAppAfterRevocation(ctx context.Context, arg ApplyBindChangeAppAfterRevocationParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, applyBindChangeAppAfterRevocation,
+		arg.BindMounts,
+		arg.NodeID,
+		arg.Running,
+		arg.UpdatedAt,
+		arg.ID,
+		arg.BindMounts_2,
+		arg.NodeID_2,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
+const applyBindChangeStackService = `-- name: ApplyBindChangeStackService :execrows
+UPDATE apps SET bind_mounts = ?, bind_authorized = 1, node_id = ?, running = 0, generation = generation + 1, updated_at = ?
+WHERE id = ? AND bind_mounts = ? AND node_id = ? AND bind_authorized = 1
+`
+
+type ApplyBindChangeStackServiceParams struct {
+	BindMounts   string
+	NodeID       int64
+	UpdatedAt    int64
+	ID           int64
+	BindMounts_2 string
+	NodeID_2     int64
+}
+
+func (q *Queries) ApplyBindChangeStackService(ctx context.Context, arg ApplyBindChangeStackServiceParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, applyBindChangeStackService,
+		arg.BindMounts,
+		arg.NodeID,
+		arg.UpdatedAt,
+		arg.ID,
+		arg.BindMounts_2,
+		arg.NodeID_2,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
+const applyBindChangeStackServiceAfterRevocation = `-- name: ApplyBindChangeStackServiceAfterRevocation :execrows
+UPDATE apps SET bind_mounts = ?, bind_authorized = 1, node_id = ?, running = 0, generation = generation + 1, updated_at = ?
+WHERE id = ? AND bind_mounts = ? AND node_id = ? AND bind_authorized = 0
+`
+
+type ApplyBindChangeStackServiceAfterRevocationParams struct {
+	BindMounts   string
+	NodeID       int64
+	UpdatedAt    int64
+	ID           int64
+	BindMounts_2 string
+	NodeID_2     int64
+}
+
+func (q *Queries) ApplyBindChangeStackServiceAfterRevocation(ctx context.Context, arg ApplyBindChangeStackServiceAfterRevocationParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, applyBindChangeStackServiceAfterRevocation,
+		arg.BindMounts,
+		arg.NodeID,
+		arg.UpdatedAt,
+		arg.ID,
+		arg.BindMounts_2,
+		arg.NodeID_2,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
+const applyBindChangeStackServiceWithoutAuthorization = `-- name: ApplyBindChangeStackServiceWithoutAuthorization :execrows
+UPDATE apps SET bind_mounts = ?, node_id = ?, running = 0, generation = generation + 1, updated_at = ?
+WHERE id = ? AND bind_mounts = ? AND node_id = ? AND bind_authorized = 0
+`
+
+type ApplyBindChangeStackServiceWithoutAuthorizationParams struct {
+	BindMounts   string
+	NodeID       int64
+	UpdatedAt    int64
+	ID           int64
+	BindMounts_2 string
+	NodeID_2     int64
+}
+
+func (q *Queries) ApplyBindChangeStackServiceWithoutAuthorization(ctx context.Context, arg ApplyBindChangeStackServiceWithoutAuthorizationParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, applyBindChangeStackServiceWithoutAuthorization,
+		arg.BindMounts,
+		arg.NodeID,
+		arg.UpdatedAt,
+		arg.ID,
+		arg.BindMounts_2,
+		arg.NodeID_2,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
+const cancelFailedBindChange = `-- name: CancelFailedBindChange :execrows
+UPDATE bind_requests SET status = 'cancelled', reason = '', decided_at = ?, decided_by = ?
+WHERE id = ? AND author_id = ? AND change_resource_type != '' AND status = 'failed'
+`
+
+type CancelFailedBindChangeParams struct {
+	DecidedAt int64
+	DecidedBy sql.NullInt64
+	ID        int64
+	AuthorID  int64
+}
+
+func (q *Queries) CancelFailedBindChange(ctx context.Context, arg CancelFailedBindChangeParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, cancelFailedBindChange,
+		arg.DecidedAt,
+		arg.DecidedBy,
+		arg.ID,
+		arg.AuthorID,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
 const claimBindRequest = `-- name: ClaimBindRequest :execrows
 UPDATE bind_requests SET status = 'approving', reason = '', decided_at = ?, decided_by = ?
 WHERE id = ? AND (status IN ('pending', 'failed') OR (status = 'approving' AND decided_at < ?))
@@ -48,16 +222,18 @@ func (q *Queries) CompleteBindRequest(ctx context.Context, id int64) (int64, err
 }
 
 const createBindRequest = `-- name: CreateBindRequest :one
-INSERT INTO bind_requests(author_id, node_id, config, env_sealed, created_at)
-VALUES (?, ?, ?, ?, ?) RETURNING id, author_id, node_id, config, env_sealed, status, reason, created_at, decided_at, decided_by, app_id, approved_mounts, stack_id
+INSERT INTO bind_requests(author_id, node_id, config, env_sealed, created_at, change_resource_type, change_resource_id)
+VALUES (?, ?, ?, ?, ?, ?, ?) RETURNING id, author_id, node_id, config, env_sealed, status, reason, created_at, decided_at, decided_by, app_id, approved_mounts, stack_id, change_resource_type, change_resource_id
 `
 
 type CreateBindRequestParams struct {
-	AuthorID  int64
-	NodeID    int64
-	Config    string
-	EnvSealed string
-	CreatedAt int64
+	AuthorID           int64
+	NodeID             int64
+	Config             string
+	EnvSealed          string
+	CreatedAt          int64
+	ChangeResourceType string
+	ChangeResourceID   int64
 }
 
 func (q *Queries) CreateBindRequest(ctx context.Context, arg CreateBindRequestParams) (BindRequest, error) {
@@ -67,6 +243,8 @@ func (q *Queries) CreateBindRequest(ctx context.Context, arg CreateBindRequestPa
 		arg.Config,
 		arg.EnvSealed,
 		arg.CreatedAt,
+		arg.ChangeResourceType,
+		arg.ChangeResourceID,
 	)
 	var i BindRequest
 	err := row.Scan(
@@ -83,6 +261,8 @@ func (q *Queries) CreateBindRequest(ctx context.Context, arg CreateBindRequestPa
 		&i.AppID,
 		&i.ApprovedMounts,
 		&i.StackID,
+		&i.ChangeResourceType,
+		&i.ChangeResourceID,
 	)
 	return i, err
 }
@@ -129,7 +309,7 @@ func (q *Queries) FailBindRequest(ctx context.Context, arg FailBindRequestParams
 }
 
 const getBindRequest = `-- name: GetBindRequest :one
-SELECT id, author_id, node_id, config, env_sealed, status, reason, created_at, decided_at, decided_by, app_id, approved_mounts, stack_id FROM bind_requests WHERE id = ?
+SELECT id, author_id, node_id, config, env_sealed, status, reason, created_at, decided_at, decided_by, app_id, approved_mounts, stack_id, change_resource_type, change_resource_id FROM bind_requests WHERE id = ?
 `
 
 func (q *Queries) GetBindRequest(ctx context.Context, id int64) (BindRequest, error) {
@@ -149,8 +329,26 @@ func (q *Queries) GetBindRequest(ctx context.Context, id int64) (BindRequest, er
 		&i.AppID,
 		&i.ApprovedMounts,
 		&i.StackID,
+		&i.ChangeResourceType,
+		&i.ChangeResourceID,
 	)
 	return i, err
+}
+
+const hasPendingBindChange = `-- name: HasPendingBindChange :one
+SELECT CAST(EXISTS(SELECT 1 FROM bind_requests WHERE change_resource_type=? AND change_resource_id=? AND status NOT IN ('cancelled','refused','created')) AS INTEGER)
+`
+
+type HasPendingBindChangeParams struct {
+	ChangeResourceType string
+	ChangeResourceID   int64
+}
+
+func (q *Queries) HasPendingBindChange(ctx context.Context, arg HasPendingBindChangeParams) (int64, error) {
+	row := q.db.QueryRowContext(ctx, hasPendingBindChange, arg.ChangeResourceType, arg.ChangeResourceID)
+	var column_1 int64
+	err := row.Scan(&column_1)
+	return column_1, err
 }
 
 const linkBindRequestApp = `-- name: LinkBindRequestApp :exec
@@ -184,7 +382,7 @@ func (q *Queries) LinkBindRequestStack(ctx context.Context, arg LinkBindRequestS
 }
 
 const listBindRequests = `-- name: ListBindRequests :many
-SELECT id, author_id, node_id, config, env_sealed, status, reason, created_at, decided_at, decided_by, app_id, approved_mounts, stack_id FROM bind_requests ORDER BY id DESC
+SELECT id, author_id, node_id, config, env_sealed, status, reason, created_at, decided_at, decided_by, app_id, approved_mounts, stack_id, change_resource_type, change_resource_id FROM bind_requests ORDER BY id DESC
 `
 
 func (q *Queries) ListBindRequests(ctx context.Context) ([]BindRequest, error) {
@@ -210,6 +408,8 @@ func (q *Queries) ListBindRequests(ctx context.Context) ([]BindRequest, error) {
 			&i.AppID,
 			&i.ApprovedMounts,
 			&i.StackID,
+			&i.ChangeResourceType,
+			&i.ChangeResourceID,
 		); err != nil {
 			return nil, err
 		}
@@ -225,7 +425,7 @@ func (q *Queries) ListBindRequests(ctx context.Context) ([]BindRequest, error) {
 }
 
 const listOwnBindRequests = `-- name: ListOwnBindRequests :many
-SELECT id, author_id, node_id, config, env_sealed, status, reason, created_at, decided_at, decided_by, app_id, approved_mounts, stack_id FROM bind_requests WHERE author_id = ? ORDER BY id DESC
+SELECT id, author_id, node_id, config, env_sealed, status, reason, created_at, decided_at, decided_by, app_id, approved_mounts, stack_id, change_resource_type, change_resource_id FROM bind_requests WHERE author_id = ? ORDER BY id DESC
 `
 
 func (q *Queries) ListOwnBindRequests(ctx context.Context, authorID int64) ([]BindRequest, error) {
@@ -251,6 +451,8 @@ func (q *Queries) ListOwnBindRequests(ctx context.Context, authorID int64) ([]Bi
 			&i.AppID,
 			&i.ApprovedMounts,
 			&i.StackID,
+			&i.ChangeResourceType,
+			&i.ChangeResourceID,
 		); err != nil {
 			return nil, err
 		}

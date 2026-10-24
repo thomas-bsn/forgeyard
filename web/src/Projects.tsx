@@ -49,6 +49,30 @@ volumes:
   data:
 `
 
+function ProjectBindChangeModal({ stack, onClose, onSubmitted }: { stack: Stack; onClose: () => void; onSubmitted: (id: number) => void }) {
+  const [nodes, setNodes] = useState<BindNode[]>([])
+  const [nodeId, setNodeId] = useState(stack.nodeId)
+  const [compose, setCompose] = useState(stack.compose ?? '')
+  const [error, setError] = useState('')
+  const [busy, setBusy] = useState(false)
+  useEffect(() => { api.bindNodes().then(setNodes, (err) => setError(errorMessage(err))) }, [])
+  async function submit(e: FormEvent) {
+    e.preventDefault(); setBusy(true); setError('')
+    try {
+      const request = await api.createBindChangeRequest({ change: { resourceId: stack.id, resourceType: 'stack', nodeId, stack: { name: stack.name, compose, env: stack.env ?? {}, registry: { server: stack.registry?.server ?? '', username: stack.registry?.username ?? '', password: '' } } } })
+      onSubmitted(request.id)
+    } catch (err) { setError(errorMessage(err)); setBusy(false) }
+  }
+  const revoked = stack.services.some((service) => service.bindMounts?.length && !service.bindAuthorized)
+  return <Modal title={`Modifier les accès de ${stack.name}`} subtitle={revoked ? "L’autorisation est révoquée. Choisissez un autre node pour demander explicitement de nouveaux accès." : "Le Compose et les accès actifs restent en place jusqu’à la décision du superadmin."} onClose={onClose} onSubmit={submit}>
+    <label className="field"><span>Node des chemins</span><select value={nodeId} onChange={(e)=>setNodeId(Number(e.target.value))}>{nodes.map((n)=><option key={n.id} value={n.id}>{n.name} · {n.online?'en ligne':'hors ligne'}</option>)}</select></label>
+    <label className="field"><span>Compose avec les nouveaux bind mounts</span><textarea className="mono compose-editor" rows={18} value={compose} onChange={(e)=>setCompose(e.target.value)} required /></label>
+    <p className="muted">Conservez les volumes nommés. Les chemins hôtes ne sont pas copiés lors d’un changement de node.</p>
+    {error && <p className="error" role="alert">{error}</p>}
+    <button type="submit" className="btn btn-primary" disabled={busy || !nodeId}>{busy?'Envoi…':'Soumettre au superadmin'}</button>
+  </Modal>
+}
+
 /** A project's picture: the one it was given, else the logos of its first services, overlapping. */
 export function ProjectLogo({
   project,
@@ -515,6 +539,7 @@ export function ProjectDetail({
   const [logsOf, setLogsOf] = useState(stack.services.find((s) => s.kind === 'web')?.id ?? stack.services[0]?.id)
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
+  const [changingBinds, setChangingBinds] = useState(false)
 
   useEffect(() => {
     // The compose file and variables come with the project's own page only.
@@ -642,8 +667,10 @@ export function ProjectDetail({
               <button type="button" className="btn detail-actions-wide" disabled={busy || !full} onClick={() => setEditing(true)}>
                 Modifier le compose
               </button>
+              {stack.services.some((service) => service.bindMounts?.length) && <button type="button" className="btn detail-actions-wide" disabled={busy || !full} onClick={() => setChangingBinds(true)}>{stack.services.some((service) => service.bindMounts?.length && !service.bindAuthorized) ? 'Demander de nouveaux accès sur un autre node' : 'Demander une modification des accès / du node'}</button>}
               {superadmin && stack.services.some((service) => service.bindMounts?.length && service.bindAuthorized) && <button type="button" className="btn danger detail-actions-wide" disabled={busy} onClick={() => run(() => api.revokeStackBinds(stack.id))}>Révoquer les bind mounts du projet</button>}
             </div>
+            {changingBinds && full && <ProjectBindChangeModal stack={full} onClose={() => setChangingBinds(false)} onSubmitted={(id) => { setChangingBinds(false); go(`bind-requests/${id}`) }} />}
             <button type="button" className="link-button danger-link" disabled={busy} onClick={() => setDeleting(true)}>
               Supprimer le projet…
             </button>
