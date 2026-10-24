@@ -7,6 +7,7 @@ import {
   type BackupPolicy,
   type BindNode,
   type ComposeError,
+  type ComposePortCandidate,
   type NodeChoice,
   type Snapshot,
   type Stack,
@@ -301,6 +302,15 @@ export function ProjectFormModal({
   const [useBindMounts, setUseBindMounts] = useState(false)
   const [bindNodes, setBindNodes] = useState<BindNode[]>([])
   const [domain, setDomain] = useState('')
+  const [flowStep, setFlowStep] = useState(0)
+  const [portCandidates, setPortCandidates] = useState<ComposePortCandidate[]>([])
+  const [exposeChoice, setExposeChoice] = useState('')
+  const [adaptedCompose, setAdaptedCompose] = useState('')
+  const [adaptedPreview, setAdaptedPreview] = useState<StackPreview | null>(null)
+  const [adaptedErrors, setAdaptedErrors] = useState<ComposeError[]>([])
+  const [adaptChecking, setAdaptChecking] = useState(false)
+  const [adaptError, setAdaptError] = useState('')
+  const [adaptBusy, setAdaptBusy] = useState(false)
   const editor = useRef<HTMLTextAreaElement>(null)
 
   useEffect(() => {
@@ -341,6 +351,19 @@ export function ProjectFormModal({
     return () => clearTimeout(t)
   }, [compose, varsKey, name])
 
+  useEffect(() => {
+    if (!adaptedCompose) return
+    setAdaptChecking(true)
+    const t = setTimeout(() => {
+      api.validateStack({ name: name.trim() || 'projet', compose: adaptedCompose, env: vars }).then((p) => {
+        setAdaptedPreview(p)
+        setAdaptedErrors(p.errors)
+        setAdaptChecking(false)
+      }, () => setAdaptChecking(false))
+    }, 300)
+    return () => clearTimeout(t)
+  }, [adaptedCompose, varsKey, name])
+
   const missing = usedVariables(compose).filter((v) => !(v.name in vars))
 
   function goToLine(line: number) {
@@ -355,6 +378,10 @@ export function ProjectFormModal({
 
   async function submit(e: FormEvent) {
     e.preventDefault()
+    if (!stack && flowStep < 3) {
+      if (flowStep === 2) setFlowStep(3)
+      return
+    }
     setBusy(true)
     setError('')
     try {
@@ -374,153 +401,194 @@ export function ProjectFormModal({
     }
   }
 
+  async function analyzeCompose() {
+    setAdaptBusy(true)
+    setAdaptError('')
+    try {
+      const result = await api.adaptStackPorts({ compose })
+      if (result.error) throw new Error(result.error)
+      setPortCandidates(result.candidates ?? [])
+      setExposeChoice('')
+      setAdaptedCompose('')
+      setAdaptedPreview(null)
+      setAdaptedErrors([])
+      setFlowStep(1)
+    } catch (err) {
+      setAdaptError(errorMessage(err))
+    } finally {
+      setAdaptBusy(false)
+    }
+  }
+
+  async function prepareAdaptation() {
+    setAdaptBusy(true)
+    setAdaptError('')
+    try {
+      const [service = '', rawPort = ''] = exposeChoice.split(':')
+      const result = await api.adaptStackPorts({ compose, apply: true, exposeService: service, exposePort: Number(rawPort) || 0 })
+      if (result.error || !result.compose) throw new Error(result.error || 'Impossible de produire le Compose adapté')
+      setAdaptedCompose(result.compose)
+      setAdaptChecking(true)
+      const checked = await api.validateStack({ name: name.trim() || 'projet', compose: result.compose, env: vars })
+      setAdaptedErrors(checked.errors)
+      setAdaptedPreview(checked)
+      setAdaptChecking(false)
+    } catch (err) {
+      setAdaptError(errorMessage(err))
+      setAdaptChecking(false)
+    } finally {
+      setAdaptBusy(false)
+    }
+  }
+
+  function acceptAdaptation() {
+    setCompose(adaptedCompose)
+    setFlowStep(2)
+    setError('')
+  }
+
   const shownName = stack?.name ?? (name.trim() || 'mon-projet')
-  const aside = (
+  const serviceList = (data: StackPreview | null) => data?.services.length ? (
+    <ol className="stack-preview">
+      {data.services.map((s) => (
+        <li key={s.name}>
+          <span className="stack-preview-head">
+            <strong>{s.name}</strong>
+            <span className={`badge ${s.kind === 'web' ? 'badge-accent' : ''}`}>{s.kind === 'web' ? `exposé :${s.port}` : kindLabels[s.kind]}</span>
+            {s.backup && <span className="badge">pg_dump</span>}
+          </span>
+          <span className="mono muted">{s.image}</span>
+          <span className="muted">Mémoire : {s.memoryMb ?? 512} Mo</span>
+          {s.kind === 'web' && domain && <span className="muted">→ {shownName}.{domain}</span>}
+          {s.dependsOn.length > 0 && <span className="muted">après {s.dependsOn.map((d) => d.service).join(', ')}</span>}
+        </li>
+      ))}
+    </ol>
+  ) : <p className="muted aside-note">Les services apparaîtront ici après validation.</p>
+
+  const legacyAside = (
     <>
       <span className="aside-label">Aperçu</span>
       {preview?.error && <p className="error">{preview.error}</p>}
-      {preview && preview.services.length > 0 ? (
-        <ol className="stack-preview">
-          {preview.services.map((s) => (
-            <li key={s.name}>
-              <span className="stack-preview-head">
-                <strong>{s.name}</strong>
-                <span className={`badge ${s.kind === 'web' ? 'badge-accent' : ''}`}>{s.kind === 'web' ? `exposé :${s.port}` : kindLabels[s.kind]}</span>
-                {s.backup && <span className="badge">pg_dump</span>}
-              </span>
-              <span className="mono muted">{s.image}</span>
-              {s.kind === 'web' && domain && <span className="muted">→ {shownName}.{domain}</span>}
-              {s.dependsOn.length > 0 && (
-                <span className="muted">
-                  après{' '}
-                  {s.dependsOn
-                    .map((d) => `${d.service}${d.condition === 'service_healthy' ? ' (healthy)' : d.condition === 'service_completed_successfully' ? ' (terminé)' : ''}`)
-                    .join(', ')}
-                </span>
-              )}
-            </li>
-          ))}
-        </ol>
-      ) : (
-        <p className="muted aside-note">Les services apparaissent ici, dans leur ordre de démarrage.</p>
-      )}
-      {!!preview?.volumes?.length && (
-        <dl className="aside-facts">
-          <dt>Volumes</dt>
-          <dd className="mono">{preview?.volumes.join(', ')}</dd>
-        </dl>
-      )}
-      {useBindMounts && bindNodes.length > 0 ? (
-        <label className="field">
-          <span>Node qui héberge les chemins</span>
-          <select value={nodeId} onChange={(e) => setNodeId(Number(e.target.value))} required>
-            {bindNodes.map((n) => <option key={n.id} value={n.id}>{n.name} · {n.online ? 'en ligne' : 'hors ligne'}</option>)}
-          </select>
-        </label>
-      ) : choices.length > 1 && (
-        <label className="field">
-          <span>Node</span>
-          <select value={nodeId} onChange={(e) => setNodeId(Number(e.target.value))}>
-            {choices.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.name}
-                {c.recommended ? ' (recommandé)' : ''}
-              </option>
-            ))}
-          </select>
-        </label>
-      )}
+      {serviceList(preview)}
+      {!!preview?.volumes?.length && <dl className="aside-facts"><dt>Volumes</dt><dd className="mono">{preview.volumes.join(', ')}</dd></dl>}
       {stack && <p className="muted aside-note">Seuls les services modifiés sont redéployés.</p>}
       <span className="aside-spacer" />
       {error && <p className="error">{error}</p>}
-      <button type="submit" className="btn btn-primary btn-block btn-big" disabled={busy || errors.length > 0 || (useBindMounts && !nodeId)}>
-        {busy ? 'Envoi…' : stack ? 'Enregistrer et déployer' : useBindMounts ? 'Soumettre au superadmin' : 'Créer le projet'}
+      <button type="submit" className="btn btn-primary btn-block btn-big" disabled={busy || errors.length > 0}>
+        {busy ? 'Envoi…' : 'Enregistrer et déployer'}
       </button>
-      <button type="button" className="link-button aside-cancel" onClick={onClose} disabled={busy}>
-        Annuler
-      </button>
+      <button type="button" className="link-button aside-cancel" onClick={onClose} disabled={busy}>Annuler</button>
     </>
   )
 
-  return (
-    <Modal title={stack ? `Projet ${stack.name}` : 'Nouvelle app'} onClose={onClose} onSubmit={submit} aside={aside}>
-      {onSource && <SourcePick source="compose" onPick={onSource} />}
-      {!stack && (
+  const wizardAside = (
+    <>
+      <span className="aside-label">Création du projet</span>
+      <ol className="compose-steps">
+        {['Importer et analyser', 'Relire l’adaptation', 'Configurer', 'Confirmer'].map((label, index) => (
+          <li key={label} className={flowStep === index ? 'current' : flowStep > index ? 'done' : ''}>
+            <span>{flowStep > index ? '✓' : index + 1}</span>{label}
+          </li>
+        ))}
+      </ol>
+      {flowStep >= 2 && <div className="compose-aside-resources">
+        <span className="aside-label">Services et ressources</span>
+        {serviceList(preview)}
+        {!!preview?.volumes?.length && <p className="muted">Volumes : <span className="mono">{preview.volumes.join(', ')}</span></p>}
+      </div>}
+      <div className="aside-spacer" />
+      {adaptError && <p className="error">{adaptError}</p>}
+      {error && <p className="error">{error}</p>}
+      {flowStep === 0 ? (
+        <button type="button" className="btn btn-primary btn-block btn-big" disabled={adaptBusy || !compose.trim()} onClick={analyzeCompose}>
+          {adaptBusy ? 'Analyse…' : 'Analyser le Compose'}
+        </button>
+      ) : flowStep === 1 ? (
+        <button type="button" className="btn btn-primary btn-block btn-big" disabled={adaptBusy || !!adaptedCompose} onClick={prepareAdaptation}>
+          {adaptBusy ? 'Préparation…' : adaptedCompose ? 'Adaptation prête à relire' : 'Préparer l’adaptation'}
+        </button>
+      ) : flowStep === 2 ? (
+        <button type="button" className="btn btn-primary btn-block btn-big" disabled={errors.length > 0 || !!preview?.error} onClick={() => setFlowStep(3)}>Vérifier le récapitulatif</button>
+      ) : (
+        <button type="submit" className="btn btn-primary btn-block btn-big" disabled={busy || errors.length > 0 || !!preview?.error || (useBindMounts && !nodeId)}>
+          {busy ? 'Envoi…' : useBindMounts ? 'Soumettre au superadmin' : 'Confirmer et créer'}
+        </button>
+      )}
+      {flowStep > 0 && flowStep < 3 && <button type="button" className="link-button aside-cancel" onClick={() => { setFlowStep(flowStep - 1); setAdaptedCompose(''); setAdaptError('') }}>Retour</button>}
+      <button type="button" className="link-button aside-cancel" onClick={onClose} disabled={busy}>Annuler</button>
+    </>
+  )
+
+  const wizard = (
+    <>
+      {flowStep === 0 && <>
+        {onSource && <SourcePick source="compose" onPick={onSource} />}
         <label className="field">
           <span>Nom du projet</span>
           <input value={name} onChange={(e) => setName(e.target.value.toLowerCase())} placeholder="shameless" required autoFocus pattern="[a-z0-9]([a-z0-9\-]{0,30}[a-z0-9])?" />
-          <small>Le service exposé prend ce nom (son sous-domaine), les autres « {shownName}-service ».</small>
+          <small>Le service exposé prend ce nom de sous-domaine.</small>
         </label>
-      )}
-      {!stack && <div className="field">
-        <div className="setting-row">
-          <Switch checked={useBindMounts} onChange={setUseBindMounts} label="Utiliser des bind mounts dans le Compose" />
-          <strong>Utiliser des dossiers de la machine (bind mounts)</strong>
+        <label className="field">
+          <span>docker-compose.yml</span>
+          <textarea ref={editor} className="mono compose-editor" value={compose} onChange={(e) => setCompose(e.target.value)} spellCheck={false} rows={16} required placeholder={composeExample} aria-invalid={errors.length > 0} />
+          <small>Les règles locales analysent les ports et les ressources. Le fichier n’est pas enregistré avant ta confirmation.</small>
+        </label>
+        {errors.length > 0 && <ul className="compose-errors" aria-live="polite">{errors.map((e, i) => <li key={i}>{e.line > 0 && <button type="button" className="link-button" onClick={() => goToLine(e.line)}>ligne {e.line}</button>}<span>{e.message}</span></li>)}</ul>}
+      </>}
+      {flowStep === 1 && <>
+        <div className="compose-step-heading"><span className="aside-label">Étape 2 sur 4</span><h3>Relire l’adaptation proposée</h3><p>Les ports déclarés deviennent privés au projet. Choisis au plus un service à publier en HTTPS.</p></div>
+        <div className="field">
+          <span className="label">Service web à publier <span className="muted">· optionnel</span></span>
+          <select value={exposeChoice} onChange={(e) => { setExposeChoice(e.target.value); setAdaptedCompose(''); setAdaptError('') }}>
+            <option value="">Aucun service exposé</option>
+            {portCandidates.filter((c) => c.protocol === 'tcp').map((c, i) => <option key={`${c.service}-${c.target}-${i}`} value={`${c.service}:${c.target}`}>{c.service} · port conteneur {c.target}{c.published ? ` (port hôte ${c.published})` : ''}</option>)}
+          </select>
+          <small>Les autres services restent joignables entre eux par leur nom, sans port public.</small>
         </div>
-        <small>Les bind mounts du Compose donnent accès aux dossiers du node. La création du projet sera soumise au superadmin pour approbation.</small>
-      </div>}
-      <label className="field">
-        <span>docker-compose.yml</span>
-        <textarea
-          ref={editor}
-          className="mono compose-editor"
-          value={compose}
-          onChange={(e) => setCompose(e.target.value)}
-          spellCheck={false}
-          rows={20}
-          required
-          placeholder={composeExample}
-          aria-invalid={errors.length > 0}
-        />
-        <small>
-          Des images publiées et des volumes nommés. Pour un accès hôte, activez les bind mounts et décrivez chaque montage dans le Compose ; la lecture seule est recommandée. Sans approbation, aucun projet ne sera créé. Le service à publier porte <span className="mono">x-forgeyard: {'{ expose: { port: 80 } }'}</span>
-          ; Docker Compose ignore ce bloc, le fichier tourne aussi en local.
-        </small>
-      </label>
-      {errors.length > 0 && (
-        <ul className="compose-errors" aria-live="polite">
-          {errors.map((e, i) => (
-            <li key={i}>
-              {e.line > 0 ? (
-                <button type="button" className="link-button" onClick={() => goToLine(e.line)}>
-                  ligne {e.line}
-                </button>
-              ) : null}
-              <span>{e.message}</span>
-            </li>
-          ))}
-        </ul>
-      )}
-      <div className="field">
-        <span>
-          Variables <span className="muted">· pour ${'{VAR}'}, chiffrées</span>
-        </span>
-        <EnvEditor env={env} setEnv={setEnv} missing={missing} />
-      </div>
-      <details className="field" open={registryOpen} onToggle={(e) => setRegistryOpen(e.currentTarget.open)}>
-        <summary>
-          Registry privé <span className="muted">{registry.server ? `· ${registry.server}` : '· images publiques'}</span>
-        </summary>
-        <div className="env-list">
-          <input aria-label="Adresse du registry" className="mono" value={registry.server} onChange={(e) => editRegistry({ server: e.target.value })} placeholder="ghcr.io" />
-          <div className="env-row">
-            <input aria-label="Identifiant" value={registry.username} onChange={(e) => editRegistry({ username: e.target.value })} placeholder="identifiant" autoComplete="off" />
-            <input
-              type="password"
-              aria-label="Mot de passe ou token"
-              value={registry.password}
-              onChange={(e) => editRegistry({ password: e.target.value })}
-              placeholder={stack?.registry?.passwordSet ? 'inchangé' : 'token'}
-              autoComplete="new-password"
-            />
-          </div>
-          <small>
-            Pour télécharger les images privées de cette adresse. Un token en lecture seule suffit ; il est chiffré avant d’être enregistré. Videz l’adresse pour le retirer.
-          </small>
+        <div className="compose-change-list">
+          <div><b>{portCandidates.length} port{portCandidates.length === 1 ? '' : 's'} détecté{portCandidates.length === 1 ? '' : 's'}</b><p>{portCandidates.length ? portCandidates.map((c) => `${c.service} ${c.published ? `${c.published}:` : ''}${c.target}/${c.protocol}`).join(' · ') : 'Aucun port Compose à convertir.'}</p></div>
+          <div><b>Ce qui change</b><p>Les publications machine sont retirées. Le service choisi reçoit <code>x-forgeyard.expose</code> et une adresse HTTPS.</p></div>
         </div>
-      </details>
-    </Modal>
+        {portCandidates.some((c) => c.protocol !== 'tcp') && <p className="compose-adapt-warning">Les ports UDP ne peuvent pas être exposés par Forgeyard. Ils seront retirés du Compose adapté ; vérifie que ces services n’en dépendent pas.</p>}
+        {adaptedCompose && <>
+          <label className="field"><span className="label">Compose adapté · aperçu modifiable</span><textarea className="mono compose-editor" value={adaptedCompose} onChange={(e) => { setAdaptedErrors([]); setAdaptChecking(true); setAdaptedCompose(e.target.value) }} rows={13} spellCheck={false} /></label>
+          {adaptedErrors.length > 0 && <ul className="compose-errors">{adaptedErrors.map((e, i) => <li key={i}>{e.line > 0 && <span>ligne {e.line} · </span>}{e.message}</li>)}</ul>}
+          {adaptChecking && <p className="muted">Validation du Compose adapté…</p>}
+          {adaptedErrors.length === 0 && <div className="compose-adapted-preview"><span className="aside-label">Services et ressources · un seul récapitulatif</span>{serviceList(adaptedPreview)}{adaptedPreview?.volumes.length ? <p className="muted">Volumes : <span className="mono">{adaptedPreview.volumes.join(', ')}</span></p> : null}</div>}
+        </>}
+      </>}
+      {flowStep === 2 && <>
+        <div className="compose-step-heading"><span className="aside-label">Étape 3 sur 4</span><h3>Configurer le projet</h3><p>Les services et volumes apparaissent une seule fois dans le récapitulatif à droite.</p></div>
+        <label className="field"><span className="label">Nom du projet</span><input value={name} onChange={(e) => setName(e.target.value.toLowerCase())} required pattern="[a-z0-9]([a-z0-9\-]{0,30}[a-z0-9])?" /></label>
+        <div className="field"><span className="label">Variables chiffrées</span><EnvEditor env={env} setEnv={setEnv} missing={missing} /></div>
+        <div className="field"><span className="label">Node</span><select value={nodeId} onChange={(e) => setNodeId(Number(e.target.value))}><option value={0}>Choix recommandé automatiquement</option>{choices.map((c) => <option key={c.id} value={c.id}>{c.name}{c.recommended ? ' (recommandé)' : ''}</option>)}</select></div>
+        <div className="field"><div className="setting-row"><Switch checked={useBindMounts} onChange={setUseBindMounts} label="Utiliser des bind mounts dans le Compose" /><strong>Accès aux dossiers du node</strong></div><small>Soumet le projet au superadmin pour approbation.</small></div>
+        {useBindMounts && bindNodes.length > 0 && <label className="field"><span className="label">Node qui héberge les chemins</span><select value={nodeId} onChange={(e) => setNodeId(Number(e.target.value))} required>{bindNodes.map((n) => <option key={n.id} value={n.id}>{n.name} · {n.online ? 'en ligne' : 'hors ligne'}</option>)}</select></label>}
+        <details className="field" open={registryOpen} onToggle={(e) => setRegistryOpen(e.currentTarget.open)}><summary>Registry privé <span className="muted">{registry.server ? `· ${registry.server}` : '· facultatif'}</span></summary><div className="env-list"><input aria-label="Adresse du registry" className="mono" value={registry.server} onChange={(e) => editRegistry({ server: e.target.value })} placeholder="ghcr.io" /><div className="env-row"><input aria-label="Identifiant" value={registry.username} onChange={(e) => editRegistry({ username: e.target.value })} placeholder="identifiant" autoComplete="off" /><input type="password" aria-label="Mot de passe ou token" value={registry.password} onChange={(e) => editRegistry({ password: e.target.value })} placeholder="token" autoComplete="new-password" /></div><small>Le token est chiffré avant l’enregistrement.</small></div></details>
+        {errors.length > 0 && <ul className="compose-errors">{errors.map((e, i) => <li key={i}>{e.message}</li>)}</ul>}
+      </>}
+      {flowStep === 3 && <>
+        <div className="compose-step-heading"><span className="aside-label">Étape 4 sur 4</span><h3>Confirmer le projet</h3><p>Vérifie les ressources avant la création.</p></div>
+        <dl className="compose-confirm-facts"><dt>Projet</dt><dd>{shownName}</dd><dt>Node</dt><dd>{choices.find((c) => c.id === nodeId)?.name ?? 'Choix recommandé automatiquement'}</dd><dt>Variables requises</dt><dd>{missing.filter((v) => v.required).length ? `${missing.filter((v) => v.required).length} à compléter` : 'Complétées'}</dd><dt>Bind mounts</dt><dd>{useBindMounts ? 'Soumis au superadmin' : 'Aucun'}</dd><dt>Registry privé</dt><dd>{registry.server || 'Aucun'}</dd></dl>
+        <details className="field"><summary>Relire le Compose final</summary><pre className="mono compose-final">{compose}</pre></details>
+      </>}
+    </>
   )
+
+  if (stack) return <Modal title={`Projet ${stack.name}`} onClose={onClose} onSubmit={submit} aside={legacyAside}>
+    <label className="field"><span>docker-compose.yml</span><textarea ref={editor} className="mono compose-editor" value={compose} onChange={(e) => setCompose(e.target.value)} spellCheck={false} rows={20} required placeholder={composeExample} aria-invalid={errors.length > 0} /></label>
+    {errors.length > 0 && <ul className="compose-errors" aria-live="polite">{errors.map((e, i) => <li key={i}>{e.line > 0 && <button type="button" className="link-button" onClick={() => goToLine(e.line)}>ligne {e.line}</button>}<span>{e.message}</span></li>)}</ul>}
+    <div className="field"><span>Variables <span className="muted">· chiffrées</span></span><EnvEditor env={env} setEnv={setEnv} missing={missing} /></div>
+    <details className="field" open={registryOpen} onToggle={(e) => setRegistryOpen(e.currentTarget.open)}><summary>Registry privé <span className="muted">{registry.server ? `· ${registry.server}` : '· images publiques'}</span></summary><div className="env-list"><input aria-label="Adresse du registry" className="mono" value={registry.server} onChange={(e) => editRegistry({ server: e.target.value })} placeholder="ghcr.io" /><div className="env-row"><input aria-label="Identifiant" value={registry.username} onChange={(e) => editRegistry({ username: e.target.value })} placeholder="identifiant" autoComplete="off" /><input type="password" aria-label="Mot de passe ou token" value={registry.password} onChange={(e) => editRegistry({ password: e.target.value })} placeholder={stack.registry?.passwordSet ? 'inchangé' : 'token'} autoComplete="new-password" /></div></div></details>
+  </Modal>
+
+  return <Modal title="Nouvelle app · Docker Compose" subtitle="Étapes guidées · aucune création avant confirmation" onClose={onClose} onSubmit={submit} aside={wizardAside}>
+    <ol className="compose-stepper">{['Source', 'Adaptation', 'Ressources', 'Confirmation'].map((label, index) => <li key={label} className={flowStep === index ? 'current' : flowStep > index ? 'done' : ''}><span>{flowStep > index ? '✓' : index + 1}</span>{label}</li>)}</ol>
+    {wizard}
+    {flowStep === 1 && adaptedCompose && adaptedErrors.length === 0 && !adaptChecking && <div className="compose-review-actions"><button type="button" className="link-button" onClick={() => { setAdaptedCompose(''); setFlowStep(0) }}>Revenir au Compose source</button><button type="button" className="btn btn-primary" onClick={acceptAdaptation}>Accepter cette adaptation</button></div>}
+    {flowStep > 1 && <div className="compose-review-actions"><button type="button" className="link-button" onClick={() => setFlowStep(flowStep - 1)}>← Étape précédente</button>{flowStep === 2 && <button type="button" className="btn btn-primary" disabled={errors.length > 0 || !!preview?.error} onClick={() => setFlowStep(3)}>Continuer vers la confirmation →</button>}</div>}
+  </Modal>
 }
 
 type StackTab = 'services' | 'logs' | 'volumes' | 'compose'

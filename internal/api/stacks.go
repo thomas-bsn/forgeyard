@@ -699,6 +699,7 @@ type stackPreviewService struct {
 	Image     string               `json:"image"`
 	Kind      string               `json:"kind"`
 	Port      int                  `json:"port,omitempty"`
+	MemoryMB  int                  `json:"memoryMb"`
 	DependsOn []compose.Dependency `json:"dependsOn"`
 	Backup    string               `json:"backup,omitempty"`
 }
@@ -726,10 +727,55 @@ func (s *Server) handleValidateStack(w http.ResponseWriter, r *http.Request) {
 			if deps == nil {
 				deps = []compose.Dependency{}
 			}
-			out.Services = append(out.Services, stackPreviewService{Name: p.Service, App: p.Name, Image: p.Image, Kind: p.Kind, Port: int(p.Port), DependsOn: deps, Backup: svc.Backup})
+			memoryMB := svc.MemoryMB
+			if memoryMB == 0 {
+				memoryMB = 512
+			}
+			out.Services = append(out.Services, stackPreviewService{Name: p.Service, App: p.Name, Image: p.Image, Kind: p.Kind, Port: int(p.Port), MemoryMB: memoryMB, DependsOn: deps, Backup: svc.Backup})
 		}
 	}
 	writeJSON(w, http.StatusOK, out)
+}
+
+type adaptStackPortsInput struct {
+	Apply         bool   `json:"apply"`
+	Compose       string `json:"compose"`
+	ExposeService string `json:"exposeService"`
+	ExposePort    int    `json:"exposePort"`
+}
+
+type adaptStackPortsOutput struct {
+	Compose    string                  `json:"compose,omitempty"`
+	Candidates []compose.PortCandidate `json:"candidates"`
+	Error      string                  `json:"error,omitempty"`
+}
+
+// handleAdaptStackPorts proposes Forgeyard's private-network and HTTPS behavior for Compose port mappings.
+// It never stores or deploys the resulting file; the caller must review and confirm it separately.
+func (s *Server) handleAdaptStackPorts(w http.ResponseWriter, r *http.Request) {
+	var in adaptStackPortsInput
+	if !decodeJSON(w, r, &in) {
+		return
+	}
+	if len(in.Compose) > maxComposeBytes {
+		writeJSON(w, http.StatusBadRequest, adaptStackPortsOutput{Error: "docker-compose.yml trop long : 128 Ko au maximum"})
+		return
+	}
+	if !in.Apply {
+		candidates, err := compose.AnalyzePorts([]byte(in.Compose))
+		if err != nil {
+			writeJSON(w, http.StatusBadRequest, adaptStackPortsOutput{Error: "Compose invalide : " + err.Error()})
+			return
+		}
+		writeJSON(w, http.StatusOK, adaptStackPortsOutput{Candidates: candidates})
+		return
+	}
+	adapted, candidates, err := compose.AdaptPorts([]byte(in.Compose), in.ExposeService, in.ExposePort)
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, adaptStackPortsOutput{Candidates: candidates, Error: err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, adaptStackPortsOutput{Compose: adapted, Candidates: candidates})
 }
 
 // checkStackNames refuses app names already taken, reserved, or (for the exposed service) in the DNS zone.

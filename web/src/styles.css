@@ -3467,6 +3467,10 @@ a.link-btn {
   width: min(880px, calc(100vw - 32px));
 }
 
+.modal-xl:has(.compose-stepper) {
+  width: min(1040px, calc(100vw - 32px));
+}
+
 .modal-split {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 290px;
@@ -3517,6 +3521,167 @@ a.link-btn {
 .aside-note {
   margin: 0;
   font-size: 0.85rem;
+}
+
+.compose-stepper,
+.compose-steps {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.compose-stepper {
+  display: flex;
+  gap: 8px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--border);
+}
+
+.compose-stepper li {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--muted);
+  font-size: 0.78rem;
+  flex: 1;
+}
+
+.compose-stepper li > span,
+.compose-steps li > span {
+  display: grid;
+  place-items: center;
+  width: 23px;
+  height: 23px;
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  background: var(--card);
+  font-weight: 650;
+  flex: 0 0 auto;
+}
+
+.compose-stepper li.current,
+.compose-stepper li.done,
+.compose-steps li.current,
+.compose-steps li.done {
+  color: var(--accent);
+  font-weight: 650;
+}
+
+.compose-stepper li.current > span,
+.compose-stepper li.done > span,
+.compose-steps li.current > span,
+.compose-steps li.done > span {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--accent-text);
+}
+
+.compose-steps {
+  display: grid;
+  gap: 14px;
+}
+
+.compose-steps li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--muted);
+  font-size: 0.84rem;
+}
+
+.compose-step-heading {
+  margin-bottom: 16px;
+}
+
+.compose-step-heading h3 {
+  margin: 5px 0;
+  font-size: 1.2rem;
+}
+
+.compose-step-heading p,
+.compose-change-list p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.84rem;
+}
+
+.compose-change-list {
+  display: grid;
+  gap: 10px;
+  margin: 12px 0 18px;
+}
+
+.compose-change-list > div {
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+
+.compose-change-list b {
+  display: block;
+  margin-bottom: 4px;
+  font-size: 0.86rem;
+}
+
+.compose-adapted-preview {
+  margin-top: 14px;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg);
+}
+
+.compose-aside-resources {
+  max-height: 48vh;
+  overflow: auto;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+}
+
+.compose-review-actions {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+}
+
+.compose-confirm-facts {
+  display: grid;
+  grid-template-columns: minmax(140px, 1fr) minmax(0, 2fr);
+  gap: 10px 14px;
+  margin: 16px 0;
+}
+
+.compose-confirm-facts dt {
+  color: var(--muted);
+}
+
+.compose-confirm-facts dd {
+  margin: 0;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.compose-final {
+  display: block;
+  max-height: 260px;
+  overflow: auto;
+  padding: 12px;
+  border-radius: 8px;
+  background: var(--bg);
+}
+
+@media (max-width: 720px) {
+  .compose-stepper li {
+    align-items: flex-start;
+    flex-direction: column;
+    font-size: 0.7rem;
+  }
+
+  .compose-review-actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
 }
 
 .aside-spacer {
