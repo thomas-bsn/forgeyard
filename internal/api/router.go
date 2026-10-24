@@ -255,6 +255,7 @@ func (s *Server) Handler(webFS fs.FS) http.Handler {
 	mux.HandleFunc("GET /api/stacks", s.requireUser(s.handleListStacks))
 	mux.HandleFunc("POST /api/stacks", s.requireUser(s.handleCreateStack))
 	mux.HandleFunc("POST /api/stacks/validate", s.requireUser(s.handleValidateStack))
+	mux.HandleFunc("POST /api/stacks/adapt-ports", s.requireUser(s.handleAdaptStackPorts))
 	mux.HandleFunc("GET /api/stacks/{id}", s.requireUser(s.handleGetStack))
 	mux.HandleFunc("PUT /api/stacks/{id}", s.requireUser(s.handleUpdateStack))
 	mux.HandleFunc("PUT /api/stacks/{id}/logo", s.requireUser(s.handlePutStackLogo))

@@ -52,35 +52,57 @@ export function CopyField({ value }: { value: string }) {
   )
 }
 
-type Theme = 'light' | 'dark' | null
+export type ThemePreference = 'system' | 'light' | 'dark'
 
-function readTheme(): Theme {
+function readTheme(): ThemePreference {
   try {
     const t = localStorage.getItem('theme')
-    return t === 'light' || t === 'dark' ? t : null
+    return t === 'light' || t === 'dark' ? t : 'system'
   } catch {
-    return null
+    return 'system'
   }
 }
 
-export function applyStoredTheme() {
-  const t = readTheme()
-  if (t) document.documentElement.dataset.theme = t
+function applyTheme(preference: ThemePreference) {
+  if (preference === 'system') delete document.documentElement.dataset.theme
+  else document.documentElement.dataset.theme = preference
 }
 
-/** The current theme, starting from the system preference, and a function switching to the other one. */
-export function useTheme(): ['light' | 'dark', () => void] {
-  const [, force] = useState(0)
-  const current = readTheme() ?? (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')
-  const toggle = () => {
-    const next = current === 'dark' ? 'light' : 'dark'
-    document.documentElement.dataset.theme = next
+export function applyStoredTheme() {
+  applyTheme(readTheme())
+}
+
+/** The saved appearance choice. System mode leaves CSS in charge of following the OS preference. */
+export function useThemePreference(): [ThemePreference, (preference: ThemePreference) => void] {
+  const [preference, setPreference] = useState<ThemePreference>(readTheme)
+  const select = (next: ThemePreference) => {
+    applyTheme(next)
     try {
-      localStorage.setItem('theme', next)
+      if (next === 'system') localStorage.removeItem('theme')
+      else localStorage.setItem('theme', next)
     } catch {
       // Private browsing: the choice just isn't remembered.
     }
-    force((n) => n + 1)
+    setPreference(next)
+  }
+  return [preference, select]
+}
+
+/** The resolved theme and a function switching to the other explicit appearance. */
+export function useTheme(): ['light' | 'dark', () => void] {
+  const [preference, select] = useThemePreference()
+  const [, refreshSystemTheme] = useState(0)
+  useEffect(() => {
+    if (preference !== 'system') return
+    const media = window.matchMedia('(prefers-color-scheme: dark)')
+    const update = () => refreshSystemTheme((n) => n + 1)
+    media.addEventListener('change', update)
+    return () => media.removeEventListener('change', update)
+  }, [preference])
+  const current = preference === 'system' ? (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light') : preference
+  const toggle = () => {
+    const next = current === 'dark' ? 'light' : 'dark'
+    select(next)
   }
   return [current, toggle]
 }

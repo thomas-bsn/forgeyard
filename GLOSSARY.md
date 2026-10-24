@@ -8,6 +8,9 @@ Forgeyard héberge des apps sur des machines appelées nodes.
 Soumission d'une configuration d'app ou de projet nécessitant l'approbation du superadmin avant sa création. Elle précise les chemins hôtes, leurs destinations, les modes d'accès et le node concerné.
 _Éviter_ : app en attente (l'app n'existe pas encore).
 
+**Adaptation d'un Compose** :
+Proposition de changements à un fichier Docker Compose pour qu'il corresponde aux capacités de Forgeyard. Elle est relue et confirmée avant la création du projet.
+
 **Autorisation de bind mounts** :
 Accord du superadmin permettant à une app ou à un projet d'utiliser des chemins hôtes précis sur un node donné, aux destinations et dans les modes d'accès approuvés. Cet accord est révocable.
 _Éviter_ : accès libre à l'hôte, approbation du code.

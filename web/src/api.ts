@@ -303,6 +303,7 @@ export type App = {
 }
 
 export type ComposeError = { line: number; message: string }
+export type ComposePortCandidate = { service: string; published?: number; target: number; protocol: string }
 
 export type BackupRestore = { id: number; snapshot: string; volume: string; status: 'running' | 'ok' | 'error'; error?: string; createdAt: number; inUse: boolean }
 
@@ -355,7 +356,7 @@ export type Stack = {
 export type RegistryLogin = { server: string; username: string; password: string }
 
 export type StackPreview = {
-  services: { name: string; app: string; image: string; kind: App['kind']; port?: number; dependsOn: { service: string; condition: string }[]; backup?: string }[]
+  services: { name: string; app: string; image: string; kind: App['kind']; port?: number; memoryMb?: number; dependsOn: { service: string; condition: string }[]; backup?: string }[]
   volumes: string[]
   errors: ComposeError[]
   error?: string
@@ -668,6 +669,8 @@ export const api = {
   stacks: () => request<Stack[]>('GET', '/api/stacks'),
   stack: (id: number) => request<Stack>('GET', `/api/stacks/${id}`),
   validateStack: (body: { name: string; compose: string; env: Record<string, string> }) => request<StackPreview>('POST', '/api/stacks/validate', body),
+  adaptStackPorts: (body: { compose: string; apply?: boolean; exposeService?: string; exposePort?: number }) =>
+    request<{ compose?: string; candidates: ComposePortCandidate[]; error?: string }>('POST', '/api/stacks/adapt-ports', body),
   createStack: (body: { name: string; compose: string; env: Record<string, string>; nodeId?: number; registry?: RegistryLogin }) => request<Stack>('POST', '/api/stacks', body),
   updateStack: (id: number, body: { compose: string; env: Record<string, string>; registry?: RegistryLogin }) => request<Stack>('PUT', `/api/stacks/${id}`, body),
   stackAction: (id: number, action: 'start' | 'stop' | 'redeploy') => request<Stack>('POST', `/api/stacks/${id}/${action}`, {}),

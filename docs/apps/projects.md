@@ -126,7 +126,11 @@ Supprimer le projet supprime ses apps (conteneurs, enregistrement DNS), son rés
 
 Dans l'onglet **Apps** :
 
-- **Nouvelle app › Docker Compose** : nom du projet, `docker-compose.yml`, variables. Le fichier est vérifié pendant la frappe : erreurs avec leur ligne (un clic sélectionne la ligne), variables utilisées mais absentes proposées en un clic, et à droite l'aperçu des services dans leur ordre de démarrage (exposé, privé, job, `pg_dump`). Un admin choisit le node.
+- **Nouvelle app › Docker Compose** : parcours en quatre étapes : importer et analyser, relire l'adaptation, configurer les ressources, confirmer. L'analyse récapitule chaque service une seule fois avec son image, son rôle, sa mémoire, ses dépendances et ses sauvegardes, plus les volumes du projet. Les erreurs de validation gardent leur ligne.
+
+  L'adaptation locale retire les publications `ports` de l'hôte et permet de choisir un seul port TCP à publier en HTTPS avec `x-forgeyard.expose`. Les autres services restent privés et joignables par leur nom sur le réseau du projet. Les ports UDP sont retirés et signalés ; les autres options incompatibles ne sont pas transformées et doivent être corrigées manuellement. Le Compose adapté est relu avant d'être accepté ; seule la confirmation finale crée le projet. L'adaptation n'envoie pas le Compose à un fournisseur d'IA.
+
+  Les variables chiffrées, le node, le registry privé et l'option de bind mounts se règlent après l'adaptation. Un admin choisit le node ; une demande de bind mounts reste soumise à approbation.
 
 **Images privées.** Le bloc « Registry privé » du formulaire prend l'adresse du registry (`ghcr.io`, `docker.io`, `registry.exemple.fr`), un identifiant et un mot de passe ou un token (en lecture seule suffit). Le node s'en sert pour télécharger les images de ce registry, et d'elles seules : les autres images restent téléchargées sans identifiants. Le mot de passe est chiffré, comme les variables, et n'est jamais renvoyé ; à la modification, un champ vide le garde, et vider l'adresse retire le login. Un seul registry par projet.
 - La liste montre d'abord les **Projets** (une carte par projet : état, adresse, une ligne par app), puis les **Apps** seules ; un filtre Tout / Apps / Projets n'en garde qu'un type. Les apps d'un projet ne sont listées que dans sa carte.
