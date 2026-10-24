@@ -117,6 +117,72 @@ func TestBindMountsDockerAccessAndDeletion(t *testing.T) {
 	t.Log("bind mount source preserved after removing containers", strconv.FormatInt(id, 10))
 }
 
+// This mirrors the desired-state change sent after a superadmin approves a new source and mode.
+// The same app ID must be recreated with the second authorization in effect.
+func TestApprovedBindChangeReplacesDockerAccess(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+	dc, err := docker.New(docker.DefaultHost())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := dc.EnsureNetwork(ctx, networkName); err != nil {
+		t.Fatal(err)
+	}
+	first, second := t.TempDir(), t.TempDir()
+	if base := os.Getenv("FORGEYARD_TEST_BIND_DIR"); base != "" {
+		first, err = os.MkdirTemp(base, "forgeyard-bind-old-")
+		if err != nil {
+			t.Fatal(err)
+		}
+		second, err = os.MkdirTemp(base, "forgeyard-bind-new-")
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = os.RemoveAll(first); _ = os.RemoveAll(second) })
+	}
+	for path, contents := range map[string]string{first: "old", second: "approved"} {
+		if err := os.WriteFile(filepath.Join(path, "note"), []byte(contents), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	first, err = filepath.EvalSymlinks(first)
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err = filepath.EvalSymlinks(second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	id := time.Now().UnixNano()%1000000000 + 3000000000
+	app := &agentpb.AppSpec{Id: id, Name: "approved-change", Image: "alpine:3.21", Sandbox: true, Running: true, BindAuthorized: true, BindMounts: []*agentpb.BindMount{{Source: first, Target: "/files", ReadOnly: true}}}
+	name := containerName(id)
+	t.Cleanup(func() { _ = dc.Remove(context.Background(), name) })
+	rec := NewReconciler(dc, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	if err := rec.ensureApp(ctx, app, "proxy"); err != nil {
+		t.Fatal(err)
+	}
+	code, out, err := dc.ExecRun(ctx, name, []string{"cat", "/files/note"})
+	if err != nil || code != 0 || strings.TrimSpace(out) != "old" {
+		t.Fatalf("before approval: %d %q %v", code, out, err)
+	}
+	app.BindMounts = []*agentpb.BindMount{{Source: second, Target: "/files", ReadOnly: false}}
+	if err := rec.ensureApp(ctx, app, "proxy"); err != nil {
+		t.Fatal(err)
+	}
+	code, out, err = dc.ExecRun(ctx, name, []string{"cat", "/files/note"})
+	if err != nil || code != 0 || strings.TrimSpace(out) != "approved" {
+		t.Fatalf("after approval: %d %q %v", code, out, err)
+	}
+	code, _, err = dc.ExecRun(ctx, name, []string{"sh", "-c", "echo changed >/files/written"})
+	if err != nil || code != 0 {
+		t.Fatalf("approved read/write mount: %d %v", code, err)
+	}
+	if data, err := os.ReadFile(filepath.Join(second, "written")); err != nil || strings.TrimSpace(string(data)) != "changed" {
+		t.Fatalf("approved host write: %q %v", data, err)
+	}
+}
+
 func TestComposeBindMountsDockerServicesKeepTheirOwnMounts(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()

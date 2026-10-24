@@ -44,6 +44,7 @@ export default function BindRequests({ superadmin, route, go }: { superadmin: bo
       <p>{statusLabels[request.status] ?? request.status}</p>
       {request.appId && <p><a className="btn" href={`#/apps/${request.appId}`}>Ouvrir l’app</a> · Déploiement : {request.deploymentState ?? 'en attente'}</p>}
       {request.stackId && <p><a className="btn" href={`#/projects/${request.stackId}`}>Ouvrir le projet</a></p>}
+      {request.config.change && request.status === 'created' && <p><a className="btn" href={request.config.change.resourceType === 'stack' ? `#/projects/${request.config.change.resourceId}` : `#/apps/${request.config.change.resourceId}`}>Ouvrir la ressource modifiée</a></p>}
       {request.deploymentError && <p className="error" role="alert">{request.deploymentError}</p>}
       {review && (request.status === 'pending' || request.status === 'failed') && <div className="actions">
         <button className="btn" type="button" disabled={busy} onClick={() => act(async () => setValidated(await api.validateBindRequest(request.id)))}>Vérifier les chemins sur le node</button>
@@ -53,6 +54,7 @@ export default function BindRequests({ superadmin, route, go }: { superadmin: bo
       {request.reason && <p><strong>Motif :</strong> {request.reason}</p>}
       <dl className="aside-facts"><dt>Auteur</dt><dd>{request.authorName}</dd><dt>Node</dt><dd>{request.nodeName}</dd>{request.config.stack ? <><dt>Type</dt><dd>Projet Compose</dd><dt>Services</dt><dd>{request.config.stack.compose.match(/^\s{2}[a-z0-9][a-z0-9_-]*:/gm)?.length ?? '—'}</dd></> : <><dt>Source</dt><dd>{request.config.kind === 'sandbox' ? 'Sandbox · SSH' : request.config.dockerfile ? 'Dockerfile' : 'Image Docker'}</dd>{request.config.dockerfile ? <><dt>Dockerfile</dt><dd><pre className="mono">{request.config.dockerfile}</pre></dd></> : <><dt>Image</dt><dd>{request.config.image}</dd></>}<dt>Port</dt><dd>{request.config.kind === 'sandbox' ? 'Aucune adresse web' : request.config.port}</dd><dt>Mémoire</dt><dd>{request.config.memoryMb} Mo</dd></>}</dl>
       {request.config.stack && <details className="field"><summary>Compose soumis</summary><pre className="mono">{request.config.stack.compose}</pre></details>}
+      {request.config.change && <p className="hint">Modification de {request.config.change.resourceType === 'stack' ? 'projet' : 'app'} #{request.config.change.resourceId} · node cible : {request.nodeName}. La configuration actuelle reste active jusqu’à l’approbation.</p>}
       <h3>Montages demandés</h3>
       <div className="table-scroll"><table><thead><tr>{request.config.stack && <th>Service</th>}<th>Source sur l’hôte</th><th>Destination</th><th>Accès</th></tr></thead><tbody>{request.config.bindMounts.map((m,i) => <tr key={i}>{request.config.stack && <td>{m.service}</td>}<td><code>{m.source}</code></td><td><code>{m.target}</code></td><td>{m.readOnly ? 'Lecture seule' : 'Lecture / écriture'}</td></tr>)}</tbody></table></div>
       {!!request.config.volumes?.length && <p>Volumes Docker : {request.config.volumes.map((v) => <code key={v}>{v} </code>)}</p>}
@@ -67,6 +69,7 @@ export default function BindRequests({ superadmin, route, go }: { superadmin: bo
         <label className="field"><span>Motif du refus</span><textarea required maxLength={2000} value={reason} onChange={(e) => setReason(e.target.value)} /></label>
         <button className="btn" type="submit" disabled={busy || !reason.trim()}>Refuser la demande</button>
       </form> : <button className="btn" type="button" disabled={busy} onClick={() => act(() => api.cancelBindRequest(request.id))}>Annuler ma demande</button>)}
+      {!review && request.status === 'failed' && request.config.change && <button className="btn" type="button" disabled={busy} onClick={() => act(() => api.cancelBindRequest(request.id))}>Annuler cette demande en échec</button>}
       <p className="muted">Cette configuration est figée. Pour la changer, annule la demande en attente et soumets une nouvelle configuration.</p>
     </article> : <p className="muted">Demande introuvable ou chargement en cours.</p>}
   </div>

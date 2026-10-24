@@ -9,6 +9,38 @@ import (
 	"context"
 )
 
+const applyBindChangeStack = `-- name: ApplyBindChangeStack :execrows
+UPDATE stacks SET compose = ?, node_id = ?, updated_at = ? WHERE id = ? AND node_id = ? AND compose = ? AND env_sealed = ? AND registry_sealed = ?
+`
+
+type ApplyBindChangeStackParams struct {
+	Compose        string
+	NodeID         int64
+	UpdatedAt      int64
+	ID             int64
+	NodeID_2       int64
+	Compose_2      string
+	EnvSealed      string
+	RegistrySealed string
+}
+
+func (q *Queries) ApplyBindChangeStack(ctx context.Context, arg ApplyBindChangeStackParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, applyBindChangeStack,
+		arg.Compose,
+		arg.NodeID,
+		arg.UpdatedAt,
+		arg.ID,
+		arg.NodeID_2,
+		arg.Compose_2,
+		arg.EnvSealed,
+		arg.RegistrySealed,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
 const createStack = `-- name: CreateStack :one
 INSERT INTO stacks (name, owner_id, node_id, compose, env_sealed, registry_sealed, created_at, updated_at)
 VALUES (?, ?, ?, ?, ?, ?, ?, ?)
@@ -574,4 +606,32 @@ func (q *Queries) UpdateStackApp(ctx context.Context, arg UpdateStackAppParams) 
 		&i.BindAuthorized,
 	)
 	return i, err
+}
+
+const updateStackAppPreserveRunning = `-- name: UpdateStackAppPreserveRunning :exec
+UPDATE apps SET image = ?, port = ?, env_sealed = ?, memory_mb = ?, service_spec = ?, generation = generation + 1, updated_at = ?
+WHERE id = ?
+`
+
+type UpdateStackAppPreserveRunningParams struct {
+	Image       string
+	Port        int64
+	EnvSealed   string
+	MemoryMb    int64
+	ServiceSpec string
+	UpdatedAt   int64
+	ID          int64
+}
+
+func (q *Queries) UpdateStackAppPreserveRunning(ctx context.Context, arg UpdateStackAppPreserveRunningParams) error {
+	_, err := q.db.ExecContext(ctx, updateStackAppPreserveRunning,
+		arg.Image,
+		arg.Port,
+		arg.EnvSealed,
+		arg.MemoryMb,
+		arg.ServiceSpec,
+		arg.UpdatedAt,
+		arg.ID,
+	)
+	return err
 }

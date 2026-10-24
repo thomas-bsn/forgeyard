@@ -433,9 +433,10 @@ export type BindNode = { id: number; name: string; online: boolean; cpus: number
 export type StackBindRequestInput = { name: string; compose: string; env: Record<string, string>; registry?: { server: string; username: string; password: string } }
 export type StackBindRequestConfig = Omit<StackBindRequestInput, 'env'> & { env?: null }
 export type BindRequestInput = (AppInput & { bindMounts: BindMount[]; logoImage?: string }) | { nodeId: number; bindMounts: BindMount[]; stack: StackBindRequestInput }
+export type BindChangeInput = { change: { resourceId: number; resourceType: 'app' | 'stack'; nodeId: number; bindMounts?: BindMount[]; stack?: StackBindRequestInput }; bindMounts?: BindMount[] }
 export type BindRequest = {
   id: number; authorId: number; authorName: string; nodeName: string
-  config: Partial<Omit<AppInput, 'env'>> & { env?: null; bindMounts: BindMount[]; logoImage?: string; stack?: StackBindRequestConfig }
+  config: Partial<Omit<AppInput, 'env'>> & { env?: null; bindMounts: BindMount[]; logoImage?: string; stack?: StackBindRequestConfig; change?: BindChangeInput['change'] }
   envKeys: string[]; status: string; reason: string; createdAt: number; decidedAt: number; appId?: number; stackId?: number; deploymentState?: string; deploymentError?: string
 }
 
@@ -578,6 +579,7 @@ export const api = {
   bindRequests: (review = false) => request<BindRequest[]>('GET', review ? '/api/admin/bind-requests' : '/api/bind-requests'),
   bindRequest: (id: number) => request<BindRequest>('GET', `/api/bind-requests/${id}`),
   createBindRequest: (input: BindRequestInput) => request<BindRequest>('POST', '/api/bind-requests', input),
+  createBindChangeRequest: (input: BindChangeInput) => request<BindRequest>('POST', '/api/bind-requests', input),
   cancelBindRequest: (id: number) => request<BindRequest>('POST', `/api/bind-requests/${id}/cancel`, {}),
   refuseBindRequest: (id: number, reason: string) => request<BindRequest>('POST', `/api/admin/bind-requests/${id}/refuse`, { reason }),
   revealBindRequest: (id: number) => request<Record<string, string>>('POST', `/api/admin/bind-requests/${id}/reveal`, {}),

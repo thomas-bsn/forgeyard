@@ -91,6 +91,13 @@ func (s *Server) approveBindRequest(r *http.Request, row db.BindRequest) (result
 	if err = json.Unmarshal([]byte(row.Config), &in); err != nil {
 		return err
 	}
+	if in.Change != nil {
+		resourceOwner, e := s.bindChangeOwner(ctx, in.Change)
+		if e != nil {
+			return e
+		}
+		return s.approveBindChange(ctx, r, row, resourceOwner, &in)
+	}
 	if in.Stack != nil {
 		return s.approveStackBindRequest(ctx, r, row, owner, &in)
 	}

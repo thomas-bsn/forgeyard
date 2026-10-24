@@ -3,16 +3,17 @@ package api
 import (
 	"context"
 	"errors"
-	"github.com/libdns/libdns"
-	"github.com/thomas-bsn/forgeyard/internal/dns"
-	"github.com/thomas-bsn/forgeyard/internal/dns/dnstest"
 	"net/http"
 	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
 
+	"github.com/libdns/libdns"
 	"github.com/thomas-bsn/forgeyard/internal/agentpb"
+	"github.com/thomas-bsn/forgeyard/internal/dns"
+	"github.com/thomas-bsn/forgeyard/internal/dns/dnstest"
+	"github.com/thomas-bsn/forgeyard/internal/store/db"
 )
 
 func answerBindChecks(node *fakeAgent, checks func(*agentpb.ValidateBindMounts) *agentpb.BindValidationResult) <-chan *agentpb.DesiredState {
@@ -115,6 +116,139 @@ func TestBindApprovalCreatesExactConfigurationOnce(t *testing.T) {
 	next, err := legacy.Recv()
 	if err != nil || next.GetDesiredState() == nil || len(next.GetDesiredState().Apps) != 1 || next.GetDesiredState().Apps[0].Running {
 		t.Fatalf("legacy agent must stop bind app: %v %v", next, err)
+	}
+}
+
+func TestBindChangeKeepsOldAccessUntilSuperadminApproves(t *testing.T) {
+	base, server, superadmin, _ := setupStackServer(t)
+	node := connectFakeAgent(t, base, server, superadmin, "bind-change-node", func(h *agentpb.Hello) { h.BindMounts = true })
+	node.desired(t)
+	states := answerBindChecks(node, func(check *agentpb.ValidateBindMounts) *agentpb.BindValidationResult {
+		return &agentpb.BindValidationResult{Mounts: check.Mounts}
+	})
+	owner := bindTestUser(t, server, base, "change-owner", "user")
+	admin := bindTestUser(t, server, base, "change-admin", "admin")
+	create := map[string]any{"name": "change-app", "image": "nginx:alpine", "port": 8080, "memoryMb": 128, "nodeId": node.nodeID, "bindMounts": []map[string]any{{"source": "/srv/old", "target": "/data", "readOnly": true}}}
+	var request bindRequestResponse
+	if code := postJSON(t, owner, base+"/api/bind-requests", create, &request); code != http.StatusCreated {
+		t.Fatalf("create request: %d", code)
+	}
+	approve := base + "/api/admin/bind-requests/" + itoa(request.ID) + "/approve"
+	if code := postJSON(t, superadmin, approve, struct{}{}, &request); code != http.StatusOK {
+		t.Fatalf("create approve: %d", code)
+	}
+	appID := request.AppID
+	select {
+	case <-states:
+	case <-time.After(3 * time.Second):
+		t.Fatal("initial desired state missing")
+	}
+	change := map[string]any{"change": map[string]any{"resourceId": appID, "resourceType": "app", "nodeId": node.nodeID, "bindMounts": []map[string]any{{"source": "/srv/new", "target": "/data", "readOnly": false}}}}
+	if code := postJSON(t, owner, base+"/api/bind-requests", change, &request); code != http.StatusCreated || request.Status != "pending" || request.Config.Change == nil {
+		t.Fatalf("change submission: %d %+v", code, request)
+	}
+	var current appResponse
+	if code := get(t, owner, base+"/api/apps/"+itoa(appID), &current); code != http.StatusOK || current.BindMounts[0].Source != "/srv/old" {
+		t.Fatalf("pending change altered current mounts: %d %+v", code, current.BindMounts)
+	}
+	changeApprove := base + "/api/admin/bind-requests/" + itoa(request.ID) + "/approve"
+	if code := postJSON(t, admin, changeApprove, struct{}{}, nil); code != http.StatusForbidden {
+		t.Fatalf("ordinary admin approved: %d", code)
+	}
+	if code := postJSON(t, superadmin, changeApprove, struct{}{}, &request); code != http.StatusOK || request.Status != "created" {
+		t.Fatalf("approve change: %d %+v", code, request)
+	}
+	if code := get(t, owner, base+"/api/apps/"+itoa(appID), &current); code != http.StatusOK || current.BindMounts[0].Source != "/srv/new" || current.BindMounts[0].ReadOnly == nil || *current.BindMounts[0].ReadOnly {
+		t.Fatalf("approved change not applied: %d %+v", code, current.BindMounts)
+	}
+	// Resource was stopped before access cutover. Approval must not start it implicitly.
+	if len(current.BindMounts) != 1 || current.Running {
+		t.Fatalf("approval should leave app stopped: %+v", current)
+	}
+	if code := postJSON(t, owner, base+"/api/bind-requests", map[string]any{"change": map[string]any{"resourceId": appID, "resourceType": "app", "nodeId": node.nodeID, "bindMounts": []map[string]any{{"source": "/srv/third", "target": "/data"}}}}, &request); code != http.StatusCreated {
+		t.Fatalf("submit second change: %d", code)
+	}
+	if code := postJSON(t, owner, base+"/api/bind-requests", map[string]any{"change": map[string]any{"resourceId": appID, "resourceType": "app", "nodeId": node.nodeID, "bindMounts": []map[string]any{{"source": "/srv/fourth", "target": "/data"}}}}, nil); code != http.StatusConflict {
+		t.Fatalf("parallel pending change was accepted: %d", code)
+	}
+	if code := postJSON(t, superadmin, base+"/api/admin/apps/"+itoa(appID)+"/bind-mounts/revoke", struct{}{}, nil); code != http.StatusOK {
+		t.Fatalf("revoke while change request pending: %d", code)
+	}
+	if code := postJSON(t, superadmin, base+"/api/admin/bind-requests/"+itoa(request.ID)+"/approve", struct{}{}, nil); code != http.StatusConflict {
+		t.Fatalf("incompatible change request should fail visibly: %d", code)
+	}
+	if code := get(t, owner, base+"/api/bind-requests/"+itoa(request.ID), &request); code != http.StatusOK || request.Status != "failed" {
+		t.Fatalf("failed change result is not visible: %d %+v", code, request)
+	}
+	if code := postJSON(t, owner, base+"/api/bind-requests/"+itoa(request.ID)+"/cancel", struct{}{}, &request); code != http.StatusOK || request.Status != "cancelled" {
+		t.Fatalf("author could not cancel failed change: %d %+v", code, request)
+	}
+	pending, err := server.store.HasPendingBindChange(context.Background(), db.HasPendingBindChangeParams{ChangeResourceType: "app", ChangeResourceID: appID})
+	if err != nil || pending != 0 {
+		t.Fatalf("cancelled failed request still blocks a replacement: pending=%d err=%v", pending, err)
+	}
+}
+
+func TestComposeBindChangeIsStagedAndAppliedAsOneProject(t *testing.T) {
+	base, server, superadmin, _ := setupStackServer(t)
+	node := connectFakeAgent(t, base, server, superadmin, "compose-change-node", func(h *agentpb.Hello) { h.BindMounts = true })
+	node.desired(t)
+	states := answerBindChecks(node, func(check *agentpb.ValidateBindMounts) *agentpb.BindValidationResult {
+		return &agentpb.BindValidationResult{Mounts: check.Mounts}
+	})
+	owner := bindTestUser(t, server, base, "compose-change-owner", "user")
+	composeText := "services:\n  web:\n    image: nginx:alpine\n    volumes:\n      - /srv/old:/data:ro\n    x-forgeyard:\n      expose: { port: 80 }\n  worker:\n    image: busybox:1.36\n    command: sleep 3600\n"
+	var row bindRequestResponse
+	if code := postJSON(t, owner, base+"/api/bind-requests", map[string]any{"nodeId": node.nodeID, "bindMounts": []any{}, "stack": map[string]any{"name": "compose-change", "compose": composeText}}, &row); code != http.StatusCreated {
+		t.Fatalf("submit project: %d %+v", code, row)
+	}
+	if code := postJSON(t, superadmin, base+"/api/admin/bind-requests/"+itoa(row.ID)+"/approve", struct{}{}, &row); code != http.StatusOK {
+		t.Fatalf("approve create: %d", code)
+	}
+	stackID := row.StackID
+	target := connectFakeAgent(t, base, server, superadmin, "compose-change-target", func(h *agentpb.Hello) { h.BindMounts = true })
+	target.desired(t)
+	targetStates := answerBindChecks(target, func(check *agentpb.ValidateBindMounts) *agentpb.BindValidationResult {
+		return &agentpb.BindValidationResult{Mounts: check.Mounts}
+	})
+	select {
+	case <-states:
+	case <-time.After(3 * time.Second):
+		t.Fatal("initial project state missing")
+	}
+	newCompose := strings.Replace(composeText, "/srv/old:/data:ro", "/srv/new:/data:rw", 1)
+	if code := postJSON(t, owner, base+"/api/stacks/"+itoa(stackID)+"/stop", struct{}{}, nil); code != http.StatusOK {
+		t.Fatalf("stop project before changing node: %d", code)
+	}
+	change := map[string]any{"change": map[string]any{"resourceId": stackID, "resourceType": "stack", "nodeId": target.nodeID, "stack": map[string]any{"name": "compose-change", "compose": newCompose, "env": map[string]string{}}}}
+	if code := postJSON(t, owner, base+"/api/bind-requests", change, &row); code != http.StatusCreated || row.Status != "pending" {
+		t.Fatalf("submit change: %d %+v", code, row)
+	}
+	updatedCompose := strings.Replace(composeText, "nginx:alpine", "nginx:1.27-alpine", 1)
+	if code := putJSON(t, owner, base+"/api/stacks/"+itoa(stackID), stackInput{Compose: updatedCompose}, nil); code != http.StatusOK {
+		t.Fatalf("ordinary config edit while bind request is pending: %d", code)
+	}
+	var before stackResponse
+	if code := get(t, owner, base+"/api/stacks/"+itoa(stackID), &before); code != http.StatusOK || before.Services[0].BindMounts[0].Source != "/srv/old" {
+		t.Fatalf("pending changed current stack: %d %+v", code, before.Services)
+	}
+	if code := postJSON(t, owner, base+"/api/stacks/"+itoa(stackID)+"/stop", struct{}{}, nil); code != http.StatusOK {
+		t.Fatalf("stop updated project before approval: %d", code)
+	}
+	if code := postJSON(t, superadmin, base+"/api/admin/bind-requests/"+itoa(row.ID)+"/approve", struct{}{}, &row); code != http.StatusOK || row.Status != "created" {
+		t.Fatalf("approve change: %d %+v", code, row)
+	}
+	var after stackResponse
+	if code := get(t, owner, base+"/api/stacks/"+itoa(stackID), &after); code != http.StatusOK || after.NodeID != target.nodeID || after.Services[0].NodeID != target.nodeID || after.Services[0].Image != "nginx:1.27-alpine" || after.Services[0].BindMounts[0].Source != "/srv/new" || after.Services[0].BindMounts[0].ReadOnly == nil || *after.Services[0].BindMounts[0].ReadOnly {
+		t.Fatalf("changed project config: %d %+v", code, after.Services)
+	}
+	select {
+	case desired := <-targetStates:
+		if len(desired.Apps) != 2 {
+			t.Fatalf("target node did not receive all project services: %+v", desired.Apps)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("target node did not receive project desired state")
 	}
 }
 
@@ -226,6 +360,11 @@ volumes:
 	}
 	if code := putJSON(t, owner, base+"/api/stacks/"+itoa(request.StackID), stackInput{Compose: composeText, Env: map[string]string{"DB_PASSWORD": "secret-db"}}, nil); code != http.StatusConflict {
 		t.Fatalf("revoked project update restarted bind service: %d", code)
+	}
+	reauthorizedCompose := strings.Replace(composeText, "/srv/postgres:/backup:ro", "/srv/postgres-new:/backup:rw", 1)
+	change := map[string]any{"change": map[string]any{"resourceId": request.StackID, "resourceType": "stack", "nodeId": node.nodeID, "stack": map[string]any{"name": "archive", "compose": reauthorizedCompose, "env": map[string]string{"DB_PASSWORD": "secret-db"}}}}
+	if code := postJSON(t, owner, base+"/api/bind-requests", change, nil); code != http.StatusConflict {
+		t.Fatalf("same-node reauthorization bypassed revocation: %d", code)
 	}
 	select {
 	case desired := <-states:
@@ -540,6 +679,20 @@ func TestBindApprovalPreservesDockerfileAndSandboxSources(t *testing.T) {
 				}
 			case <-time.After(5 * time.Second):
 				t.Fatal("no deployment after approval")
+			}
+			change := map[string]any{"change": map[string]any{"resourceId": req.AppID, "resourceType": "app", "nodeId": node.nodeID, "bindMounts": []map[string]any{{"source": "/srv/updated-files", "target": "/files", "readOnly": false}}}}
+			if code := postJSON(t, owner, base+"/api/bind-requests", change, &req); code != http.StatusCreated {
+				t.Fatalf("submit %s change: %d %+v", tc.name, code, req)
+			}
+			var current appResponse
+			if code := get(t, owner, base+"/api/apps/"+itoa(req.AppID), &current); code != http.StatusOK || current.BindMounts[0].Source != "/srv/files" {
+				t.Fatalf("pending %s change altered current access: %d %+v", tc.name, code, current.BindMounts)
+			}
+			if code := postJSON(t, superadmin, base+"/api/admin/bind-requests/"+itoa(req.ID)+"/approve", struct{}{}, &req); code != http.StatusOK || req.Status != "created" {
+				t.Fatalf("approve %s change: %d %+v", tc.name, code, req)
+			}
+			if code := get(t, owner, base+"/api/apps/"+itoa(req.AppID), &current); code != http.StatusOK || current.BindMounts[0].Source != "/srv/updated-files" || current.BindMounts[0].ReadOnly == nil || *current.BindMounts[0].ReadOnly || current.Kind != tc.wantKind || current.Image != tc.wantImage || current.Dockerfile != tc.wantDockerfile {
+				t.Fatalf("approved %s change altered source config or access: %d %+v", tc.name, code, current)
 			}
 		})
 	}
