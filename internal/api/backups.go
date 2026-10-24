@@ -348,6 +348,9 @@ func (s *Server) backupTarget(ctx context.Context, p db.BackupPolicy) (backupTar
 		var svc compose.Service
 		json.Unmarshal([]byte(a.ServiceSpec), &svc)
 		for _, m := range svc.Volumes {
+			if m.Kind == "bind" {
+				continue
+			}
 			if m.Volume != p.Volume {
 				continue
 			}
@@ -529,6 +532,9 @@ func (s *Server) stackUsesVolume(ctx context.Context, st db.Stack, volume string
 		var svc compose.Service
 		json.Unmarshal([]byte(a.ServiceSpec), &svc)
 		for _, m := range svc.Volumes {
+			if m.Kind == "bind" {
+				continue
+			}
 			if m.Volume == volume {
 				return true
 			}

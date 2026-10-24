@@ -428,13 +428,15 @@ export type AppInput = {
   gpu?: GpuRequest
 }
 
-export type BindMount = { source: string; target: string; readOnly: boolean }
+export type BindMount = { source: string; target: string; readOnly: boolean; service?: string }
 export type BindNode = { id: number; name: string; online: boolean; cpus: number; apps: number }
-export type BindRequestInput = AppInput & { bindMounts: BindMount[]; logoImage?: string }
+export type StackBindRequestInput = { name: string; compose: string; env: Record<string, string>; registry?: { server: string; username: string; password: string } }
+export type StackBindRequestConfig = Omit<StackBindRequestInput, 'env'> & { env?: null }
+export type BindRequestInput = (AppInput & { bindMounts: BindMount[]; logoImage?: string }) | { nodeId: number; bindMounts: BindMount[]; stack: StackBindRequestInput }
 export type BindRequest = {
   id: number; authorId: number; authorName: string; nodeName: string
-  config: Omit<BindRequestInput, 'env'> & { env?: null }
-  envKeys: string[]; status: string; reason: string; createdAt: number; decidedAt: number; appId?: number; deploymentState?: string; deploymentError?: string
+  config: Partial<Omit<AppInput, 'env'>> & { env?: null; bindMounts: BindMount[]; logoImage?: string; stack?: StackBindRequestConfig }
+  envKeys: string[]; status: string; reason: string; createdAt: number; decidedAt: number; appId?: number; stackId?: number; deploymentState?: string; deploymentError?: string
 }
 
 /** The GPUs of its node an app may use: all, or some by ID. Access only, not a reservation. */
@@ -585,6 +587,7 @@ export const api = {
   updateApp: (id: number, input: AppInput) => request<App>('PUT', `/api/apps/${id}`, input),
   appAction: (id: number, action: 'start' | 'stop' | 'redeploy') => request<App>('POST', `/api/apps/${id}/${action}`, {}),
   revokeAppBinds: (id: number) => request<App>('POST', `/api/admin/apps/${id}/bind-mounts/revoke`, {}),
+  revokeStackBinds: (id: number) => request<Stack>('POST', `/api/admin/stacks/${id}/bind-mounts/revoke`, {}),
   deleteApp: (id: number) => request<void>('DELETE', `/api/apps/${id}`, {}),
   appEvents: (id: number) => request<AppEvent[]>('GET', `/api/apps/${id}/events`),
   appUsage: (id: number) => request<AppUsage>('GET', `/api/apps/${id}/usage`),

@@ -25,6 +25,9 @@ UPDATE bind_requests SET status = 'failed', reason = ? WHERE id = ? AND status =
 -- name: LinkBindRequestApp :exec
 UPDATE bind_requests SET app_id = ?, approved_mounts = ? WHERE id = ? AND status = 'approving';
 
+-- name: LinkBindRequestStack :exec
+UPDATE bind_requests SET stack_id = ?, approved_mounts = ? WHERE id = ? AND status = 'approving';
+
 -- name: CompleteBindRequest :execrows
 UPDATE bind_requests SET status = 'created', reason = '' WHERE id = ? AND status = 'approving';
 

@@ -118,6 +118,179 @@ func TestBindApprovalCreatesExactConfigurationOnce(t *testing.T) {
 	}
 }
 
+func TestComposeBindRequestStagesNoProjectUntilSuperadminApproval(t *testing.T) {
+	base, server, superadmin, _ := setupStackServer(t)
+	node := connectFakeAgent(t, base, server, superadmin, "compose-bind-node", func(h *agentpb.Hello) { h.BindMounts = true })
+	node.desired(t)
+	states := answerBindChecks(node, func(check *agentpb.ValidateBindMounts) *agentpb.BindValidationResult {
+		return &agentpb.BindValidationResult{Mounts: check.Mounts}
+	})
+	owner := bindTestUser(t, server, base, "compose-owner", "user")
+	composeText := `services:
+  db:
+    image: postgres:17-alpine
+    volumes:
+      - data:/var/lib/postgresql/data
+      - /srv/postgres:/backup:ro
+    environment:
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+  web:
+    image: nginx:alpine
+    volumes:
+      - type: bind
+        source: /srv/site
+        target: /site
+        read_only: false
+volumes:
+  data:
+`
+	input := map[string]any{"nodeId": node.nodeID, "stack": map[string]any{"name": "archive", "compose": composeText, "env": map[string]string{"DB_PASSWORD": "secret-db"}, "registry": map[string]string{"server": "ghcr.io", "username": "registry-user", "password": "registry-secret"}}}
+	var request bindRequestResponse
+	if code := postJSON(t, owner, base+"/api/bind-requests", input, &request); code != http.StatusCreated || request.Status != "pending" {
+		t.Fatalf("submit compose request: %d %+v", code, request)
+	}
+	if request.Config.Stack == nil || len(request.Config.BindMounts) != 2 || request.Config.Env != nil {
+		t.Fatalf("frozen config or mount list: %+v", request.Config)
+	}
+	if code := postJSON(t, owner, base+"/api/admin/bind-requests/"+itoa(request.ID)+"/approve", struct{}{}, nil); code != http.StatusForbidden {
+		t.Fatalf("ordinary user approved compose request: %d", code)
+	}
+	var verified []bindMount
+	if code := postJSON(t, superadmin, base+"/api/admin/bind-requests/"+itoa(request.ID)+"/validate", struct{}{}, &verified); code != http.StatusOK || len(verified) != 2 || verified[0].Service != "db" || verified[1].Service != "web" {
+		t.Fatalf("per-service validation view: %d %+v", code, verified)
+	}
+	stacks, err := server.store.ListStacksByOwnerID(context.Background(), request.AuthorID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	apps, _ := server.store.ListAppsForNode(context.Background(), node.nodeID)
+	if len(stacks) != 0 || len(apps) != 0 {
+		t.Fatalf("resources existed before approval: stacks=%d apps=%d", len(stacks), len(apps))
+	}
+	var revealed map[string]string
+	if code := postJSON(t, superadmin, base+"/api/admin/bind-requests/"+itoa(request.ID)+"/reveal", struct{}{}, &revealed); code != http.StatusOK || revealed["DB_PASSWORD"] != "secret-db" || revealed["registry.password"] != "registry-secret" {
+		t.Fatalf("secret reveal: %d %+v", code, revealed)
+	}
+	if code := postJSON(t, superadmin, base+"/api/admin/bind-requests/"+itoa(request.ID)+"/approve", struct{}{}, &request); code != http.StatusOK || request.Status != "created" || request.StackID == 0 {
+		t.Fatalf("approve compose request: %d %+v", code, request)
+	}
+	var created stackResponse
+	if code := get(t, owner, base+"/api/stacks/"+itoa(request.StackID), &created); code != http.StatusOK || len(created.Volumes) != 1 || created.Volumes[0].Name != "data" {
+		t.Fatalf("bind mounts must not become stack volumes: %d %+v", code, created.Volumes)
+	}
+	select {
+	case desired := <-states:
+		byService := map[string]*agentpb.AppSpec{}
+		for _, app := range desired.Apps {
+			if app.Stack != nil {
+				byService[app.Stack.Service] = app
+			}
+		}
+		if len(byService) != 2 {
+			t.Fatalf("desired services: %+v", byService)
+		}
+		if db := byService["db"]; db.GetEnv()["POSTGRES_PASSWORD"] != "secret-db" || db.Stack.RegistryPassword != "registry-secret" || len(db.BindMounts) != 1 || db.BindMounts[0].Target != "/backup" || !db.BindMounts[0].ReadOnly || len(db.Stack.Volumes) != 1 {
+			t.Fatalf("database service mounts or env: %+v", db)
+		}
+		web := byService["web"]
+		if len(web.BindMounts) != 1 || web.BindMounts[0].Target != "/site" || web.BindMounts[0].ReadOnly {
+			t.Fatalf("web binds: %+v", web.BindMounts)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("no desired state after approval")
+	}
+	var updated stackResponse
+	if code := putJSON(t, owner, base+"/api/stacks/"+itoa(request.StackID), stackInput{Compose: composeText, Env: map[string]string{"DB_PASSWORD": "updated-secret"}}, &updated); code != http.StatusOK {
+		t.Fatalf("ordinary compose edit with unchanged approved binds: %d", code)
+	}
+	select {
+	case desired := <-states:
+		for _, app := range desired.Apps {
+			if app.Stack != nil && app.Stack.GetService() == "db" && (app.GetEnv()["POSTGRES_PASSWORD"] != "updated-secret" || len(app.BindMounts) != 1 || !app.GetBindAuthorized()) {
+				t.Fatalf("normal stack update lost approved bind access: %+v", app)
+			}
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("no desired state after normal stack update")
+	}
+	revokeURL := base + "/api/admin/stacks/" + itoa(request.StackID) + "/bind-mounts/revoke"
+	if code := postJSON(t, owner, revokeURL, struct{}{}, nil); code != http.StatusForbidden {
+		t.Fatalf("ordinary user revoked project binds: %d", code)
+	}
+	var revoked stackResponse
+	if code := postJSON(t, superadmin, revokeURL, struct{}{}, &revoked); code != http.StatusOK || len(revoked.Services) != 2 {
+		t.Fatalf("revoke project binds: %d %+v", code, revoked)
+	}
+	if code := postJSON(t, superadmin, base+"/api/stacks/"+itoa(request.StackID)+"/start", struct{}{}, nil); code != http.StatusConflict {
+		t.Fatalf("revoked project restarted: %d", code)
+	}
+	if code := putJSON(t, owner, base+"/api/stacks/"+itoa(request.StackID), stackInput{Compose: composeText, Env: map[string]string{"DB_PASSWORD": "secret-db"}}, nil); code != http.StatusConflict {
+		t.Fatalf("revoked project update restarted bind service: %d", code)
+	}
+	select {
+	case desired := <-states:
+		for _, app := range desired.Apps {
+			if app.Stack != nil && (app.GetBindAuthorized() || app.GetRunning()) {
+				t.Fatalf("bind service was not stopped and revoked: %+v", app)
+			}
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("no desired state after project revocation")
+	}
+	selfCompose := "services:\n  files:\n    image: nginx:alpine\n    volumes:\n      - /srv/self:/files\n"
+	var selfRequest bindRequestResponse
+	if code := postJSON(t, superadmin, base+"/api/bind-requests", map[string]any{"nodeId": node.nodeID, "stack": map[string]any{"name": "self-approved", "compose": selfCompose}}, &selfRequest); code != http.StatusCreated || selfRequest.Status != "created" || selfRequest.StackID == 0 {
+		t.Fatalf("superadmin compose auto-approval: %d %+v", code, selfRequest)
+	}
+}
+
+func TestComposeBindRetryResumesSameStackAfterDNSFailure(t *testing.T) {
+	base, server, superadmin, _ := setupStackServer(t)
+	node := connectFakeAgent(t, base, server, superadmin, "compose-retry-node", func(h *agentpb.Hello) { h.BindMounts = true })
+	node.desired(t)
+	states := answerBindChecks(node, func(check *agentpb.ValidateBindMounts) *agentpb.BindValidationResult {
+		return &agentpb.BindValidationResult{Mounts: check.Mounts}
+	})
+	owner := bindTestUser(t, server, base, "compose-retry-owner", "user")
+	provider := &failingBindDNS{Provider: dnstest.New("example.com.")}
+	provider.fail.Store(true)
+	server.newDNSProvider = func(string, map[string]string) (dns.Provider, error) { return provider, nil }
+	composeText := "services:\n  web:\n    image: nginx:alpine\n    volumes:\n      - /srv/web:/site:ro\n    x-forgeyard:\n      expose: { port: 80 }\n"
+	var request bindRequestResponse
+	if code := postJSON(t, owner, base+"/api/bind-requests", map[string]any{"nodeId": node.nodeID, "stack": map[string]any{"name": "retry-project", "compose": composeText}}, &request); code != http.StatusCreated {
+		t.Fatalf("submit: %d %+v", code, request)
+	}
+	approve := base + "/api/admin/bind-requests/" + itoa(request.ID) + "/approve"
+	if code := postJSON(t, superadmin, approve, struct{}{}, nil); code != http.StatusConflict {
+		t.Fatalf("expected staged failure: %d", code)
+	}
+	if code := get(t, owner, base+"/api/bind-requests/"+itoa(request.ID), &request); code != http.StatusOK || request.Status != "failed" || request.StackID == 0 {
+		t.Fatalf("failed request state: %d %+v", code, request)
+	}
+	stackID := request.StackID
+	stacks, err := server.store.ListStacksByOwnerID(context.Background(), request.AuthorID)
+	if err != nil || len(stacks) != 1 {
+		t.Fatalf("stack staging: %v %+v", err, stacks)
+	}
+	provider.fail.Store(false)
+	if code := postJSON(t, superadmin, base+"/api/admin/bind-requests/"+itoa(request.ID)+"/retry", struct{}{}, &request); code != http.StatusOK || request.Status != "created" || request.StackID != stackID {
+		t.Fatalf("retry: %d %+v", code, request)
+	}
+	stacks, err = server.store.ListStacksByOwnerID(context.Background(), request.AuthorID)
+	if err != nil || len(stacks) != 1 {
+		t.Fatalf("retry duplicated project: %v %+v", err, stacks)
+	}
+	apps, err := server.store.ListStackApps(context.Background(), stackID)
+	if err != nil || len(apps) != 1 {
+		t.Fatalf("retry duplicated services: %v %+v", err, apps)
+	}
+	select {
+	case <-states:
+	case <-time.After(5 * time.Second):
+		t.Fatal("no desired state after stack retry")
+	}
+}
+
 func TestSuperadminBindSubmissionAutoApprovesAndReportsFailure(t *testing.T) {
 	base, server, admin, _ := setupStackServer(t)
 	node := connectFakeAgent(t, base, server, admin, "bind-node", func(h *agentpb.Hello) { h.BindMounts = true })

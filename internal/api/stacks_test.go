@@ -209,6 +209,28 @@ func TestStackLifecycle(t *testing.T) {
 	}
 }
 
+func TestComposeBindMountsCannotBypassApprovalOnCreateOrUpdate(t *testing.T) {
+	url, server, admin, _ := setupStackServer(t)
+	bindCompose := "services:\n  web:\n    image: nginx:alpine\n    volumes:\n      - /srv/site:/site\n"
+	if code := postJSON(t, admin, url+"/api/stacks", stackInput{Name: "unapproved", Compose: bindCompose}, nil); code != http.StatusBadRequest {
+		t.Fatalf("direct bind create: %d", code)
+	}
+	if taken, err := server.store.NameTaken(context.Background(), "unapproved"); err != nil || taken != 0 {
+		t.Fatalf("direct create staged resources: %d %v", taken, err)
+	}
+	var stack stackResponse
+	if code := postJSON(t, admin, url+"/api/stacks", stackInput{Name: "editable", Compose: "services:\n  web: { image: nginx:alpine }\n"}, &stack); code != http.StatusCreated {
+		t.Fatalf("create baseline: %d", code)
+	}
+	if code := putJSON(t, admin, url+"/api/stacks/"+itoa(stack.ID), stackInput{Compose: bindCompose}, nil); code != http.StatusBadRequest {
+		t.Fatalf("direct bind update: %d", code)
+	}
+	stored, err := server.store.GetStack(context.Background(), stack.ID)
+	if err != nil || strings.Contains(stored.Compose, "/srv/site") {
+		t.Fatalf("rejected update changed saved compose: %+v %v", stored, err)
+	}
+}
+
 // TestStackReadOnlyForMembers: a member opens another member's project from a profile, read-only, and sees
 // only the apps its owner shows, never its compose file, its variables or its volumes.
 func TestStackReadOnlyForMembers(t *testing.T) {

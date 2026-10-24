@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { api, errorMessage, type BindRequest, type BindMount } from './api'
 import { since } from './ui'
 
-const statusLabels: Record<string, string> = { pending: 'En attente du superadmin', cancelled: 'Annulée', refused: 'Refusée', approving: 'Approbation et création en cours', failed: 'Création impossible', created: 'App créée' }
+const statusLabels: Record<string, string> = { pending: 'En attente du superadmin', cancelled: 'Annulée', refused: 'Refusée', approving: 'Approbation et création en cours', failed: 'Création impossible', created: 'Créée' }
 
 export default function BindRequests({ superadmin, route, go }: { superadmin: boolean; route: string[]; go: (path: string) => void }) {
   const review = superadmin && route[1] === 'review'
@@ -14,6 +14,7 @@ export default function BindRequests({ superadmin, route, go }: { superadmin: bo
   const [validated, setValidated] = useState<BindMount[] | null>(null)
   const [secrets, setSecrets] = useState<Record<string, string> | null>(null)
   const request = requests.find((r) => r.id === selected)
+  const requestName = request?.config.stack?.name ?? request?.config.name ?? 'Demande'
   const load = () => api.bindRequests(review).then((rows) => { setRequests(rows); setError('') }, (err) => setError(errorMessage(err)))
   useEffect(() => {
     let live = true
@@ -36,22 +37,24 @@ export default function BindRequests({ superadmin, route, go }: { superadmin: bo
     {error && <p className="error" role="alert">{error}</p>}
     {!selected ? <div className="panel">
       {requests.length === 0 && <p className="muted">Aucune demande.</p>}
-      {requests.map((r) => <a className="ticket-item" key={r.id} href={`#/${base}/${r.id}`}><span className="ticket-item-text"><strong>{r.config.name}</strong><span className="muted">{statusLabels[r.status] ?? r.status} · {r.nodeName} · {review ? `${r.authorName} · ` : ''}{since(r.createdAt)}</span></span></a>)}
+      {requests.map((r) => <a className="ticket-item" key={r.id} href={`#/${base}/${r.id}`}><span className="ticket-item-text"><strong>{r.config.stack?.name ?? r.config.name}</strong><span className="muted">{r.config.stack ? 'Projet Compose · ' : ''}{statusLabels[r.status] ?? r.status} · {r.nodeName} · {review ? `${r.authorName} · ` : ''}{since(r.createdAt)}</span></span></a>)}
     </div> : request ? <article className="panel">
       <button type="button" className="link-button" onClick={() => go(base)}>← Retour aux demandes</button>
-      <h2>{request.config.name}</h2>
+      <h2>{requestName}</h2>
       <p>{statusLabels[request.status] ?? request.status}</p>
       {request.appId && <p><a className="btn" href={`#/apps/${request.appId}`}>Ouvrir l’app</a> · Déploiement : {request.deploymentState ?? 'en attente'}</p>}
+      {request.stackId && <p><a className="btn" href={`#/projects/${request.stackId}`}>Ouvrir le projet</a></p>}
       {request.deploymentError && <p className="error" role="alert">{request.deploymentError}</p>}
       {review && (request.status === 'pending' || request.status === 'failed') && <div className="actions">
         <button className="btn" type="button" disabled={busy} onClick={() => act(async () => setValidated(await api.validateBindRequest(request.id)))}>Vérifier les chemins sur le node</button>
         <button className="btn btn-primary" type="button" disabled={busy} onClick={() => act(() => request.status === 'failed' ? api.retryBindRequest(request.id) : api.approveBindRequest(request.id))}>{request.status === 'failed' ? 'Relancer la création' : 'Approuver et créer'}</button>
       </div>}
-      {validated && <div><h3>Chemins vérifiés par l’agent</h3><p className="muted">L’approbation vérifiera à nouveau les chemins.</p><ul>{validated.map((m,i) => <li key={i}><code>{m.source}</code> → <code>{m.target}</code> ({m.readOnly ? 'lecture seule' : 'lecture / écriture'})</li>)}</ul></div>}
+      {validated && <div><h3>Chemins vérifiés par l’agent</h3><p className="muted">L’approbation vérifiera à nouveau les chemins.</p><ul>{validated.map((m,i) => <li key={i}>{m.service && <strong>{m.service}: </strong>}<code>{m.source}</code> → <code>{m.target}</code> ({m.readOnly ? 'lecture seule' : 'lecture / écriture'})</li>)}</ul></div>}
       {request.reason && <p><strong>Motif :</strong> {request.reason}</p>}
-      <dl className="aside-facts"><dt>Auteur</dt><dd>{request.authorName}</dd><dt>Node</dt><dd>{request.nodeName}</dd><dt>Source</dt><dd>{request.config.kind === 'sandbox' ? 'Sandbox · SSH' : request.config.dockerfile ? 'Dockerfile' : 'Image Docker'}</dd>{request.config.dockerfile ? <><dt>Dockerfile</dt><dd><pre className="mono">{request.config.dockerfile}</pre></dd></> : <><dt>Image</dt><dd>{request.config.image}</dd></>}<dt>Port</dt><dd>{request.config.kind === 'sandbox' ? 'Aucune adresse web' : request.config.port}</dd><dt>Mémoire</dt><dd>{request.config.memoryMb} Mo</dd></dl>
+      <dl className="aside-facts"><dt>Auteur</dt><dd>{request.authorName}</dd><dt>Node</dt><dd>{request.nodeName}</dd>{request.config.stack ? <><dt>Type</dt><dd>Projet Compose</dd><dt>Services</dt><dd>{request.config.stack.compose.match(/^\s{2}[a-z0-9][a-z0-9_-]*:/gm)?.length ?? '—'}</dd></> : <><dt>Source</dt><dd>{request.config.kind === 'sandbox' ? 'Sandbox · SSH' : request.config.dockerfile ? 'Dockerfile' : 'Image Docker'}</dd>{request.config.dockerfile ? <><dt>Dockerfile</dt><dd><pre className="mono">{request.config.dockerfile}</pre></dd></> : <><dt>Image</dt><dd>{request.config.image}</dd></>}<dt>Port</dt><dd>{request.config.kind === 'sandbox' ? 'Aucune adresse web' : request.config.port}</dd><dt>Mémoire</dt><dd>{request.config.memoryMb} Mo</dd></>}</dl>
+      {request.config.stack && <details className="field"><summary>Compose soumis</summary><pre className="mono">{request.config.stack.compose}</pre></details>}
       <h3>Montages demandés</h3>
-      <div className="table-scroll"><table><thead><tr><th>Source sur l’hôte</th><th>Destination</th><th>Accès</th></tr></thead><tbody>{request.config.bindMounts.map((m,i) => <tr key={i}><td><code>{m.source}</code></td><td><code>{m.target}</code></td><td>{m.readOnly ? 'Lecture seule' : 'Lecture / écriture'}</td></tr>)}</tbody></table></div>
+      <div className="table-scroll"><table><thead><tr>{request.config.stack && <th>Service</th>}<th>Source sur l’hôte</th><th>Destination</th><th>Accès</th></tr></thead><tbody>{request.config.bindMounts.map((m,i) => <tr key={i}>{request.config.stack && <td>{m.service}</td>}<td><code>{m.source}</code></td><td><code>{m.target}</code></td><td>{m.readOnly ? 'Lecture seule' : 'Lecture / écriture'}</td></tr>)}</tbody></table></div>
       {!!request.config.volumes?.length && <p>Volumes Docker : {request.config.volumes.map((v) => <code key={v}>{v} </code>)}</p>}
       {request.config.gpu && <p>GPU : {request.config.gpu.all ? 'tous les GPU NVIDIA du node' : request.config.gpu.ids?.join(', ')}</p>}
       {request.config.logoImage && <img className="app-logo" width={64} height={64} src={request.config.logoImage} alt="Logo soumis" />}

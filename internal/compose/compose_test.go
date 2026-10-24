@@ -107,6 +107,40 @@ func TestParseShameless(t *testing.T) {
 	}
 }
 
+func TestParseBindMountsAlongsideNamedVolumes(t *testing.T) {
+	src := `services:
+  web:
+    image: nginx:alpine
+    volumes:
+      - data:/var/lib/data
+      - /srv/default:/default
+      - /srv/media:/media:ro
+      - type: bind
+        source: /srv/cache
+        target: /cache
+        read_only: false
+volumes:
+  data:
+`
+	st, errs := Parse([]byte(src), nil)
+	if errs != nil {
+		t.Fatal(errs)
+	}
+	mounts := st.Services[0].Volumes
+	if len(mounts) != 4 || mounts[0].Volume != "data" || mounts[0].Kind == "bind" {
+		t.Fatalf("named volume was not preserved: %+v", mounts)
+	}
+	if mounts[1].Kind != "bind" || mounts[1].Source != "/srv/default" || mounts[1].Target != "/default" || !mounts[1].ReadOnly {
+		t.Fatalf("default bind syntax must be read-only: %+v", mounts[1])
+	}
+	if mounts[2].Kind != "bind" || mounts[2].Source != "/srv/media" || mounts[2].Target != "/media" || !mounts[2].ReadOnly {
+		t.Fatalf("short bind syntax: %+v", mounts[2])
+	}
+	if mounts[3].Kind != "bind" || mounts[3].Source != "/srv/cache" || mounts[3].Target != "/cache" || mounts[3].ReadOnly {
+		t.Fatalf("long bind syntax: %+v", mounts[3])
+	}
+}
+
 func TestParseRefusesWhatIsNotSupported(t *testing.T) {
 	src := `services:
   app:
@@ -136,7 +170,6 @@ networks:
 		3:  "build n'est pas pris en charge",
 		4:  "ports n'est pas pris en charge",
 		7:  "pas de bind mount",
-		8:  "pas de bind mount",
 		9:  "doit être déclaré sous volumes:",
 		10: "volume anonyme",
 		11: "env_file",

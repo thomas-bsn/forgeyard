@@ -118,6 +118,7 @@ type BindRequest struct {
 	DecidedBy      sql.NullInt64
 	AppID          sql.NullInt64
 	ApprovedMounts string
+	StackID        sql.NullInt64
 }
 
 type ContainerEvent struct {

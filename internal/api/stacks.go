@@ -95,6 +95,36 @@ func planServices(stack string, st *compose.Stack) []plannedApp {
 	return out
 }
 
+func hasComposeBindMounts(st *compose.Stack) bool {
+	for _, service := range st.Services {
+		for _, mount := range service.Volumes {
+			if mount.Kind == "bind" {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func sameComposeBindMounts(a, b *compose.Stack) bool {
+	mounts := func(st *compose.Stack) map[string]string {
+		out := map[string]string{}
+		for _, svc := range st.Services {
+			var bind []compose.Mount
+			for _, m := range svc.Volumes {
+				if m.Kind == "bind" {
+					bind = append(bind, m)
+				}
+			}
+			if len(bind) > 0 {
+				out[svc.Name] = string(must(json.Marshal(bind)))
+			}
+		}
+		return out
+	}
+	return maps.Equal(mounts(a), mounts(b))
+}
+
 func lastPathPart(image string) string {
 	if i := strings.LastIndex(image, "/"); i >= 0 {
 		return image[i+1:]
@@ -317,6 +347,9 @@ func stackServiceSpec(st db.Stack, a db.App, appIDs map[string]int64, reg regist
 		out.DependsOn = append(out.DependsOn, &agentpb.Dependency{AppId: appIDs[d.Service], Service: d.Service, Condition: d.Condition})
 	}
 	for _, m := range svc.Volumes {
+		if m.Kind == "bind" {
+			continue
+		}
 		out.Volumes = append(out.Volumes, &agentpb.NamedVolume{Name: stackVolume(st, m.Volume), Target: m.Target, ReadOnly: m.ReadOnly, Volume: m.Volume})
 	}
 	return out
@@ -518,6 +551,9 @@ func (s *Server) describeStack(ctx context.Context, r *http.Request, st db.Stack
 	var names []string
 	for _, svc := range parsed {
 		for _, m := range svc.Volumes {
+			if m.Kind == "bind" {
+				continue
+			}
 			v, ok := volumes[m.Volume]
 			if !ok {
 				docker := stackVolume(st, m.Volume)
@@ -743,6 +779,10 @@ func (s *Server) handleCreateStack(w http.ResponseWriter, r *http.Request) {
 		writeStackErrors(w, errs)
 		return
 	}
+	if hasComposeBindMounts(parsed) {
+		writeError(w, http.StatusBadRequest, "les bind mounts Compose doivent être soumis dans une demande approuvée par le superadmin")
+		return
+	}
 	user := currentUser(r)
 	if user.AppsSuspended != 0 {
 		writeError(w, http.StatusForbidden, errSuspended)
@@ -893,6 +933,26 @@ func (s *Server) handleUpdateStack(w http.ResponseWriter, r *http.Request) {
 		s.internalError(w, r, err)
 		return
 	}
+	for _, a := range apps {
+		if len(appBinds(a)) > 0 && a.BindAuthorized == 0 {
+			writeError(w, http.StatusConflict, "l'autorisation des bind mounts du projet est révoquée")
+			return
+		}
+	}
+	oldEnv, err := s.openStackEnv(st.EnvSealed)
+	if err != nil {
+		s.internalError(w, r, err)
+		return
+	}
+	oldCompose, oldErrs := compose.Parse([]byte(st.Compose), oldEnv)
+	if oldErrs != nil {
+		s.internalError(w, r, errors.New(oldErrs.Error()))
+		return
+	}
+	if !sameComposeBindMounts(oldCompose, parsed) {
+		writeError(w, http.StatusBadRequest, "modifier les bind mounts d'un projet nécessite une nouvelle demande approuvée par le superadmin")
+		return
+	}
 	var existing []stackApp
 	own := map[string]bool{}
 	for _, a := range apps {
@@ -1008,6 +1068,17 @@ func (s *Server) handleStackAction(w http.ResponseWriter, r *http.Request) {
 	params := db.SetStackRunningParams{UpdatedAt: time.Now().Unix(), StackID: st.ID}
 	switch action {
 	case "start", "redeploy":
+		apps, err := s.store.ListStackApps(ctx, st.ID)
+		if err != nil {
+			s.internalError(w, r, err)
+			return
+		}
+		for _, a := range apps {
+			if len(appBinds(a)) > 0 && a.BindAuthorized == 0 {
+				writeError(w, http.StatusConflict, "l'autorisation des bind mounts du projet est révoquée")
+				return
+			}
+		}
 		owner, err := s.store.GetUserByID(ctx, st.OwnerID)
 		if err != nil {
 			s.internalError(w, r, err)
