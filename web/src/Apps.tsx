@@ -131,7 +131,7 @@ export default function Apps({
     const app = apps?.find((a) => a.id === Number(route[1]))
     if (!apps) return null
     if (!app) return <NotFound what="Cette app n’existe plus." go={go} />
-    return <AppDetail key={app.id + (route[2] ?? '')} app={app} admin={admin} nodes={nodes} onChange={load} go={go} openTab={route[2] === 'network' ? 'network' : undefined} />
+    return <AppDetail key={app.id + (route[2] ?? '')} app={app} admin={admin} superadmin={superadmin} nodes={nodes} onChange={load} go={go} openTab={route[2] === 'network' ? 'network' : undefined} />
   }
   if (route[0] === 'containers' && route[2]) {
     const c = containers.find((x) => x.nodeId === Number(route[1]) && x.id === route[2])
@@ -693,11 +693,11 @@ function WithMenu({ item, admin, onChange, place, children }: { item: Item; admi
               Arrêter
             </button>
           ) : (
-            <button type="button" role="menuitem" disabled={app.suspended} onClick={act(() => api.appAction(app.id, 'start'))}>
+            <button type="button" role="menuitem" disabled={app.suspended || (!!app.bindMounts?.length && !app.bindAuthorized)} onClick={act(() => api.appAction(app.id, 'start'))}>
               Démarrer
             </button>
           )}
-          <button type="button" role="menuitem" disabled={app.suspended} onClick={act(() => api.appAction(app.id, 'redeploy'))}>
+          <button type="button" role="menuitem" disabled={app.suspended || (!!app.bindMounts?.length && !app.bindAuthorized)} onClick={act(() => api.appAction(app.id, 'redeploy'))}>
             Redéployer
           </button>
           {app.stackId ? (
@@ -1452,6 +1452,7 @@ type DetailTab = 'observability' | 'logs' | 'terminal' | 'network' | 'events'
 function AppDetail({
   app,
   admin,
+  superadmin,
   nodes,
   onChange,
   go,
@@ -1459,6 +1460,7 @@ function AppDetail({
 }: {
   app: App
   admin: boolean
+  superadmin: boolean
   nodes: Node[]
   onChange: () => void
   go: (path: string) => void
@@ -1491,6 +1493,7 @@ function AppDetail({
   }
 
   const tone = appTone(app)
+  const bindsRevoked = !!app.bindMounts?.length && !app.bindAuthorized
   const [redeploying, startRedeploy] = useRedeploy(['pending', 'pulling', 'building', 'creating', 'deploying'].includes(app.state))
 
   return (
@@ -1636,6 +1639,18 @@ function AppDetail({
         )}
         {app.error && <p className="error">{app.error}</p>}
 
+        {!!app.bindMounts?.length && <section className="field">
+          <h3>Accès aux fichiers hôtes</h3>
+          <p>{app.bindAuthorized ? 'Autorisation approuvée' : 'Autorisation révoquée'}</p>
+          {bindsRevoked && <p className="hint">{app.state === 'node-offline'
+            ? 'Node hors ligne : l’arrêt sera appliqué à sa reconnexion et reste à confirmer.'
+            : ['stopped', 'exited', 'finished', 'completed'].includes(app.state)
+              ? 'Conteneur arrêté. Le redémarrage avec ces montages est bloqué.'
+              : `Arrêt demandé. État observé : ${stateText(app)}.`}</p>}
+          <ul>{app.bindMounts.map((m, i) => <li key={i}><code>{m.source}</code> → <code>{m.target}</code> · {m.readOnly ? 'lecture seule' : 'lecture / écriture'}</li>)}</ul>
+          {superadmin && app.bindAuthorized && !app.stackId && <button type="button" className="btn danger" disabled={busy} onClick={() => run(() => api.revokeAppBinds(app.id))}>Révoquer l’autorisation</button>}
+        </section>}
+
         <dl className="kv">
           <dt>Image</dt>
           <dd className="mono">{app.image}</dd>
@@ -1713,7 +1728,7 @@ function AppDetail({
                 type="button"
                 className={`btn ${redeploying ? 'btn-busy' : ''}`}
                 aria-busy={redeploying}
-                disabled={busy || redeploying || app.suspended}
+                disabled={busy || redeploying || app.suspended || bindsRevoked}
                 onClick={() => {
                   startRedeploy()
                   run(() => api.appAction(app.id, 'redeploy'))
@@ -1726,8 +1741,8 @@ function AppDetail({
             <button
               type="button"
               className="btn btn-primary detail-actions-wide"
-              disabled={busy || app.suspended}
-              title={app.suspended ? 'Les apps de ce compte sont suspendues' : undefined}
+              disabled={busy || app.suspended || bindsRevoked}
+              title={bindsRevoked ? 'L’autorisation de bind mounts est révoquée' : app.suspended ? 'Les apps de ce compte sont suspendues' : undefined}
               onClick={() => run(() => api.appAction(app.id, 'start'))}
             >
               Démarrer
