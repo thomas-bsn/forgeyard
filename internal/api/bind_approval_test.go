@@ -150,6 +150,43 @@ func TestSuperadminBindSubmissionAutoApprovesAndReportsFailure(t *testing.T) {
 	}
 }
 
+func TestSuperadminBindSubmissionAutoApprovesDockerfileAndSandbox(t *testing.T) {
+	for _, tc := range []struct {
+		name, kind, image, dockerfile string
+		port                          int
+	}{
+		{name: "root-file", kind: kindWeb, dockerfile: "FROM alpine:3.21\nRUN echo ok", port: 8080},
+		{name: "root-box", kind: kindSandbox, image: "debian:bookworm"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			base, server, superadmin, _ := setupStackServer(t)
+			node := connectFakeAgent(t, base, server, superadmin, "auto-source-node", func(h *agentpb.Hello) { h.BindMounts = true })
+			node.desired(t)
+			states := answerBindChecks(node, func(check *agentpb.ValidateBindMounts) *agentpb.BindValidationResult {
+				return &agentpb.BindValidationResult{Mounts: check.Mounts}
+			})
+			input := map[string]any{"name": tc.name, "kind": tc.kind, "image": tc.image, "dockerfile": tc.dockerfile, "port": tc.port, "nodeId": node.nodeID, "bindMounts": []map[string]any{{"source": "/srv/files", "target": "/files"}}}
+			var request bindRequestResponse
+			if code := postJSON(t, superadmin, base+"/api/bind-requests", input, &request); code != http.StatusCreated || request.Status != "created" || request.AppID == 0 {
+				t.Fatalf("auto-approved request: %d %+v", code, request)
+			}
+			select {
+			case desired := <-states:
+				app := desired.Apps[0]
+				wantImage := tc.image
+				if tc.dockerfile != "" {
+					wantImage = builtImage(tc.name, tc.dockerfile)
+				}
+				if app.Image != wantImage || app.Dockerfile != tc.dockerfile || app.GetSandbox() != (tc.kind == kindSandbox) || len(app.BindMounts) != 1 {
+					t.Fatalf("auto-approved source spec: %v", app)
+				}
+			case <-time.After(5 * time.Second):
+				t.Fatal("auto-approval did not deploy")
+			}
+		})
+	}
+}
+
 func TestBindApprovalConcurrentDecisionCreatesOnce(t *testing.T) {
 	base, server, admin, _ := setupStackServer(t)
 	owner := bindTestUser(t, server, base, "author", "user")

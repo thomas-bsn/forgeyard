@@ -1196,7 +1196,7 @@ function AppFormModal({
           <>
             <dt>Machine</dt>
             <dd>
-              {'cpus' in previewNode ? `${previewNode.cpus} CPU · ${previewNode.apps} app${previewNode.apps > 1 ? 's' : ''}` : 'Node sélectionné'}
+              {previewNode.cpus} CPU · {previewNode.apps} app{previewNode.apps > 1 ? 's' : ''}
             </dd>
             {!useBinds && free !== undefined && (
               <>
