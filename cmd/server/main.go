@@ -136,7 +136,7 @@ func run(addr, agentAddr, dataDir string, logger *slog.Logger) error {
 		sshPort, _ = strconv.Atoi(envOr("FORGEYARD_SSH_PORT", p))
 	}
 	apiServer := api.NewServer(api.Deps{
-		Store: st, Logger: logger, Secrets: box, CA: ca, Nodes: hub, AgentPort: agentPort,
+		DataDir: dataDir, Store: st, Logger: logger, Secrets: box, CA: ca, Nodes: hub, AgentPort: agentPort,
 		// The machine publishes the HTTP port as is (docker-compose.yml): its Traefik reaches tunneled apps there.
 		HTTPPort:       envOr("FORGEYARD_HTTP_HOST_PORT", httpPort),
 		TrustedProxies: trustedProxies,

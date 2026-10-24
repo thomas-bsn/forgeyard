@@ -22,6 +22,10 @@ func (s *Server) handleMoveApp(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	if len(appBinds(a)) > 0 {
+		writeError(w, http.StatusConflict, "le changement de node nécessite une nouvelle approbation des bind mounts")
+		return
+	}
 	var body struct {
 		NodeID int64 `json:"nodeId"`
 		// LeaveData confirms the app starts without its data on the new node: its volumes stay on this one.

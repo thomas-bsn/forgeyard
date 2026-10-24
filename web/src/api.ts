@@ -432,7 +432,7 @@ export type BindRequestInput = AppInput & { bindMounts: BindMount[]; logoImage?:
 export type BindRequest = {
   id: number; authorId: number; authorName: string; nodeName: string
   config: Omit<BindRequestInput, 'env'> & { env?: null }
-  envKeys: string[]; status: string; reason: string; createdAt: number; decidedAt: number
+  envKeys: string[]; status: string; reason: string; createdAt: number; decidedAt: number; appId?: number; deploymentState?: string; deploymentError?: string
 }
 
 /** The GPUs of its node an app may use: all, or some by ID. Access only, not a reservation. */
@@ -568,6 +568,9 @@ export const api = {
   apps: () => request<App[]>('GET', '/api/apps'),
   app: (id: number) => request<App>('GET', `/api/apps/${id}`),
   bindNodes: () => request<BindNode[]>('GET', '/api/bind-requests/nodes'),
+  approveBindRequest: (id: number) => request<BindRequest>('POST', `/api/admin/bind-requests/${id}/approve`, {}),
+  retryBindRequest: (id: number) => request<BindRequest>('POST', `/api/admin/bind-requests/${id}/retry`, {}),
+  validateBindRequest: (id: number) => request<BindMount[]>('POST', `/api/admin/bind-requests/${id}/validate`, {}),
   bindRequests: (review = false) => request<BindRequest[]>('GET', review ? '/api/admin/bind-requests' : '/api/bind-requests'),
   bindRequest: (id: number) => request<BindRequest>('GET', `/api/bind-requests/${id}`),
   createBindRequest: (input: BindRequestInput) => request<BindRequest>('POST', '/api/bind-requests', input),

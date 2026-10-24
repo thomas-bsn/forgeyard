@@ -65,6 +65,9 @@ func New(host string) (*Client, error) {
 	return &Client{http: &http.Client{Transport: transport}, path: path}, nil
 }
 
+// SocketPath is the configured daemon control socket, which must never be exposed to an app.
+func (c *Client) SocketPath() string { return c.path }
+
 // Info is the part of GET /info the agent reports.
 type Info struct {
 	ServerVersion     string `json:"ServerVersion"`

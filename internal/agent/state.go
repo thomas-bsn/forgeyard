@@ -31,7 +31,8 @@ type Config struct {
 // State is a joined node's identity on disk.
 type State struct {
 	Config
-	TLS *tls.Config
+	Directory string // actual native identity directory, not part of the saved join config
+	TLS       *tls.Config
 }
 
 // ErrNotJoined means the state directory holds no node identity yet.
@@ -64,7 +65,7 @@ func LoadState(dir string) (*State, error) {
 	}
 	pool := x509.NewCertPool()
 	pool.AddCert(caCert)
-	return &State{Config: cfg, TLS: &tls.Config{
+	return &State{Directory: dir, Config: cfg, TLS: &tls.Config{
 		Certificates: []tls.Certificate{pair},
 		RootCAs:      pool,
 		// The control plane's agent-port certificate always carries this name, whatever address is dialed.

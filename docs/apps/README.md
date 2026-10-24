@@ -219,4 +219,8 @@ L'onglet **Terminal** de la page d'une app (et d'un conteneur externe, pour le s
 
 La soumission conserve la configuration et les variables chiffrées sans créer d'app ni réserver son nom. **Mes demandes** affiche le suivi et permet d'annuler une demande en attente. Pour modifier une configuration soumise, il faut faire une nouvelle demande. Seul le superadmin accède à la file de traitement, peut révéler explicitement les variables secrètes et refuser avec un motif obligatoire. Les valeurs secrètes ne figurent pas dans les réponses ordinaires.
 
-Cette première tranche couvre la soumission, le suivi et le refus. L'approbation et le déploiement avec bind mounts seront ajoutés par la tranche suivante ; aucun montage de l'hôte n'est encore effectué.
+Seul le superadmin peut vérifier les chemins sur le node, approuver et déclencher la création, ou relancer la même configuration après un échec. Sa propre soumission vaut approbation enregistrée. Les conflits et erreurs restent visibles sur la demande, avec un lien vers l'app et son état de déploiement. Les sources sont vérifiées à nouveau au déploiement ; un dossier manquant n'est jamais créé automatiquement. Un agent ancien ou hors ligne ne peut pas approuver ces accès.
+
+L'autorisation porte sur les montages, pas sur le code : le propriétaire et les admins conservent image, variables, terminal et SSH. Un déplacement ou un changement des montages nécessite une nouvelle approbation ; ces changements restent bloqués tant que leur parcours dédié n'est pas disponible. Les données hôtes ne sont jamais supprimées avec l'app et sont exclues des sauvegardes Forgeyard.
+
+Cette tranche couvre les apps Image Docker ; Dockerfile, Sandbox et Compose seront ajoutés par les tickets suivants.

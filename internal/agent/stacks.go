@@ -193,6 +193,9 @@ func restartPolicy(st *agentpb.StackService) map[string]any {
 // createContainer creates an app's container. An exposed service of a stack joins Forgeyard's network
 // too, where Traefik reaches it and other apps know it by its app name.
 func (r *Reconciler) createContainer(ctx context.Context, name string, app *agentpb.AppSpec, hash, ingressMode string) error {
+	if err := r.checkAppBinds(ctx, app); err != nil {
+		return err
+	}
 	if err := r.dc.Create(ctx, name, appContainerConfig(app, hash, ingressMode)); err != nil {
 		return fmt.Errorf("création du conteneur : %w", err)
 	}

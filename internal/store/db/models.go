@@ -50,6 +50,8 @@ type App struct {
 	Service        string
 	ServiceSpec    string
 	Gpu            string
+	BindMounts     string
+	BindAuthorized int64
 }
 
 type AppEvent struct {
@@ -104,16 +106,18 @@ type Banner struct {
 }
 
 type BindRequest struct {
-	ID        int64
-	AuthorID  int64
-	NodeID    int64
-	Config    string
-	EnvSealed string
-	Status    string
-	Reason    string
-	CreatedAt int64
-	DecidedAt int64
-	DecidedBy sql.NullInt64
+	ID             int64
+	AuthorID       int64
+	NodeID         int64
+	Config         string
+	EnvSealed      string
+	Status         string
+	Reason         string
+	CreatedAt      int64
+	DecidedAt      int64
+	DecidedBy      sql.NullInt64
+	AppID          sql.NullInt64
+	ApprovedMounts string
 }
 
 type ContainerEvent struct {

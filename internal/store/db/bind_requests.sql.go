@@ -10,9 +10,46 @@ import (
 	"database/sql"
 )
 
+const claimBindRequest = `-- name: ClaimBindRequest :execrows
+UPDATE bind_requests SET status = 'approving', reason = '', decided_at = ?, decided_by = ?
+WHERE id = ? AND (status IN ('pending', 'failed') OR (status = 'approving' AND decided_at < ?))
+`
+
+type ClaimBindRequestParams struct {
+	DecidedAt   int64
+	DecidedBy   sql.NullInt64
+	ID          int64
+	DecidedAt_2 int64
+}
+
+func (q *Queries) ClaimBindRequest(ctx context.Context, arg ClaimBindRequestParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, claimBindRequest,
+		arg.DecidedAt,
+		arg.DecidedBy,
+		arg.ID,
+		arg.DecidedAt_2,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
+const completeBindRequest = `-- name: CompleteBindRequest :execrows
+UPDATE bind_requests SET status = 'created', reason = '' WHERE id = ? AND status = 'approving'
+`
+
+func (q *Queries) CompleteBindRequest(ctx context.Context, id int64) (int64, error) {
+	result, err := q.db.ExecContext(ctx, completeBindRequest, id)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
 const createBindRequest = `-- name: CreateBindRequest :one
 INSERT INTO bind_requests(author_id, node_id, config, env_sealed, created_at)
-VALUES (?, ?, ?, ?, ?) RETURNING id, author_id, node_id, config, env_sealed, status, reason, created_at, decided_at, decided_by
+VALUES (?, ?, ?, ?, ?) RETURNING id, author_id, node_id, config, env_sealed, status, reason, created_at, decided_at, decided_by, app_id, approved_mounts
 `
 
 type CreateBindRequestParams struct {
@@ -43,6 +80,8 @@ func (q *Queries) CreateBindRequest(ctx context.Context, arg CreateBindRequestPa
 		&i.CreatedAt,
 		&i.DecidedAt,
 		&i.DecidedBy,
+		&i.AppID,
+		&i.ApprovedMounts,
 	)
 	return i, err
 }
@@ -74,8 +113,22 @@ func (q *Queries) DecideBindRequest(ctx context.Context, arg DecideBindRequestPa
 	return result.RowsAffected()
 }
 
+const failBindRequest = `-- name: FailBindRequest :exec
+UPDATE bind_requests SET status = 'failed', reason = ? WHERE id = ? AND status = 'approving'
+`
+
+type FailBindRequestParams struct {
+	Reason string
+	ID     int64
+}
+
+func (q *Queries) FailBindRequest(ctx context.Context, arg FailBindRequestParams) error {
+	_, err := q.db.ExecContext(ctx, failBindRequest, arg.Reason, arg.ID)
+	return err
+}
+
 const getBindRequest = `-- name: GetBindRequest :one
-SELECT id, author_id, node_id, config, env_sealed, status, reason, created_at, decided_at, decided_by FROM bind_requests WHERE id = ?
+SELECT id, author_id, node_id, config, env_sealed, status, reason, created_at, decided_at, decided_by, app_id, approved_mounts FROM bind_requests WHERE id = ?
 `
 
 func (q *Queries) GetBindRequest(ctx context.Context, id int64) (BindRequest, error) {
@@ -92,12 +145,29 @@ func (q *Queries) GetBindRequest(ctx context.Context, id int64) (BindRequest, er
 		&i.CreatedAt,
 		&i.DecidedAt,
 		&i.DecidedBy,
+		&i.AppID,
+		&i.ApprovedMounts,
 	)
 	return i, err
 }
 
+const linkBindRequestApp = `-- name: LinkBindRequestApp :exec
+UPDATE bind_requests SET app_id = ?, approved_mounts = ? WHERE id = ? AND status = 'approving'
+`
+
+type LinkBindRequestAppParams struct {
+	AppID          sql.NullInt64
+	ApprovedMounts string
+	ID             int64
+}
+
+func (q *Queries) LinkBindRequestApp(ctx context.Context, arg LinkBindRequestAppParams) error {
+	_, err := q.db.ExecContext(ctx, linkBindRequestApp, arg.AppID, arg.ApprovedMounts, arg.ID)
+	return err
+}
+
 const listBindRequests = `-- name: ListBindRequests :many
-SELECT id, author_id, node_id, config, env_sealed, status, reason, created_at, decided_at, decided_by FROM bind_requests ORDER BY id DESC
+SELECT id, author_id, node_id, config, env_sealed, status, reason, created_at, decided_at, decided_by, app_id, approved_mounts FROM bind_requests ORDER BY id DESC
 `
 
 func (q *Queries) ListBindRequests(ctx context.Context) ([]BindRequest, error) {
@@ -120,6 +190,8 @@ func (q *Queries) ListBindRequests(ctx context.Context) ([]BindRequest, error) {
 			&i.CreatedAt,
 			&i.DecidedAt,
 			&i.DecidedBy,
+			&i.AppID,
+			&i.ApprovedMounts,
 		); err != nil {
 			return nil, err
 		}
@@ -135,7 +207,7 @@ func (q *Queries) ListBindRequests(ctx context.Context) ([]BindRequest, error) {
 }
 
 const listOwnBindRequests = `-- name: ListOwnBindRequests :many
-SELECT id, author_id, node_id, config, env_sealed, status, reason, created_at, decided_at, decided_by FROM bind_requests WHERE author_id = ? ORDER BY id DESC
+SELECT id, author_id, node_id, config, env_sealed, status, reason, created_at, decided_at, decided_by, app_id, approved_mounts FROM bind_requests WHERE author_id = ? ORDER BY id DESC
 `
 
 func (q *Queries) ListOwnBindRequests(ctx context.Context, authorID int64) ([]BindRequest, error) {
@@ -158,6 +230,8 @@ func (q *Queries) ListOwnBindRequests(ctx context.Context, authorID int64) ([]Bi
 			&i.CreatedAt,
 			&i.DecidedAt,
 			&i.DecidedBy,
+			&i.AppID,
+			&i.ApprovedMounts,
 		); err != nil {
 			return nil, err
 		}
@@ -170,4 +244,19 @@ func (q *Queries) ListOwnBindRequests(ctx context.Context, authorID int64) ([]Bi
 		return nil, err
 	}
 	return items, nil
+}
+
+const setAppBindMounts = `-- name: SetAppBindMounts :exec
+UPDATE apps SET bind_mounts = ?, bind_authorized = ? WHERE id = ?
+`
+
+type SetAppBindMountsParams struct {
+	BindMounts     string
+	BindAuthorized int64
+	ID             int64
+}
+
+func (q *Queries) SetAppBindMounts(ctx context.Context, arg SetAppBindMountsParams) error {
+	_, err := q.db.ExecContext(ctx, setAppBindMounts, arg.BindMounts, arg.BindAuthorized, arg.ID)
+	return err
 }

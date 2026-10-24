@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"path/filepath"
 	"sync"
 	"time"
 
@@ -46,6 +47,11 @@ func Run(ctx context.Context, st *State, dc *docker.Client, logger *slog.Logger)
 	var rec *Reconciler
 	if dc != nil {
 		rec = NewReconciler(dc, logger)
+		if os.Getenv("FORGEYARD_HOST_ROOT") == "" && st.Directory != "" {
+			if p, err := filepath.Abs(st.Directory); err == nil {
+				rec.protectedPaths = []string{p}
+			}
+		}
 		go rec.Run(ctx)
 	}
 
@@ -88,7 +94,7 @@ func session(ctx context.Context, client agentpb.AgentServiceClient, dc *docker.
 	// A failed Send only says io.EOF; the reason (e.g. PermissionDenied for a removed node) comes from
 	// Recv, so the error is always read there.
 	_ = stream.Send(&agentpb.AgentMessage{Msg: &agentpb.AgentMessage_Hello{
-		Hello: &agentpb.Hello{AgentVersion: version.Commit, SelfUpdate: canSelfUpdate(ctx, dc), Info: nodeInfo(ctx, dc, logger)},
+		Hello: &agentpb.Hello{BindMounts: true, AgentVersion: version.Commit, SelfUpdate: canSelfUpdate(ctx, dc), Info: nodeInfo(ctx, dc, logger)},
 	}})
 	msg, err := stream.Recv()
 	if err != nil {
@@ -276,6 +282,21 @@ func session(ctx context.Context, client agentpb.AgentServiceClient, dc *docker.
 					logger.Info("deleted app's data removed", "app_id", appID)
 				}(m.DropAppData.GetAppId())
 			}
+		case *agentpb.ServerMessage_ValidateBindMounts:
+			go func(check *agentpb.ValidateBindMounts) {
+				result := &agentpb.BindValidationResult{Id: check.GetId()}
+				protected := append([]string(nil), check.GetProtectedHostPaths()...)
+				if rec != nil {
+					protected = append(protected, rec.protectedPaths...)
+				}
+				mounts, err := validateHostMounts(ctx, dc, check.GetMounts(), protected...)
+				if err != nil {
+					result.Error = err.Error()
+				} else {
+					result.Mounts = mounts
+				}
+				send(&agentpb.AgentMessage{Msg: &agentpb.AgentMessage_BindValidationResult{BindValidationResult: result}})
+			}(m.ValidateBindMounts)
 		case *agentpb.ServerMessage_ProbeGpus:
 			if dc != nil {
 				go gpus.check(ctx, dc, sendGpus)

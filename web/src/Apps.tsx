@@ -1131,6 +1131,7 @@ function AppFormModal({
     ? (initial?.ssh ?? `ssh ${shownName}@… -p 2222`)
     : (initial?.url?.replace(/^https?:\/\//, '') ?? (domain ? `${shownName}.${domain}` : ''))
   const node = initial ? initial.nodeName : choices.find((c) => c.id === nodeId)
+  const bindNode = useBinds ? bindNodes.find((n) => n.id === nodeId) : undefined
   const setCount = env.filter((v) => v.key.trim()).length
 
   const chosen = typeof node === 'object' ? node : undefined
@@ -1184,10 +1185,10 @@ function AppFormModal({
         </label>
       )}
       <dl className="aside-facts">
-        {choices.length <= 1 && (
+        {(useBinds || choices.length <= 1) && (
           <>
             <dt>Node</dt>
-            <dd>{typeof node === 'string' ? node : chosen ? chosen.name : 'le plus puissant (auto)'}</dd>
+            <dd>{useBinds ? (bindNode?.name ?? 'à choisir') : typeof node === 'string' ? node : chosen ? chosen.name : 'le plus puissant (auto)'}</dd>
           </>
         )}
         {chosen && (
@@ -1205,7 +1206,7 @@ function AppFormModal({
           </>
         )}
         <dt>Données</dt>
-        <dd>{sandbox ? '/root gardé' : keptCount ? `${keptCount} volume${keptCount > 1 ? 's' : ''}` : 'non gardées'}</dd>
+        <dd>{useBinds ? `${bindMounts.length} accès hôte${keptCount ? ` · ${keptCount} volume(s)` : ''}` : sandbox ? '/root gardé' : keptCount ? `${keptCount} volume${keptCount > 1 ? 's' : ''}` : 'non gardées'}</dd>
         <dt>Source</dt>
         <dd>{sandbox ? 'Linux, accès SSH' : source === 'dockerfile' ? 'construite' : 'téléchargée'}</dd>
       </dl>
@@ -1236,6 +1237,7 @@ function AppFormModal({
         onPick={(k) => {
           if (k === 'compose') return onCompose?.()
           setSource(k)
+          if (k !== 'image') { setUseBinds(false); if (!admin) setNodeId(0) }
           if (k === 'sandbox' && !image.trim()) setImage(sandboxSystems[0].image)
         }}
       />
@@ -1314,7 +1316,7 @@ function AppFormModal({
       </div>
       {!initial && source === 'image' && (
         <div className="field">
-          <label><input type="checkbox" checked={useBinds} onChange={(e) => setUseBinds(e.target.checked)} /> Utiliser des bind mounts</label>
+          <Switch checked={useBinds} onChange={(value) => { setUseBinds(value); if (!value && !admin) setNodeId(0) }} label="Utiliser des bind mounts" />
           {useBinds && <>
             <small>La soumission crée une demande. Seul le superadmin pourra autoriser ces accès avant la création de l’app.</small>
             <label className="field"><span>Machine contenant les fichiers</span>
