@@ -117,6 +117,97 @@ func TestBindMountsDockerAccessAndDeletion(t *testing.T) {
 	t.Log("bind mount source preserved after removing containers", strconv.FormatInt(id, 10))
 }
 
+func TestComposeBindMountsDockerServicesKeepTheirOwnMounts(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+	dc, err := docker.New(docker.DefaultHost())
+	if err != nil {
+		t.Fatal(err)
+	}
+	root := t.TempDir()
+	if base := os.Getenv("FORGEYARD_TEST_BIND_DIR"); base != "" {
+		root, err = os.MkdirTemp(base, "forgeyard-compose-bind-")
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = os.RemoveAll(root) })
+	}
+	readSource, writeSource := filepath.Join(root, "read"), filepath.Join(root, "write")
+	for _, dir := range []string{readSource, writeSource} {
+		if err := os.MkdirAll(dir, 0700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, "note"), []byte("service"), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	readSource, err = filepath.EvalSymlinks(readSource)
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeSource, err = filepath.EvalSymlinks(writeSource)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stackID := time.Now().UnixNano()%1000000000 + 2000000000
+	network := stackNetPrefix + strconv.FormatInt(stackID, 10)
+	if err := dc.EnsureNetwork(ctx, network); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = dc.RemoveNetwork(context.Background(), network) })
+	rec := NewReconciler(dc, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	services := []*agentpb.AppSpec{
+		{Id: stackID, Name: "compose-ro", Image: "alpine:3.21", Running: true, BindAuthorized: true, BindMounts: []*agentpb.BindMount{{Source: readSource, Target: "/input", ReadOnly: true}}, Stack: &agentpb.StackService{StackId: stackID, Network: network, Service: "reader", Volumes: []*agentpb.NamedVolume{{Name: network + "-named", Volume: "named", Target: "/named"}}}},
+		{Id: stackID + 1, Name: "compose-rw", Image: "alpine:3.21", Running: true, BindAuthorized: true, BindMounts: []*agentpb.BindMount{{Source: writeSource, Target: "/output", ReadOnly: false}}, Stack: &agentpb.StackService{StackId: stackID, Network: network, Service: "writer"}},
+	}
+	for _, app := range services {
+		name := containerName(app.Id)
+		t.Cleanup(func() { _ = dc.Remove(context.Background(), name) })
+		if err := rec.checkAppBinds(ctx, app); err != nil {
+			t.Fatal(err)
+		}
+		config := appContainerConfig(app, appHash(app, "proxy"), "proxy")
+		config["Cmd"] = []string{"sleep", "300"}
+		if err := dc.Create(ctx, name, config); err != nil {
+			t.Fatal(err)
+		}
+		if err := dc.Start(ctx, name); err != nil {
+			t.Fatal(err)
+		}
+	}
+	code, out, err := dc.ExecRun(ctx, containerName(stackID), []string{"cat", "/input/note"})
+	if err != nil || code != 0 || strings.TrimSpace(out) != "service" {
+		t.Fatalf("reader mount: %d %q %v", code, out, err)
+	}
+	code, _, err = dc.ExecRun(ctx, containerName(stackID), []string{"sh", "-c", "echo no >/input/blocked"})
+	if err != nil || code == 0 {
+		t.Fatalf("read-only service wrote to host: %d %v", code, err)
+	}
+	code, _, err = dc.ExecRun(ctx, containerName(stackID+1), []string{"sh", "-c", "echo yes >/output/new"})
+	if err != nil || code != 0 {
+		t.Fatalf("read-write service could not write: %d %v", code, err)
+	}
+	data, err := os.ReadFile(filepath.Join(writeSource, "new"))
+	if err != nil || strings.TrimSpace(string(data)) != "yes" {
+		t.Fatalf("write service host data: %q %v", data, err)
+	}
+	readInspect, err := dc.Inspect(ctx, containerName(stackID))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(readInspect.Mounts) < 2 {
+		t.Fatalf("named and bind mounts were not both kept: %+v", readInspect.Mounts)
+	}
+	if err := dropStack(ctx, dc, stackID, true); err != nil {
+		t.Fatal(err)
+	}
+	for _, source := range []string{readSource, writeSource} {
+		if _, err := os.Stat(filepath.Join(source, "note")); err != nil {
+			t.Fatalf("project deletion removed host files at %s: %v", source, err)
+		}
+	}
+}
+
 func TestBindMountsHostNamespaceAndProtectedPaths(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	defer cancel()

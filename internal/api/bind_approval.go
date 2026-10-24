@@ -91,6 +91,9 @@ func (s *Server) approveBindRequest(r *http.Request, row db.BindRequest) (result
 	if err = json.Unmarshal([]byte(row.Config), &in); err != nil {
 		return err
 	}
+	if in.Stack != nil {
+		return s.approveStackBindRequest(ctx, r, row, owner, &in)
+	}
 	if msg := in.validate(); msg != "" {
 		return errors.New(msg)
 	}
@@ -275,7 +278,13 @@ func (s *Server) handleValidateBindRequest(w http.ResponseWriter, r *http.Reques
 		writeError(w, http.StatusConflict, result.GetError())
 		return
 	}
-	writeJSON(w, http.StatusOK, bindAPI(result.GetMounts()))
+	verified := bindAPI(result.GetMounts())
+	for i := range verified {
+		if i < len(in.BindMounts) {
+			verified[i].Service = in.BindMounts[i].Service
+		}
+	}
+	writeJSON(w, http.StatusOK, verified)
 }
 
 func bindAPI(mounts []*agentpb.BindMount) []bindMount {

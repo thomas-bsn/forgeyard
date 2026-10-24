@@ -5,6 +5,7 @@ import {
   errorMessage,
   type App,
   type BackupPolicy,
+  type BindNode,
   type ComposeError,
   type NodeChoice,
   type Snapshot,
@@ -246,6 +247,7 @@ export function ProjectFormModal({
   onClose,
   onSaved,
   onSource,
+  onRequest,
 }: {
   stack?: Stack
   admin?: boolean
@@ -253,6 +255,7 @@ export function ProjectFormModal({
   onSaved: (s: Stack) => void
   // onSource: another source picked in Nouvelle app, which then shows its own form.
   onSource?: (s: Source) => void
+  onRequest?: (id: number) => void
 }) {
   const [name, setName] = useState(stack?.name ?? '')
   const [compose, setCompose] = useState(stack?.compose ?? '')
@@ -271,6 +274,8 @@ export function ProjectFormModal({
   const [busy, setBusy] = useState(false)
   const [choices, setChoices] = useState<NodeChoice[]>([])
   const [nodeId, setNodeId] = useState(0)
+  const [useBindMounts, setUseBindMounts] = useState(false)
+  const [bindNodes, setBindNodes] = useState<BindNode[]>([])
   const [domain, setDomain] = useState('')
   const editor = useRef<HTMLTextAreaElement>(null)
 
@@ -282,6 +287,14 @@ export function ProjectFormModal({
       setNodeId(c.find((x) => x.recommended)?.id ?? 0)
     }, () => {})
   }, [admin, stack])
+
+  useEffect(() => {
+    if (!useBindMounts || stack) return
+    api.bindNodes().then((nodes) => {
+      setBindNodes(nodes)
+      setNodeId((current) => current || nodes.find((n) => n.online)?.id || nodes[0]?.id || 0)
+    }, (err) => setError(errorMessage(err)))
+  }, [useBindMounts, stack])
 
   const vars = Object.fromEntries(env.filter((v) => v.key.trim()).map((v) => [v.key.trim(), v.value]))
   const varsKey = JSON.stringify(vars)
@@ -322,6 +335,12 @@ export function ProjectFormModal({
     setError('')
     try {
       const login = registryTouched || (!stack && registry.server.trim()) ? registry : undefined
+      if (!stack && useBindMounts) {
+        const request = await api.createBindRequest({ nodeId, bindMounts: [], stack: { name, compose, env: vars, registry: login } })
+        if (request.status === 'created' && request.stackId) onSaved(await api.stack(request.stackId))
+        else onRequest?.(request.id)
+        return
+      }
       const saved = stack ? await api.updateStack(stack.id, { compose, env: vars, registry: login }) : await api.createStack({ name, compose, env: vars, nodeId: nodeId || undefined, registry: login })
       onSaved(saved)
     } catch (err) {
@@ -367,7 +386,14 @@ export function ProjectFormModal({
           <dd className="mono">{preview?.volumes.join(', ')}</dd>
         </dl>
       )}
-      {choices.length > 1 && (
+      {useBindMounts && bindNodes.length > 0 ? (
+        <label className="field">
+          <span>Node qui héberge les chemins</span>
+          <select value={nodeId} onChange={(e) => setNodeId(Number(e.target.value))} required>
+            {bindNodes.map((n) => <option key={n.id} value={n.id}>{n.name} · {n.online ? 'en ligne' : 'hors ligne'}</option>)}
+          </select>
+        </label>
+      ) : choices.length > 1 && (
         <label className="field">
           <span>Node</span>
           <select value={nodeId} onChange={(e) => setNodeId(Number(e.target.value))}>
@@ -383,8 +409,8 @@ export function ProjectFormModal({
       {stack && <p className="muted aside-note">Seuls les services modifiés sont redéployés.</p>}
       <span className="aside-spacer" />
       {error && <p className="error">{error}</p>}
-      <button type="submit" className="btn btn-primary btn-block btn-big" disabled={busy || errors.length > 0}>
-        {busy ? 'Envoi…' : stack ? 'Enregistrer et déployer' : 'Créer le projet'}
+      <button type="submit" className="btn btn-primary btn-block btn-big" disabled={busy || errors.length > 0 || (useBindMounts && !nodeId)}>
+        {busy ? 'Envoi…' : stack ? 'Enregistrer et déployer' : useBindMounts ? 'Soumettre au superadmin' : 'Créer le projet'}
       </button>
       <button type="button" className="link-button aside-cancel" onClick={onClose} disabled={busy}>
         Annuler
@@ -402,6 +428,7 @@ export function ProjectFormModal({
           <small>Le service exposé prend ce nom (son sous-domaine), les autres « {shownName}-service ».</small>
         </label>
       )}
+      {!stack && <Switch checked={useBindMounts} onChange={setUseBindMounts} label="Utiliser des bind mounts (approbation du superadmin requise)" />}
       <label className="field">
         <span>docker-compose.yml</span>
         <textarea
@@ -416,7 +443,7 @@ export function ProjectFormModal({
           aria-invalid={errors.length > 0}
         />
         <small>
-          Des images publiées et des volumes nommés, sans build ni ports. Le service à publier porte <span className="mono">x-forgeyard: {'{ expose: { port: 80 } }'}</span>
+          Des images publiées et des volumes nommés. Pour un accès hôte, activez les bind mounts et décrivez chaque montage dans le Compose ; la lecture seule est recommandée. Sans approbation, aucun projet ne sera créé. Le service à publier porte <span className="mono">x-forgeyard: {'{ expose: { port: 80 } }'}</span>
           ; Docker Compose ignore ce bloc, le fichier tourne aussi en local.
         </small>
       </label>
@@ -473,11 +500,13 @@ export function ProjectDetail({
   onChange,
   go,
   readOnly,
+  superadmin,
 }: {
   stack: Stack
   onChange: () => void
   go: (path: string) => void
   readOnly?: boolean // another member's project, opened from their profile
+  superadmin?: boolean
 }) {
   const [full, setFull] = useState<Stack | null>(null)
   const [tab, setTab] = useState<StackTab>('services')
@@ -613,6 +642,7 @@ export function ProjectDetail({
               <button type="button" className="btn detail-actions-wide" disabled={busy || !full} onClick={() => setEditing(true)}>
                 Modifier le compose
               </button>
+              {superadmin && stack.services.some((service) => service.bindMounts?.length && service.bindAuthorized) && <button type="button" className="btn danger detail-actions-wide" disabled={busy} onClick={() => run(() => api.revokeStackBinds(stack.id))}>Révoquer les bind mounts du projet</button>}
             </div>
             <button type="button" className="link-button danger-link" disabled={busy} onClick={() => setDeleting(true)}>
               Supprimer le projet…

@@ -162,7 +162,8 @@ func stackConfig(app *agentpb.AppSpec, config, hostConfig map[string]any, labels
 		}
 	}
 	hostConfig["RestartPolicy"] = restartPolicy(st)
-	var mounts []map[string]any
+	// Keep app-level approved bind mounts alongside the named volumes declared by Compose.
+	mounts, _ := hostConfig["Mounts"].([]map[string]any)
 	for _, v := range st.GetVolumes() {
 		mounts = append(mounts, map[string]any{
 			"Type": "volume", "Source": v.GetName(), "Target": v.GetTarget(), "ReadOnly": v.GetReadOnly(),

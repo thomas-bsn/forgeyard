@@ -19,12 +19,14 @@ type bindMount struct {
 	Source   string `json:"source"`
 	Target   string `json:"target"`
 	ReadOnly *bool  `json:"readOnly"`
+	Service  string `json:"service,omitempty"`
 }
 
 type bindRequestInput struct {
 	appInput
 	BindMounts []bindMount `json:"bindMounts"`
 	LogoImage  string      `json:"logoImage,omitempty"`
+	Stack      *stackInput `json:"stack,omitempty"`
 }
 
 type bindRequestResponse struct {
@@ -39,11 +41,76 @@ type bindRequestResponse struct {
 	CreatedAt       int64            `json:"createdAt"`
 	DecidedAt       int64            `json:"decidedAt"`
 	AppID           int64            `json:"appId,omitempty"`
+	StackID         int64            `json:"stackId,omitempty"`
 	DeploymentState string           `json:"deploymentState,omitempty"`
 	DeploymentError string           `json:"deploymentError,omitempty"`
 }
 
 func (in *bindRequestInput) validate() string {
+	if in.Stack != nil {
+		if _, reserved := in.Stack.Env["__FORGEYARD_STACK_REGISTRY"]; reserved {
+			return "nom de variable réservé"
+		}
+		in.Stack.NodeID = in.NodeID
+		parsed, msg, errs := in.Stack.parse(true)
+		if msg != "" {
+			return msg
+		}
+		if errs != nil {
+			return errs.Error()
+		}
+		if in.NodeID <= 0 {
+			return "choisissez le node où se trouvent les fichiers"
+		}
+		in.BindMounts = nil
+		for _, svc := range parsed.Services {
+			targets := map[string]bool{}
+			for _, mount := range svc.Volumes {
+				if mount.Kind != "bind" {
+					targets[mount.Target] = true
+				}
+			}
+			for _, mount := range svc.Volumes {
+				if mount.Kind == "bind" {
+					if mount.Target == "/" || mount.Target == "/proc" || mount.Target == "/sys" || mount.Target == "/dev" || strings.HasPrefix(mount.Target, "/proc/") || strings.HasPrefix(mount.Target, "/sys/") || strings.HasPrefix(mount.Target, "/dev/") {
+						return "destination impossible : " + mount.Target
+					}
+					if targets[mount.Target] {
+						return "destination de montage en double pour le service " + svc.Name
+					}
+					targets[mount.Target] = true
+					ro := mount.ReadOnly
+					in.BindMounts = append(in.BindMounts, bindMount{Source: mount.Source, Target: mount.Target, ReadOnly: &ro, Service: svc.Name})
+				}
+			}
+		}
+		if len(in.BindMounts) == 0 || len(in.BindMounts) > 50 {
+			return "indiquez entre 1 et 50 bind mounts dans le Compose"
+		}
+		services := map[string]bool{}
+		for _, svc := range parsed.Services {
+			services[svc.Name] = true
+		}
+		targets := map[string]bool{}
+		for i := range in.BindMounts {
+			m := &in.BindMounts[i]
+			m.Source, m.Target, m.Service = strings.TrimSpace(m.Source), strings.TrimSpace(m.Target), strings.TrimSpace(m.Service)
+			if !services[m.Service] || !strings.HasPrefix(m.Source, "/") || !strings.HasPrefix(m.Target, "/") || strings.ContainsAny(m.Source+m.Target, "\x00\n\r") {
+				return "chaque bind mount Compose doit préciser des chemins absolus"
+			}
+			m.Source, m.Target = path.Clean(m.Source), path.Clean(m.Target)
+			key := m.Service + "\x00" + m.Target
+			if targets[key] {
+				return "destination de montage en double pour le service " + m.Service
+			}
+			targets[key] = true
+			if m.ReadOnly == nil {
+				ro := true
+				m.ReadOnly = &ro
+			}
+		}
+		return ""
+	}
 	if msg := in.appInput.validate(true); msg != "" {
 		return msg
 	}
@@ -138,12 +205,29 @@ func (s *Server) handleCreateBindRequest(w http.ResponseWriter, r *http.Request)
 		writeError(w, http.StatusBadRequest, "ce node n'accepte pas de déploiements")
 		return
 	}
-	sealed, err := s.sealEnv(in.Env)
+	secretEnv := in.Env
+	if in.Stack != nil {
+		secretEnv = in.Stack.Env
+		if secretEnv == nil {
+			secretEnv = map[string]string{}
+		}
+		if in.Stack.Registry != nil && in.Stack.Registry.Password != "" {
+			encoded := string(must(json.Marshal(in.Stack.Registry)))
+			secretEnv["__FORGEYARD_STACK_REGISTRY"] = encoded
+		}
+	}
+	sealed, err := s.sealEnv(secretEnv)
 	if err != nil {
 		s.internalError(w, r, err)
 		return
 	}
 	in.Env = nil
+	if in.Stack != nil {
+		in.Stack.Env = nil
+		if in.Stack.Registry != nil {
+			in.Stack.Registry.Password = ""
+		}
+	}
 	config, err := json.Marshal(in)
 	if err != nil {
 		s.internalError(w, r, err)
@@ -177,17 +261,27 @@ func (s *Server) bindResponse(r *http.Request, row db.BindRequest) (bindRequestR
 			out.DeploymentState = "pending"
 		}
 	}
+	if row.StackID.Valid {
+		out.StackID = row.StackID.Int64
+	}
 	if err := json.Unmarshal([]byte(row.Config), &out.Config); err != nil {
 		return out, err
 	}
 	// Never expose saved environment values in ordinary list or detail responses.
 	out.Config.Env = nil
+	if out.Config.Stack != nil {
+		out.Config.Stack.Env = nil
+	}
 	env, err := s.openEnv(row.EnvSealed)
 	if err != nil {
 		return out, err
 	}
 	for k := range env {
-		out.EnvKeys = append(out.EnvKeys, k)
+		if k == "__FORGEYARD_STACK_REGISTRY" {
+			out.EnvKeys = append(out.EnvKeys, "registry.password")
+		} else {
+			out.EnvKeys = append(out.EnvKeys, k)
+		}
 	}
 	sort.Strings(out.EnvKeys)
 	if author, err := s.store.GetUserByID(r.Context(), row.AuthorID); err == nil {
@@ -267,6 +361,15 @@ func (s *Server) handleRevealBindRequest(w http.ResponseWriter, r *http.Request)
 	if err != nil {
 		s.internalError(w, r, err)
 		return
+	}
+	if raw := env["__FORGEYARD_STACK_REGISTRY"]; raw != "" {
+		delete(env, "__FORGEYARD_STACK_REGISTRY")
+		var registry registryInput
+		if err := json.Unmarshal([]byte(raw), &registry); err != nil {
+			s.internalError(w, r, err)
+			return
+		}
+		env["registry.password"] = registry.Password
 	}
 	w.Header().Set("Cache-Control", "no-store")
 	writeJSON(w, http.StatusOK, env)

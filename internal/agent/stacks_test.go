@@ -77,6 +77,8 @@ func TestStackServiceContainer(t *testing.T) {
 	app.Stack.Command = []string{"postgres", "-c", "fsync=off"}
 	app.Stack.Healthcheck = &agentpb.Healthcheck{Test: []string{"CMD-SHELL", "pg_isready"}, IntervalNs: 5e9, Retries: 3}
 	app.Stack.Volumes = []*agentpb.NamedVolume{{Name: "forgeyard-stack-1-pgdata", Target: "/var/lib/postgresql/data", Volume: "pgdata"}}
+	app.BindMounts = []*agentpb.BindMount{{Source: "/srv/data", Target: "/data", ReadOnly: true}}
+	app.BindAuthorized = true
 	cfg := appContainerConfig(app, "h", "proxy")
 	host := cfg["HostConfig"].(map[string]any)
 	if host["NetworkMode"] != "forgeyard-stack-1" || cfg["ExposedPorts"] != nil || host["PortBindings"] != nil {
@@ -90,7 +92,7 @@ func TestStackServiceContainer(t *testing.T) {
 		t.Fatalf("command or health check: %v", cfg)
 	}
 	mounts := host["Mounts"].([]map[string]any)
-	if len(mounts) != 1 || mounts[0]["Source"] != "forgeyard-stack-1-pgdata" {
+	if len(mounts) != 2 || mounts[0]["Source"] != "forgeyard-stack-1-pgdata" || mounts[1]["Source"] != "/srv/data" || mounts[1]["ReadOnly"] != true {
 		t.Fatalf("mounts: %v", mounts)
 	}
 	if cfg["Labels"].(map[string]string)[labelStack] != "1" {

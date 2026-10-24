@@ -123,7 +123,7 @@ export default function Apps({
     const project = projects.find((p) => p.id === Number(route[1]))
     // A member's own project, or any project for an admin: the full page. Otherwise someone opened a
     // project from a profile: read-only.
-    if (project) return <ProjectDetail key={project.id} stack={project} onChange={load} go={go} />
+    if (project) return <ProjectDetail key={project.id} stack={project} onChange={load} go={go} superadmin={superadmin} />
     return <ProjectPage key={route[1]} id={Number(route[1])} go={go} />
   }
 
@@ -139,7 +139,7 @@ export default function Apps({
     if (!c) return <NotFound what="Ce conteneur n’existe plus, ou son node est hors ligne." go={go} />
     return <ContainerDetail container={c} superadmin={superadmin} onChange={load} go={go} />
   }
-  return <AppList apps={apps} nodes={nodes} containers={containers} projects={projects} admin={admin} layout={layout} error={error} onChange={load} go={go} />
+  return <AppList apps={apps} nodes={nodes} containers={containers} projects={projects} admin={admin} superadmin={superadmin} layout={layout} error={error} onChange={load} go={go} />
 }
 
 function NotFound({ what, go }: { what: string; go: (path: string) => void }) {
@@ -248,6 +248,7 @@ function AppList({
   containers,
   projects,
   admin,
+  superadmin,
   layout,
   error,
   onChange,
@@ -258,6 +259,7 @@ function AppList({
   containers: Container[]
   projects: Stack[]
   admin: boolean
+  superadmin: boolean
   layout: AppsLayout
   error: string
   onChange: () => void
@@ -376,6 +378,10 @@ function AppList({
           setCreating(null)
           onChange()
           go(`projects/${p.id}`)
+        }}
+        onRequest={(id) => {
+          setCreating(null)
+          go(superadmin ? `bind-requests/review/${id}` : `bind-requests/${id}`)
         }}
       />
     ) : (
