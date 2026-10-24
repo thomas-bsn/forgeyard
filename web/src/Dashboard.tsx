@@ -51,6 +51,21 @@ export default function Dashboard({
     return () => clearInterval(t)
   }, [admin, user.id, route[0], route[1]])
 
+  // A detail page names itself in the breadcrumb: its app, project or member rather than its id.
+  const [crumb, setCrumb] = useState<{ key: string; name: string } | null>(null)
+  useEffect(() => {
+    const id = Number(route[1])
+    if (!id) return
+    const key = `${route[0]}/${route[1]}`
+    const load =
+      route[0] === 'apps' ? api.app(id).then((a) => a.name)
+      : route[0] === 'projects' || route[0] === 'stacks' ? api.stack(id).then((p) => p.name)
+      : route[0] === 'u' ? api.member(id).then((m) => m.displayName)
+      : null
+    load?.then((name) => setCrumb({ key, name }), () => {})
+  }, [route[0], route[1]])
+  const crumbName = route[1] ? (crumb?.key === `${route[0]}/${route[1]}` ? crumb.name : /^\d+$/.test(route[1]) ? null : route[1]) : null
+
   async function logout() {
     await api.logout()
     onLogout()
@@ -86,7 +101,7 @@ export default function Dashboard({
       </header>
 
       <div className="dashboard-content">
-        <div className="workspace-breadcrumb"><a href="#/apps">Forgeyard</a><span aria-hidden="true">›</span><a href={`#/${page}`}>{pageLabels[page] ?? 'Apps'}</a>{route[1] && <><span aria-hidden="true">›</span><span>{route[1]}</span></>}</div>
+        <div className="workspace-breadcrumb"><a href="#/apps">Forgeyard</a><span aria-hidden="true">›</span><a href={`#/${page}`}>{pageLabels[page] ?? 'Apps'}</a>{crumbName && <><span aria-hidden="true">›</span><span>{crumbName}</span></>}</div>
         {page === 'apps' && <Apps admin={admin} superadmin={user.role === 'superadmin'} userId={user.id} route={route.length ? route : ['apps']} go={go} />}
         {page === 'nodes' && (admin ? <Nodes localSupported={instance.localNodeSupported} /> : <VisibleNodes />)}
         {route[0] === 'u' && route[1] ? (
