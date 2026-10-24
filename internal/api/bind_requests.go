@@ -47,9 +47,6 @@ func (in *bindRequestInput) validate() string {
 	if msg := in.appInput.validate(true); msg != "" {
 		return msg
 	}
-	if in.Kind != kindWeb || in.Dockerfile != "" {
-		return "les demandes de bind mounts sont disponibles pour les apps Image Docker"
-	}
 	if in.NodeID <= 0 {
 		return "choisissez le node où se trouvent les fichiers"
 	}

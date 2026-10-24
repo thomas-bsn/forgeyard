@@ -215,7 +215,7 @@ L'onglet **Terminal** de la page d'une app (et d'un conteneur externe, pour le s
 
 ## Demandes de bind mounts
 
-À la création d'une app Image Docker, l'option **Utiliser des bind mounts** permet de soumettre une demande avec un node précis et, pour chaque montage, une source absolue sur l'hôte, une destination dans le conteneur et un accès en lecture seule (défaut) ou lecture/écriture. Les nodes actifs restent proposés même hors ligne, avec leur disponibilité affichée.
+À la création d'une app Image Docker, Dockerfile ou Sandbox, l'option **Utiliser des bind mounts** permet de soumettre une demande avec un node précis et, pour chaque montage, une source absolue sur l'hôte, une destination dans le conteneur et un accès en lecture seule (défaut) ou lecture/écriture. Les nodes actifs restent proposés même hors ligne, avec leur disponibilité affichée. La Sandbox conserve son accès SSH/terminal et ne reçoit aucune adresse web. Un Dockerfile est conservé dans la demande et construit seulement après approbation.
 
 La soumission conserve la configuration et les variables chiffrées sans créer d'app ni réserver son nom. **Mes demandes** affiche le suivi et permet d'annuler une demande en attente. Pour modifier une configuration soumise, il faut faire une nouvelle demande. Seul le superadmin accède à la file de traitement, peut révéler explicitement les variables secrètes et refuser avec un motif obligatoire. Les valeurs secrètes ne figurent pas dans les réponses ordinaires.
 
@@ -223,4 +223,4 @@ Seul le superadmin peut vérifier les chemins sur le node, approuver et déclenc
 
 L'autorisation porte sur les montages, pas sur le code : le propriétaire et les admins conservent image, variables, terminal et SSH. Un déplacement ou un changement des montages nécessite une nouvelle approbation ; ces changements restent bloqués tant que leur parcours dédié n'est pas disponible. Les données hôtes ne sont jamais supprimées avec l'app et sont exclues des sauvegardes Forgeyard.
 
-Cette tranche couvre les apps Image Docker ; Dockerfile, Sandbox et Compose seront ajoutés par les tickets suivants.
+Les demandes couvrent Image Docker, Dockerfile et Sandbox. La prise en charge des projets Compose suit son parcours dédié.
