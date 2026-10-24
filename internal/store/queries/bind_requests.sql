@@ -30,3 +30,6 @@ UPDATE bind_requests SET status = 'created', reason = '' WHERE id = ? AND status
 
 -- name: SetAppBindMounts :exec
 UPDATE apps SET bind_mounts = ?, bind_authorized = ? WHERE id = ?;
+
+-- name: RevokeAppBindMounts :one
+UPDATE apps SET bind_authorized = 0, running = 0, updated_at = ? WHERE id = ? RETURNING *;

@@ -167,6 +167,7 @@ func (s *Server) Handler(webFS fs.FS) http.Handler {
 	mux.HandleFunc("GET /api/members/{id}", s.requireUser(s.handleGetMember))
 	mux.HandleFunc("PUT /api/apps/{id}/public", s.requireUser(s.handleSetAppPublic))
 	mux.HandleFunc("POST /api/admin/apps/{id}/move", s.requireAdmin(s.handleMoveApp))
+	mux.HandleFunc("POST /api/admin/apps/{id}/bind-mounts/revoke", s.requireSuperadmin(s.handleRevokeAppBindMounts))
 	mux.HandleFunc("PUT /api/apps/{id}/logo", s.requireUser(s.handlePutAppLogo))
 	mux.HandleFunc("GET /api/apps/{id}/logo", s.requireUser(s.handleGetAppLogo))
 	mux.HandleFunc("GET /api/logos", s.requireUser(s.handleImageLogo))
