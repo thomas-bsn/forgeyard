@@ -202,6 +202,13 @@ func (s *Server) approveBindRequest(r *http.Request, row db.BindRequest) (result
 		}
 	}
 	err = s.store.InTx(ctx, func(q *db.Queries) error {
+		current, e := q.GetApp(ctx, app.ID)
+		if e != nil {
+			return e
+		}
+		if current.BindAuthorized == 0 {
+			return errBindRevoked
+		}
 		if _, e := q.SetAppRunning(ctx, db.SetAppRunningParams{ID: app.ID, Running: 1, UpdatedAt: time.Now().Unix()}); e != nil {
 			return e
 		}

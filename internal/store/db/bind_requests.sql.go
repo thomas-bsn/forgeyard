@@ -246,6 +246,53 @@ func (q *Queries) ListOwnBindRequests(ctx context.Context, authorID int64) ([]Bi
 	return items, nil
 }
 
+const revokeAppBindMounts = `-- name: RevokeAppBindMounts :one
+UPDATE apps SET bind_authorized = 0, running = 0, updated_at = ? WHERE id = ? RETURNING id, name, owner_id, node_id, image, port, env_sealed, running, memory_mb, generation, dns_name, created_at, updated_at, public, logo_mode, logo_color, logo_updated_at, crash_suspended, moving_from, moved_at, dockerfile, kind, port_source, volumes, stack_id, service, service_spec, gpu, bind_mounts, bind_authorized
+`
+
+type RevokeAppBindMountsParams struct {
+	UpdatedAt int64
+	ID        int64
+}
+
+func (q *Queries) RevokeAppBindMounts(ctx context.Context, arg RevokeAppBindMountsParams) (App, error) {
+	row := q.db.QueryRowContext(ctx, revokeAppBindMounts, arg.UpdatedAt, arg.ID)
+	var i App
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.OwnerID,
+		&i.NodeID,
+		&i.Image,
+		&i.Port,
+		&i.EnvSealed,
+		&i.Running,
+		&i.MemoryMb,
+		&i.Generation,
+		&i.DnsName,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.Public,
+		&i.LogoMode,
+		&i.LogoColor,
+		&i.LogoUpdatedAt,
+		&i.CrashSuspended,
+		&i.MovingFrom,
+		&i.MovedAt,
+		&i.Dockerfile,
+		&i.Kind,
+		&i.PortSource,
+		&i.Volumes,
+		&i.StackID,
+		&i.Service,
+		&i.ServiceSpec,
+		&i.Gpu,
+		&i.BindMounts,
+		&i.BindAuthorized,
+	)
+	return i, err
+}
+
 const setAppBindMounts = `-- name: SetAppBindMounts :exec
 UPDATE apps SET bind_mounts = ?, bind_authorized = ? WHERE id = ?
 `

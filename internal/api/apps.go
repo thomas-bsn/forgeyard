@@ -927,6 +927,10 @@ func (s *Server) handleAppAction(w http.ResponseWriter, r *http.Request) {
 	params := db.SetAppRunningParams{UpdatedAt: time.Now().Unix(), ID: a.ID}
 	action := r.PathValue("action")
 	if action == "start" || action == "redeploy" {
+		if len(appBinds(a)) > 0 && a.BindAuthorized == 0 {
+			writeError(w, http.StatusConflict, errBindRevoked.Error())
+			return
+		}
 		owner, err := s.store.GetUserByID(r.Context(), a.OwnerID)
 		if err != nil {
 			s.internalError(w, r, err)
@@ -946,7 +950,21 @@ func (s *Server) handleAppAction(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "action inconnue")
 		return
 	}
-	a, err := s.store.SetAppRunning(r.Context(), params)
+	err := s.store.InTx(r.Context(), func(q *db.Queries) error {
+		current, err := q.GetApp(r.Context(), a.ID)
+		if err != nil {
+			return err
+		}
+		if params.Running == 1 && len(appBinds(current)) > 0 && current.BindAuthorized == 0 {
+			return errBindRevoked
+		}
+		a, err = q.SetAppRunning(r.Context(), params)
+		return err
+	})
+	if errors.Is(err, errBindRevoked) {
+		writeError(w, http.StatusConflict, err.Error())
+		return
+	}
 	if err != nil {
 		s.internalError(w, r, err)
 		return

@@ -258,6 +258,8 @@ export type AppState =
 
 export type App = {
   id: number
+  bindMounts?: BindMount[]
+  bindAuthorized: boolean
   name: string
   ownerId: number
   ownerName: string
@@ -582,6 +584,7 @@ export const api = {
   imagePorts: (image: string) => request<{ ports: number[]; volumes: string[]; volumesFrom?: 'image' | 'known'; hub?: string; error?: string }>('GET', `/api/images/ports?image=${encodeURIComponent(image)}`),
   updateApp: (id: number, input: AppInput) => request<App>('PUT', `/api/apps/${id}`, input),
   appAction: (id: number, action: 'start' | 'stop' | 'redeploy') => request<App>('POST', `/api/apps/${id}/${action}`, {}),
+  revokeAppBinds: (id: number) => request<App>('POST', `/api/admin/apps/${id}/bind-mounts/revoke`, {}),
   deleteApp: (id: number) => request<void>('DELETE', `/api/apps/${id}`, {}),
   appEvents: (id: number) => request<AppEvent[]>('GET', `/api/apps/${id}/events`),
   appUsage: (id: number) => request<AppUsage>('GET', `/api/apps/${id}/usage`),
