@@ -134,6 +134,38 @@ func (s *Server) handleListNodes(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, out)
 }
 
+// handleListVisibleNodes exposes operational facts to signed-in members without
+// exposing network addresses, ingress settings, diagnostics, or management actions.
+func (s *Server) handleListVisibleNodes(w http.ResponseWriter, r *http.Request) {
+	list, err := s.store.ListNodes(r.Context())
+	if err != nil {
+		s.internalError(w, r, err)
+		return
+	}
+	type visibleNode struct {
+		ID            int64        `json:"id"`
+		Name          string       `json:"name"`
+		State         string       `json:"state"`
+		OS            string       `json:"os"`
+		Arch          string       `json:"arch"`
+		CPUs          int64        `json:"cpus"`
+		MemoryBytes   int64        `json:"memoryBytes"`
+		DiskBytes     int64        `json:"diskBytes"`
+		DockerVersion string       `json:"dockerVersion"`
+		AgentVersion  string       `json:"agentVersion"`
+		LastSeenAt    int64        `json:"lastSeenAt,omitempty"`
+		Metrics       *nodeMetrics `json:"metrics,omitempty"`
+	}
+	out := make([]visibleNode, 0, len(list))
+	for _, n := range list {
+		full := s.toNodeResponse(n)
+		out = append(out, visibleNode{ID: full.ID, Name: full.Name, State: full.State, OS: full.OS, Arch: full.Arch,
+			CPUs: full.CPUs, MemoryBytes: full.MemoryBytes, DiskBytes: full.DiskBytes, DockerVersion: full.DockerVersion,
+			AgentVersion: full.AgentVersion, LastSeenAt: full.LastSeenAt, Metrics: full.Metrics})
+	}
+	writeJSON(w, http.StatusOK, out)
+}
+
 type createNodeRequest struct {
 	Name string `json:"name"`
 	// Local enables Forgeyard's own machine: its agent joins by itself, no command to run.

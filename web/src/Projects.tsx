@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type FormEvent } from 'react'
+import { useEffect, useId, useRef, useState, type FormEvent } from 'react'
 import {
   api,
   ApiError,
@@ -102,14 +102,18 @@ const secretName = /SECRET|PASSWORD|TOKEN|KEY|DATABASE_URL/i
  * The variables as a list of names, complete, and the one picked below or beside it, with all the room for its
  * name and value. The value of a secret is hidden until it is edited or the eye is clicked.
  */
-function EnvEditor({ env, setEnv, missing }: { env: EnvVar[]; setEnv: (e: EnvVar[]) => void; missing: { name: string; required: boolean }[] }) {
+function EnvEditor({ env, setEnv, missing, requiredNames }: { env: EnvVar[]; setEnv: (e: EnvVar[]) => void; missing: { name: string; required: boolean }[]; requiredNames: string[] }) {
   const [sel, setSel] = useState(0)
   const [copied, setCopied] = useState(false)
+  const requiredHintId = useId()
   const nameArea = useRef<HTMLTextAreaElement>(null)
   const valueArea = useRef<HTMLTextAreaElement>(null)
   const i = Math.min(sel, env.length - 1)
   const v = env[i] as EnvVar | undefined
   const secret = !!v && secretName.test(v.key) && v.value !== ''
+  const requiredEmpty = (variable: EnvVar) => requiredNames.includes(variable.key.trim()) && variable.value === ''
+  const valueRequired = !!v && requiredNames.includes(v.key.trim())
+  const valueMissing = !!v && requiredEmpty(v)
 
   useEffect(() => {
     for (const t of [nameArea.current, valueArea.current]) {
@@ -132,7 +136,7 @@ function EnvEditor({ env, setEnv, missing }: { env: EnvVar[]; setEnv: (e: EnvVar
         <div className="env-split">
           <div className="env-names" role="listbox" aria-label="Variables">
             {env.map((x, j) => (
-              <button key={j} type="button" role="option" aria-selected={j === i} className={`env-name ${j === i ? 'on' : ''}`} onClick={() => setSel(j)}>
+              <button key={j} type="button" role="option" aria-selected={j === i} aria-label={requiredEmpty(x) ? `${x.key}, obligatoire : valeur manquante` : undefined} className={`env-name ${j === i ? 'on' : ''} ${requiredEmpty(x) ? 'env-name-required' : ''}`} onClick={() => setSel(j)}>
                 {x.key || <span className="muted">(sans nom)</span>}
               </button>
             ))}
@@ -143,11 +147,14 @@ function EnvEditor({ env, setEnv, missing }: { env: EnvVar[]; setEnv: (e: EnvVar
               <textarea ref={nameArea} rows={1} aria-label="Nom de la variable" value={v.key} spellCheck={false} placeholder="NOM" onChange={(e) => patch({ key: line(e.target.value) })} onKeyDown={(e) => e.key === 'Enter' && e.preventDefault()} />
             </label>
             <label>
-              <small className="muted">Valeur</small>
+              <small className={valueMissing ? 'text-down' : 'muted'}>Valeur{valueRequired ? ' · obligatoire' : ''}</small>
               <textarea
                 ref={valueArea}
                 rows={2}
                 aria-label="Valeur"
+                aria-required={valueRequired || undefined}
+                aria-invalid={valueMissing || undefined}
+                aria-describedby={valueMissing ? requiredHintId : undefined}
                 className={secret && !v.reveal ? 'env-masked' : ''}
                 value={v.value}
                 spellCheck={false}
@@ -156,6 +163,7 @@ function EnvEditor({ env, setEnv, missing }: { env: EnvVar[]; setEnv: (e: EnvVar
                 onChange={(e) => patch({ value: line(e.target.value) })}
                 onKeyDown={(e) => e.key === 'Enter' && e.preventDefault()}
               />
+              {valueMissing && <small id={requiredHintId} className="text-down">Cette variable est obligatoire : renseignez une valeur.</small>}
             </label>
             <span className="env-tools">
               {v.value !== '' && (
@@ -205,7 +213,7 @@ function EnvEditor({ env, setEnv, missing }: { env: EnvVar[]; setEnv: (e: EnvVar
           ))}
         </span>
       )}
-      {missing.some((m) => m.required) && <small className="text-down">En rouge : obligatoires, sans valeur par défaut dans le compose.</small>}
+      {(missing.some((m) => m.required) || env.some(requiredEmpty)) && <small className="text-down">En rouge : variables obligatoires encore à renseigner, sans valeur par défaut dans le Compose.</small>}
       <div>
         <button type="button" className="btn btn-dashed btn-small" onClick={() => add('')}>
           + Ajouter une variable
@@ -303,6 +311,7 @@ export function ProjectFormModal({
   const [bindNodes, setBindNodes] = useState<BindNode[]>([])
   const [domain, setDomain] = useState('')
   const [flowStep, setFlowStep] = useState(0)
+  const [adaptationNeeded, setAdaptationNeeded] = useState(false)
   const [portCandidates, setPortCandidates] = useState<ComposePortCandidate[]>([])
   const [exposeChoice, setExposeChoice] = useState('')
   const [adaptedCompose, setAdaptedCompose] = useState('')
@@ -364,7 +373,10 @@ export function ProjectFormModal({
     return () => clearTimeout(t)
   }, [adaptedCompose, varsKey, name])
 
-  const missing = usedVariables(compose).filter((v) => !(v.name in vars))
+  const variables = usedVariables(compose)
+  const missing = variables.filter((v) => !(v.name in vars))
+  const requiredNames = variables.filter((v) => v.required).map((v) => v.name)
+  const requiredMissing = requiredNames.filter((name) => !vars[name])
 
   function goToLine(line: number) {
     const ta = editor.current
@@ -412,7 +424,11 @@ export function ProjectFormModal({
       setAdaptedCompose('')
       setAdaptedPreview(null)
       setAdaptedErrors([])
-      setFlowStep(1)
+      // Compose files without published ports are already compatible: skip the
+      // adaptation review and continue straight to resource configuration.
+      const adaptationNeeded = (result.candidates ?? []).length > 0
+      setFlowStep(adaptationNeeded ? 1 : 2)
+      setAdaptationNeeded(adaptationNeeded)
     } catch (err) {
       setAdaptError(errorMessage(err))
     } finally {
@@ -482,15 +498,18 @@ export function ProjectFormModal({
     </>
   )
 
+  // The final submit button has its own key: reusing the clicked review button would change its
+  // type to submit before the browser handles that same click's default action.
   const wizardAside = (
     <>
       <span className="aside-label">Création du projet</span>
       <ol className="compose-steps">
-        {['Importer et analyser', 'Relire l’adaptation', 'Configurer', 'Confirmer'].map((label, index) => (
-          <li key={label} className={flowStep === index ? 'current' : flowStep > index ? 'done' : ''}>
-            <span>{flowStep > index ? '✓' : index + 1}</span>{label}
+        {(adaptationNeeded ? ['Importer et analyser', 'Relire l’adaptation', 'Configurer', 'Confirmer'] : ['Importer et analyser', 'Configurer', 'Confirmer']).map((label, index) => {
+          const step = !adaptationNeeded && index > 0 ? index + 1 : index
+          return <li key={label} className={flowStep === step ? 'current' : flowStep > step ? 'done' : ''}>
+            <span>{flowStep > step ? '✓' : index + 1}</span>{label}
           </li>
-        ))}
+        })}
       </ol>
       {flowStep >= 2 && <div className="compose-aside-resources">
         <span className="aside-label">Services et ressources</span>
@@ -511,11 +530,11 @@ export function ProjectFormModal({
       ) : flowStep === 2 ? (
         <button type="button" className="btn btn-primary btn-block btn-big" disabled={errors.length > 0 || !!preview?.error} onClick={() => setFlowStep(3)}>Vérifier le récapitulatif</button>
       ) : (
-        <button type="submit" className="btn btn-primary btn-block btn-big" disabled={busy || errors.length > 0 || !!preview?.error || (useBindMounts && !nodeId)}>
+        <button key="confirm-compose" type="submit" className="btn btn-primary btn-block btn-big" disabled={busy || errors.length > 0 || !!preview?.error || (useBindMounts && !nodeId)}>
           {busy ? 'Envoi…' : useBindMounts ? 'Soumettre au superadmin' : 'Confirmer et créer'}
         </button>
       )}
-      {flowStep > 0 && flowStep < 3 && <button type="button" className="link-button aside-cancel" onClick={() => { setFlowStep(flowStep - 1); setAdaptedCompose(''); setAdaptError('') }}>Retour</button>}
+      {flowStep > 0 && flowStep < 3 && <button type="button" className="link-button aside-cancel" onClick={() => { setFlowStep(flowStep === 2 && !adaptationNeeded ? 0 : flowStep - 1); setAdaptedCompose(''); setAdaptError('') }}>Retour</button>}
       <button type="button" className="link-button aside-cancel" onClick={onClose} disabled={busy}>Annuler</button>
     </>
   )
@@ -559,9 +578,9 @@ export function ProjectFormModal({
         </>}
       </>}
       {flowStep === 2 && <>
-        <div className="compose-step-heading"><span className="aside-label">Étape 3 sur 4</span><h3>Configurer le projet</h3><p>Les services et volumes apparaissent une seule fois dans le récapitulatif à droite.</p></div>
+        <div className="compose-step-heading"><span className="aside-label">Étape {adaptationNeeded ? '3 sur 4' : '2 sur 3'}</span><h3>Configurer le projet</h3><p>Les services et volumes apparaissent une seule fois dans le récapitulatif à droite.</p></div>
         <label className="field"><span className="label">Nom du projet</span><input value={name} onChange={(e) => setName(e.target.value.toLowerCase())} required pattern="[a-z0-9]([a-z0-9\-]{0,30}[a-z0-9])?" /></label>
-        <div className="field"><span className="label">Variables chiffrées</span><EnvEditor env={env} setEnv={setEnv} missing={missing} /></div>
+        <div className="field"><span className="label">Variables chiffrées</span><EnvEditor env={env} setEnv={setEnv} missing={missing} requiredNames={requiredNames} /></div>
         <div className="field"><span className="label">Node</span><select value={nodeId} onChange={(e) => setNodeId(Number(e.target.value))}><option value={0}>Choix recommandé automatiquement</option>{choices.map((c) => <option key={c.id} value={c.id}>{c.name}{c.recommended ? ' (recommandé)' : ''}</option>)}</select></div>
         <div className="field"><div className="setting-row"><Switch checked={useBindMounts} onChange={setUseBindMounts} label="Utiliser des bind mounts dans le Compose" /><strong>Accès aux dossiers du node</strong></div><small>Soumet le projet au superadmin pour approbation.</small></div>
         {useBindMounts && bindNodes.length > 0 && <label className="field"><span className="label">Node qui héberge les chemins</span><select value={nodeId} onChange={(e) => setNodeId(Number(e.target.value))} required>{bindNodes.map((n) => <option key={n.id} value={n.id}>{n.name} · {n.online ? 'en ligne' : 'hors ligne'}</option>)}</select></label>}
@@ -569,8 +588,8 @@ export function ProjectFormModal({
         {errors.length > 0 && <ul className="compose-errors">{errors.map((e, i) => <li key={i}>{e.message}</li>)}</ul>}
       </>}
       {flowStep === 3 && <>
-        <div className="compose-step-heading"><span className="aside-label">Étape 4 sur 4</span><h3>Confirmer le projet</h3><p>Vérifie les ressources avant la création.</p></div>
-        <dl className="compose-confirm-facts"><dt>Projet</dt><dd>{shownName}</dd><dt>Node</dt><dd>{choices.find((c) => c.id === nodeId)?.name ?? 'Choix recommandé automatiquement'}</dd><dt>Variables requises</dt><dd>{missing.filter((v) => v.required).length ? `${missing.filter((v) => v.required).length} à compléter` : 'Complétées'}</dd><dt>Bind mounts</dt><dd>{useBindMounts ? 'Soumis au superadmin' : 'Aucun'}</dd><dt>Registry privé</dt><dd>{registry.server || 'Aucun'}</dd></dl>
+        <div className="compose-step-heading"><span className="aside-label">Étape {adaptationNeeded ? '4 sur 4' : '3 sur 3'}</span><h3>Confirmer le projet</h3><p>Vérifie les ressources avant la création.</p></div>
+        <dl className="compose-confirm-facts"><dt>Projet</dt><dd>{shownName}</dd><dt>Node</dt><dd>{choices.find((c) => c.id === nodeId)?.name ?? 'Choix recommandé automatiquement'}</dd><dt>Variables requises</dt><dd>{requiredMissing.length ? `${requiredMissing.length} à compléter` : 'Complétées'}</dd><dt>Bind mounts</dt><dd>{useBindMounts ? 'Soumis au superadmin' : 'Aucun'}</dd><dt>Registry privé</dt><dd>{registry.server || 'Aucun'}</dd></dl>
         <details className="field"><summary>Relire le Compose final</summary><pre className="mono compose-final">{compose}</pre></details>
       </>}
     </>
@@ -579,15 +598,15 @@ export function ProjectFormModal({
   if (stack) return <Modal title={`Projet ${stack.name}`} onClose={onClose} onSubmit={submit} aside={legacyAside}>
     <label className="field"><span>docker-compose.yml</span><textarea ref={editor} className="mono compose-editor" value={compose} onChange={(e) => setCompose(e.target.value)} spellCheck={false} rows={20} required placeholder={composeExample} aria-invalid={errors.length > 0} /></label>
     {errors.length > 0 && <ul className="compose-errors" aria-live="polite">{errors.map((e, i) => <li key={i}>{e.line > 0 && <button type="button" className="link-button" onClick={() => goToLine(e.line)}>ligne {e.line}</button>}<span>{e.message}</span></li>)}</ul>}
-    <div className="field"><span>Variables <span className="muted">· chiffrées</span></span><EnvEditor env={env} setEnv={setEnv} missing={missing} /></div>
+    <div className="field"><span>Variables <span className="muted">· chiffrées</span></span><EnvEditor env={env} setEnv={setEnv} missing={missing} requiredNames={requiredNames} /></div>
     <details className="field" open={registryOpen} onToggle={(e) => setRegistryOpen(e.currentTarget.open)}><summary>Registry privé <span className="muted">{registry.server ? `· ${registry.server}` : '· images publiques'}</span></summary><div className="env-list"><input aria-label="Adresse du registry" className="mono" value={registry.server} onChange={(e) => editRegistry({ server: e.target.value })} placeholder="ghcr.io" /><div className="env-row"><input aria-label="Identifiant" value={registry.username} onChange={(e) => editRegistry({ username: e.target.value })} placeholder="identifiant" autoComplete="off" /><input type="password" aria-label="Mot de passe ou token" value={registry.password} onChange={(e) => editRegistry({ password: e.target.value })} placeholder={stack.registry?.passwordSet ? 'inchangé' : 'token'} autoComplete="new-password" /></div></div></details>
   </Modal>
 
   return <Modal title="Nouvelle app · Docker Compose" subtitle="Étapes guidées · aucune création avant confirmation" onClose={onClose} onSubmit={submit} aside={wizardAside}>
-    <ol className="compose-stepper">{['Source', 'Adaptation', 'Ressources', 'Confirmation'].map((label, index) => <li key={label} className={flowStep === index ? 'current' : flowStep > index ? 'done' : ''}><span>{flowStep > index ? '✓' : index + 1}</span>{label}</li>)}</ol>
+    <ol className="compose-stepper">{(adaptationNeeded ? ['Source', 'Adaptation', 'Ressources', 'Confirmation'] : ['Source', 'Ressources', 'Confirmation']).map((label, index) => { const step = !adaptationNeeded && index > 0 ? index + 1 : index; return <li key={label} className={flowStep === step ? 'current' : flowStep > step ? 'done' : ''}><span>{flowStep > step ? '✓' : index + 1}</span>{label}</li> })}</ol>
     {wizard}
     {flowStep === 1 && adaptedCompose && adaptedErrors.length === 0 && !adaptChecking && <div className="compose-review-actions"><button type="button" className="link-button" onClick={() => { setAdaptedCompose(''); setFlowStep(0) }}>Revenir au Compose source</button><button type="button" className="btn btn-primary" onClick={acceptAdaptation}>Accepter cette adaptation</button></div>}
-    {flowStep > 1 && <div className="compose-review-actions"><button type="button" className="link-button" onClick={() => setFlowStep(flowStep - 1)}>← Étape précédente</button>{flowStep === 2 && <button type="button" className="btn btn-primary" disabled={errors.length > 0 || !!preview?.error} onClick={() => setFlowStep(3)}>Continuer vers la confirmation →</button>}</div>}
+    {flowStep > 1 && <div className="compose-review-actions"><button type="button" className="link-button" onClick={() => setFlowStep(flowStep === 2 && !adaptationNeeded ? 0 : flowStep - 1)}>← Étape précédente</button>{flowStep === 2 && <button type="button" className="btn btn-primary" disabled={errors.length > 0 || !!preview?.error} onClick={() => setFlowStep(3)}>Continuer vers la confirmation →</button>}</div>}
   </Modal>
 }
 

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/thomas-bsn/forgeyard/internal/agentpb"
@@ -59,7 +60,12 @@ func (s *Server) onAppStateChange(appID int64, from, to *agentpb.AppStatus) {
 			s.appEvent(appID, eventWarning, "Redémarre en boucle")
 		}
 	case "error":
-		s.appEvent(appID, eventError, "Erreur : "+to.GetError())
+		message := to.GetError()
+		lower := strings.ToLower(message)
+		if strings.Contains(lower, "téléchargement de l'image") && strings.Contains(lower, "500") {
+			message = "Le registre d’images a renvoyé une erreur HTTP 500. Il semble mal configuré ou indisponible. Vérifiez sa configuration. Détail : " + message
+		}
+		s.appEvent(appID, eventError, "Erreur : "+message)
 	case "waiting":
 		s.appEvent(appID, eventInfo, "En attente : "+to.GetWaitingFor())
 	case "blocked":

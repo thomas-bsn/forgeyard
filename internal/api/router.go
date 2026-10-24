@@ -244,6 +244,7 @@ func (s *Server) Handler(webFS fs.FS) http.Handler {
 	mux.HandleFunc("PUT /api/admin/settings/general", s.requireSuperadmin(s.handlePutGeneralSettings))
 	mux.HandleFunc("PUT /api/admin/nodes/{id}/ingress", s.requireAdmin(s.handleNodeIngress))
 	mux.HandleFunc("GET /api/admin/nodes", s.requireAdmin(s.handleListNodes))
+	mux.HandleFunc("GET /api/nodes", s.requireUser(s.handleListVisibleNodes))
 	mux.HandleFunc("POST /api/admin/nodes", s.requireAdmin(s.handleCreateNode))
 	mux.HandleFunc("POST /api/admin/nodes/{id}/join-command", s.requireAdmin(s.handleNewJoinCommand))
 	mux.HandleFunc("DELETE /api/admin/nodes/{id}", s.requireAdmin(s.handleDeleteNode))

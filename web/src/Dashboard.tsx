@@ -3,6 +3,7 @@ import { api, type Instance, type User } from './api'
 import { Avatar, Logo, useRoute, useThemePreference } from './ui'
 import Settings from './Settings'
 import Nodes from './Nodes'
+import VisibleNodes from './VisibleNodes'
 import Apps from './Apps'
 import Users from './Users'
 import Profile from './Profile'
@@ -74,7 +75,7 @@ export default function Dashboard({
         </a>
         <nav className="tabs" aria-label="Sections">
           {tab('apps', 'Apps')}
-          {admin && tab('nodes', 'Nodes')}
+          {tab('nodes', 'Nodes')}
           {tab('members', 'Membres', admin ? pending : 0)}
           {tab('support', 'Support', support)}
           {tab('bind-requests', 'Mes demandes')}
@@ -85,7 +86,7 @@ export default function Dashboard({
 
       <div className="dashboard-content">
         {page === 'apps' && <Apps admin={admin} superadmin={user.role === 'superadmin'} userId={user.id} layout={instance.appsLayout} route={route.length ? route : ['apps']} go={go} />}
-        {page === 'nodes' && admin && <Nodes localSupported={instance.localNodeSupported} />}
+        {page === 'nodes' && (admin ? <Nodes localSupported={instance.localNodeSupported} /> : <VisibleNodes />)}
         {route[0] === 'u' && route[1] ? (
           <MemberPage id={Number(route[1])} me={user} />
         ) : (

@@ -708,6 +708,23 @@ a.chip {
   align-content: start;
 }
 
+.node-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.node-facts {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px 16px;
+  margin: 8px 0;
+}
+
+.node-facts dt { color: var(--muted); font-size: 0.82rem; }
+.node-facts dd { margin: 2px 0 0; font-weight: 600; }
+
 .node-head {
   display: flex;
   align-items: center;
@@ -899,7 +916,7 @@ button.row:hover {
 
 .env-name {
   padding: 7px 9px;
-  border: 0;
+  border: 1px solid transparent;
   border-radius: 8px;
   background: transparent;
   color: var(--text);
@@ -917,6 +934,13 @@ button.row:hover {
   background: color-mix(in srgb, var(--accent) 14%, transparent);
   color: var(--accent);
   font-weight: 600;
+}
+
+/* Adding a required variable does not complete it until its value is filled in. */
+.env-name.env-name-required {
+  border-color: var(--down);
+  color: var(--down);
+  background: color-mix(in srgb, var(--down) 8%, var(--card));
 }
 
 .env-detail {
@@ -943,6 +967,20 @@ button.row:hover {
   resize: none;
   overflow: hidden;
   overflow-wrap: anywhere;
+}
+
+.env-detail textarea[aria-invalid='true'] {
+  border-color: var(--down);
+}
+
+.env-detail textarea[aria-invalid='true']:focus {
+  border-color: var(--down);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--down) 12%, transparent);
+}
+
+.env-detail small.text-down,
+.env-list > small.text-down {
+  color: var(--down);
 }
 
 /* A secret's value shows as dots until it is edited. */

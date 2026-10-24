@@ -202,6 +202,8 @@ export type DiscordSettings = {
 
 export type NodeState = 'pending' | 'online' | 'offline'
 
+export type VisibleNode = Pick<Node, 'id' | 'name' | 'state' | 'os' | 'arch' | 'cpus' | 'memoryBytes' | 'diskBytes' | 'dockerVersion' | 'agentVersion' | 'lastSeenAt' | 'metrics'>
+
 export type Node = {
   id: number
   name: string
@@ -647,6 +649,7 @@ export const api = {
   saveGeneralSettings: (name: string, publicUrl: string, appsLayout: Instance['appsLayout']) =>
     request<{ name: string; publicUrl: string; appsLayout: Instance['appsLayout'] }>('PUT', '/api/admin/settings/general', { name, publicUrl, appsLayout }),
   nodes: () => request<Node[]>('GET', '/api/admin/nodes'),
+  visibleNodes: () => request<VisibleNode[]>('GET', '/api/nodes'),
   setNodeIngress: (id: number, body: { publicIp: string; ingressMode: 'traefik' | 'proxy' | 'relay' | 'tunnel'; ingressHttpPort: number }) =>
     request<Node>('PUT', `/api/admin/nodes/${id}/ingress`, body),
   createNode: (body: { name: string; local: boolean; lan?: boolean; ingressMode?: Node['ingressMode']; publicIp?: string; ingressHttpPort?: number }) =>
