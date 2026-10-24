@@ -411,9 +411,20 @@ function AppList({
       </>}
       {overviewSingles.length > 0 && <>
         <div className="overview-section-title"><h2>{overviewProjects.length ? 'Apps seules' : 'Apps'} <span>{overviewSingles.length}</span></h2></div>
-        <div className="overview-table-wrap"><table className="overview-table"><thead><tr><th>App</th><th>Image</th><th>Node</th><th>État</th><th><span className="sr-only">Actions</span></th></tr></thead><tbody>
-          {overviewSingles.map((item) => <tr key={item.key}><td><a href={itemHref(item)} className="overview-app-name">{item.name}</a>{item.app?.url && <small>{item.app.url.replace(/^https?:\/\//, '')}</small>}</td><td className="mono">{item.app?.image ?? item.container?.image ?? '—'}</td><td>{nodes.find((n) => n.id === nodeOf(item))?.name ?? '—'}</td><td><span className={`overview-status ${item.tone}`}>{itemState(item)}</span></td><td>{item.app && <WithMenu item={item} admin={admin} onChange={onChange} place="table"><span /></WithMenu>}</td></tr>)}
-        </tbody></table></div>
+        <div className="overview-app-grid">
+          {overviewSingles.map((item) => {
+            const nodeName = nodes.find((n) => n.id === nodeOf(item))?.name ?? '—'
+            const detail = item.app?.url ? item.app.url.replace(/^https?:\/\//, '') : (item.app?.image ?? item.container?.image ?? '—')
+            return <div key={item.key} className={`overview-app-card ${item.tone === 'down' ? 'has-error' : ''}`}>
+              <div className="overview-app-top">
+                <AppLogo url={item.app?.logo.url ?? item.app?.logo.autoUrl ?? item.container?.logoUrl} color={item.app?.logo.color} name={item.name} size={38} />
+                <span className="overview-app-title"><a href={itemHref(item)} className="overview-app-name" title={item.name}>{item.name}</a><small title={detail}>{detail}</small></span>
+                {item.app && <WithMenu item={item} admin={admin} onChange={onChange} place="table"><span /></WithMenu>}
+              </div>
+              <div className="overview-app-foot"><span className="overview-app-node" title={nodeName}>{nodeName}</span><span className={`overview-status ${item.tone}`}>{itemState(item)}</span></div>
+            </div>
+          })}
+        </div>
       </>}
     </div>
   )

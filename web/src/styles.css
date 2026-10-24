@@ -2420,8 +2420,9 @@ button.row:hover {
   background: var(--bg);
 }
 
-.menu-theme-options button,
-.menu-theme-options button:hover {
+.menu .menu-theme-options button,
+.menu .menu-theme-options button:hover {
+  display: flex;
   justify-content: center;
   align-items: center;
   flex: 1 1 0;
@@ -2434,7 +2435,7 @@ button.row:hover {
   background: transparent;
 }
 
-.menu-theme-options button.selected {
+.menu .menu-theme-options button.selected {
   border-color: var(--border);
   background: var(--card);
   color: var(--accent);
@@ -2669,17 +2670,6 @@ button.row:hover {
   color: var(--accent);
 }
 
-.dashboard-shell .tabs .chip.on::after {
-  position: absolute;
-  right: 10px;
-  bottom: -1px;
-  left: 10px;
-  height: 2px;
-  border-radius: 2px 2px 0 0;
-  background: var(--accent);
-  content: '';
-}
-
 .dashboard-content {
   max-width: 1518px;
   padding-top: clamp(25px, 3.4vw, 42px);
@@ -2793,10 +2783,18 @@ button.row:hover {
   font-size: 0.84rem;
 }
 
-.dashboard-content .search input {
+.dashboard-content .search input:not([type='checkbox']):not([type='radio']):not([type='file']),
+.dashboard-content .search input:focus {
+  flex: 1;
+  width: auto;
+  max-width: none;
+  min-width: 0;
   min-height: 38px;
-  padding-left: 36px;
-  border-radius: 8px;
+  padding-left: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
 }
 
 .dashboard-content .chip {
@@ -6961,7 +6959,17 @@ a.link-btn {
 .overview-section-title { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 22px 0 10px; }
 .overview-section-title h2 { display: flex; align-items: center; gap: 7px; font-size: 1rem; }
 .overview-section-title h2 span { color: var(--muted); font-size: .72rem; font-weight: 500; }
-.overview-project-list { display: grid; gap: 11px; }
+.overview-project-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 420px), 1fr)); gap: 11px; }
+.overview-app-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 280px), 1fr)); gap: 11px; }
+.overview-app-card { display: grid; gap: 14px; min-width: 0; padding: 14px; border: 1px solid var(--border); border-radius: 11px; background: var(--card); box-shadow: var(--shadow); }
+.overview-app-card:hover { border-color: color-mix(in srgb, var(--accent) 32%, var(--border)); }
+.overview-app-card.has-error { border-left: 3px solid var(--down); }
+.overview-app-top { display: flex; align-items: center; gap: 11px; min-width: 0; }
+.overview-app-title { display: grid; min-width: 0; flex: 1; }
+.overview-app-title .overview-app-name, .overview-app-title small, .overview-app-node { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.overview-app-title small { color: var(--muted); font-size: .72rem; }
+.overview-app-foot { display: flex; align-items: center; justify-content: space-between; gap: 10px; color: var(--muted); font-size: .76rem; }
+.overview-app-node { min-width: 0; }
 .overview-project { display: block; padding: 16px 17px; overflow: hidden; border: 1px solid var(--border); border-radius: 11px; background: var(--card); box-shadow: var(--shadow); color: inherit; text-decoration: none; }
 .overview-project:hover { border-color: color-mix(in srgb, var(--accent) 32%, var(--border)); }
 .overview-project.has-error { border-left: 3px solid var(--down); }
@@ -6975,7 +6983,7 @@ a.link-btn {
 .overview-status.warn::before { background: var(--warn); }
 .overview-status.down { color: var(--down); }
 .overview-status.down::before { background: var(--down); }
-.overview-services { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 9px; margin-top: 14px; }
+.overview-services { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 170px), 1fr)); gap: 9px; margin-top: 14px; }
 .overview-service { display: block; min-width: 0; padding: 9px 11px; overflow: hidden; border: 1px solid var(--border); border-radius: 9px; background: color-mix(in srgb, var(--bg) 48%, var(--card)); }
 .overview-service-line { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .overview-service-line strong { overflow: hidden; font-size: .78rem; text-overflow: ellipsis; white-space: nowrap; }
