@@ -16,9 +16,10 @@ import (
 
 // fakeWebhooks receives the webhook posts the server makes, whatever host they target.
 type fakeWebhooks struct {
-	mu    sync.Mutex
-	posts []map[string]any
-	paths []string
+	mu     sync.Mutex
+	posts  []map[string]any
+	paths  []string
+	status int // optional HTTP failure response; zero uses Discord's success response
 }
 
 func (f *fakeWebhooks) install(t *testing.T, server *Server) {
@@ -30,7 +31,11 @@ func (f *fakeWebhooks) install(t *testing.T, server *Server) {
 		f.posts = append(f.posts, body)
 		f.paths = append(f.paths, r.URL.Path)
 		f.mu.Unlock()
-		w.WriteHeader(http.StatusNoContent)
+		status := f.status
+		if status == 0 {
+			status = http.StatusNoContent
+		}
+		w.WriteHeader(status)
 	}))
 	t.Cleanup(ts.Close)
 	target, _ := url.Parse(ts.URL)
