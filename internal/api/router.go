@@ -24,6 +24,7 @@ import (
 
 // Deps are the services the HTTP handlers use.
 type Deps struct {
+	DataDir string // native server data directory, protected from local-node bind mounts
 	Store   *store.Store
 	Logger  *slog.Logger
 	Secrets *secrets.Box
@@ -50,6 +51,7 @@ type Deps struct {
 
 // Server holds the dependencies of the HTTP handlers.
 type Server struct {
+	dataDir   string
 	store     *store.Store
 	logger    *slog.Logger
 	limiter   *auth.LoginLimiter
@@ -96,7 +98,7 @@ type Server struct {
 // NewServer returns a Server. setupToken must be non-empty while the setup wizard has not been completed.
 func NewServer(d Deps, setupToken string) *Server {
 	s := &Server{
-		store:     d.Store,
+		dataDir: d.DataDir, store: d.Store,
 		logger:    d.Logger,
 		ca:        d.CA,
 		nodes:     d.Nodes,
@@ -165,11 +167,24 @@ func (s *Server) Handler(webFS fs.FS) http.Handler {
 	mux.HandleFunc("GET /api/members/{id}", s.requireUser(s.handleGetMember))
 	mux.HandleFunc("PUT /api/apps/{id}/public", s.requireUser(s.handleSetAppPublic))
 	mux.HandleFunc("POST /api/admin/apps/{id}/move", s.requireAdmin(s.handleMoveApp))
+	mux.HandleFunc("POST /api/admin/apps/{id}/bind-mounts/revoke", s.requireSuperadmin(s.handleRevokeAppBindMounts))
+	mux.HandleFunc("POST /api/admin/stacks/{id}/bind-mounts/revoke", s.requireSuperadmin(s.handleRevokeStackBindMounts))
 	mux.HandleFunc("PUT /api/apps/{id}/logo", s.requireUser(s.handlePutAppLogo))
 	mux.HandleFunc("GET /api/apps/{id}/logo", s.requireUser(s.handleGetAppLogo))
 	mux.HandleFunc("GET /api/logos", s.requireUser(s.handleImageLogo))
 	mux.HandleFunc("GET /api/images/ports", s.requireUser(s.handleImagePorts))
 	mux.HandleFunc("GET /api/gpus", s.requireUser(s.handleListGpus))
+	mux.HandleFunc("GET /api/bind-requests/nodes", s.requireUser(s.handleBindNodeChoices))
+	mux.HandleFunc("GET /api/bind-requests", s.requireUser(s.handleListBindRequests))
+	mux.HandleFunc("POST /api/bind-requests", s.requireUser(s.handleCreateBindRequest))
+	mux.HandleFunc("GET /api/bind-requests/{id}", s.requireUser(s.handleGetBindRequest))
+	mux.HandleFunc("POST /api/bind-requests/{id}/cancel", s.requireUser(s.handleDecideBindRequest))
+	mux.HandleFunc("POST /api/admin/bind-requests/{id}/validate", s.requireSuperadmin(s.handleValidateBindRequest))
+	mux.HandleFunc("POST /api/admin/bind-requests/{id}/approve", s.requireSuperadmin(s.handleApproveBindRequest))
+	mux.HandleFunc("POST /api/admin/bind-requests/{id}/retry", s.requireSuperadmin(s.handleApproveBindRequest))
+	mux.HandleFunc("GET /api/admin/bind-requests", s.requireSuperadmin(s.handleListBindRequests))
+	mux.HandleFunc("POST /api/admin/bind-requests/{id}/refuse", s.requireSuperadmin(s.handleDecideBindRequest))
+	mux.HandleFunc("POST /api/admin/bind-requests/{id}/reveal", s.requireSuperadmin(s.handleRevealBindRequest))
 	mux.HandleFunc("GET /api/support/tickets", s.requireUser(s.handleListTickets))
 	mux.HandleFunc("POST /api/support/tickets", s.requireUser(s.handleCreateTicket))
 	mux.HandleFunc("GET /api/support/tickets/{id}", s.requireUser(s.handleGetTicket))

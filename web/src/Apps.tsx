@@ -1,5 +1,5 @@
 import { lazy, Suspense, useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react'
-import { api, errorMessage, type App, type AppEvent, type AppInput, type AppState, type AppUsage, type Container, type GpuRequest, type Node, type NodeChoice, type NodeGpus, type Stack } from './api'
+import { api, errorMessage, type BindMount, type BindNode, type App, type AppEvent, type AppInput, type AppState, type AppUsage, type Container, type GpuRequest, type Node, type NodeChoice, type NodeGpus, type Stack } from './api'
 import { AppLogo, AreaChart, CopyField, formatBytes, LOGO_COLORS, Modal, since, Switch, upFor, useRedeploy } from './ui'
 import { ImageCropper } from './Cropper'
 import { ProjectCard, ProjectDetail, ProjectFormModal, ProjectLogo, projectStates } from './Projects'
@@ -105,12 +105,14 @@ function useAppsData(admin: boolean) {
 export default function Apps({
   admin,
   superadmin,
+  userId,
   layout,
   route,
   go,
 }: {
   admin: boolean
   superadmin: boolean
+  userId: number
   layout: AppsLayout
   route: string[]
   go: (path: string) => void
@@ -123,7 +125,7 @@ export default function Apps({
     const project = projects.find((p) => p.id === Number(route[1]))
     // A member's own project, or any project for an admin: the full page. Otherwise someone opened a
     // project from a profile: read-only.
-    if (project) return <ProjectDetail key={project.id} stack={project} onChange={load} go={go} />
+    if (project) return <ProjectDetail key={project.id} stack={project} onChange={load} go={go} superadmin={superadmin} />
     return <ProjectPage key={route[1]} id={Number(route[1])} go={go} />
   }
 
@@ -131,7 +133,7 @@ export default function Apps({
     const app = apps?.find((a) => a.id === Number(route[1]))
     if (!apps) return null
     if (!app) return <NotFound what="Cette app n’existe plus." go={go} />
-    return <AppDetail key={app.id + (route[2] ?? '')} app={app} admin={admin} nodes={nodes} onChange={load} go={go} openTab={route[2] === 'network' ? 'network' : undefined} />
+    return <AppDetail key={app.id + (route[2] ?? '')} app={app} admin={admin} superadmin={superadmin} userId={userId} nodes={nodes} onChange={load} go={go} openTab={route[2] === 'network' ? 'network' : undefined} />
   }
   if (route[0] === 'containers' && route[2]) {
     const c = containers.find((x) => x.nodeId === Number(route[1]) && x.id === route[2])
@@ -139,7 +141,7 @@ export default function Apps({
     if (!c) return <NotFound what="Ce conteneur n’existe plus, ou son node est hors ligne." go={go} />
     return <ContainerDetail container={c} superadmin={superadmin} onChange={load} go={go} />
   }
-  return <AppList apps={apps} nodes={nodes} containers={containers} projects={projects} admin={admin} layout={layout} error={error} onChange={load} go={go} />
+  return <AppList apps={apps} nodes={nodes} containers={containers} projects={projects} admin={admin} superadmin={superadmin} layout={layout} error={error} onChange={load} go={go} />
 }
 
 function NotFound({ what, go }: { what: string; go: (path: string) => void }) {
@@ -248,6 +250,7 @@ function AppList({
   containers,
   projects,
   admin,
+  superadmin,
   layout,
   error,
   onChange,
@@ -258,6 +261,7 @@ function AppList({
   containers: Container[]
   projects: Stack[]
   admin: boolean
+  superadmin: boolean
   layout: AppsLayout
   error: string
   onChange: () => void
@@ -377,6 +381,10 @@ function AppList({
           onChange()
           go(`projects/${p.id}`)
         }}
+        onRequest={(id) => {
+          setCreating(null)
+          go(superadmin ? `bind-requests/review/${id}` : `bind-requests/${id}`)
+        }}
       />
     ) : (
       creating && (
@@ -388,7 +396,13 @@ function AppList({
           onCompose={() => setCreating('compose')}
           submitLabel="Créer et démarrer"
           onClose={() => setCreating(null)}
-          onSubmit={async (input, logo) => {
+          onSubmit={async (input, logo, bindMounts) => {
+            if (bindMounts) {
+              const request = await api.createBindRequest({ ...input, bindMounts, logoImage: logo })
+              setCreating(null)
+              go(`bind-requests/${request.id}`)
+              return
+            }
             const app = await api.createApp(input)
             if (logo) await api.setAppLogo(app.id, { mode: 'custom', image: logo }).catch(() => {})
             setCreating(null)
@@ -687,11 +701,11 @@ function WithMenu({ item, admin, onChange, place, children }: { item: Item; admi
               Arrêter
             </button>
           ) : (
-            <button type="button" role="menuitem" disabled={app.suspended} onClick={act(() => api.appAction(app.id, 'start'))}>
+            <button type="button" role="menuitem" disabled={app.suspended || (!!app.bindMounts?.length && !app.bindAuthorized)} onClick={act(() => api.appAction(app.id, 'start'))}>
               Démarrer
             </button>
           )}
-          <button type="button" role="menuitem" disabled={app.suspended} onClick={act(() => api.appAction(app.id, 'redeploy'))}>
+          <button type="button" role="menuitem" disabled={app.suspended || (!!app.bindMounts?.length && !app.bindAuthorized)} onClick={act(() => api.appAction(app.id, 'redeploy'))}>
             Redéployer
           </button>
           {app.stackId ? (
@@ -993,7 +1007,7 @@ function AppFormModal({
   // Admins pick the node of a new app; users' apps go to the recommended one.
   admin?: boolean
   // logo: a framed picture chosen at creation, as a data URL.
-  onSubmit: (input: AppInput, logo?: string) => Promise<void>
+  onSubmit: (input: AppInput, logo?: string, bindMounts?: BindMount[]) => Promise<void>
   onClose: () => void
 }) {
   const [source, setSource] = useState<Source>(initialSource ?? (initial?.kind === 'sandbox' ? 'sandbox' : initial?.dockerfile ? 'dockerfile' : 'image'))
@@ -1003,6 +1017,22 @@ function AppFormModal({
   const [logo, setLogo] = useState('')
   const [choices, setChoices] = useState<NodeChoice[]>([])
   const [nodeId, setNodeId] = useState(0)
+  const [useBinds, setUseBinds] = useState(false)
+  const [bindMounts, setBindMounts] = useState<BindMount[]>([{ source: '', target: '', readOnly: true }])
+  const [bindNodes, setBindNodes] = useState<BindNode[]>([])
+  const [bindNodeError, setBindNodeError] = useState('')
+  useEffect(() => {
+    if (!useBinds) return
+    let live = true
+    api.bindNodes().then((nodes) => {
+      if (!live) return
+      setBindNodes(nodes)
+      setBindNodeError('')
+      setNodeId((id) => nodes.some((n) => n.id === id) ? id : (nodes[0]?.id ?? 0))
+    }, (err) => live && setBindNodeError(errorMessage(err)))
+    return () => { live = false }
+  }, [useBinds])
+
   const [domain, setDomain] = useState('')
   useEffect(() => {
     if (initial) return
@@ -1096,6 +1126,7 @@ function AppFormModal({
           gpu,
         },
         logo || undefined,
+        useBinds ? bindMounts : undefined,
       )
     } catch (err) {
       setError(errorMessage(err))
@@ -1108,9 +1139,11 @@ function AppFormModal({
     ? (initial?.ssh ?? `ssh ${shownName}@… -p 2222`)
     : (initial?.url?.replace(/^https?:\/\//, '') ?? (domain ? `${shownName}.${domain}` : ''))
   const node = initial ? initial.nodeName : choices.find((c) => c.id === nodeId)
+  const bindNode = useBinds ? bindNodes.find((n) => n.id === nodeId) : undefined
   const setCount = env.filter((v) => v.key.trim()).length
 
   const chosen = typeof node === 'object' ? node : undefined
+  const previewNode = useBinds ? bindNode : chosen
   // The memory limit is a ceiling, not a reservation: an app uses what it needs, so a limit above the free
   // memory only warns. Without a measure yet, the row is left out rather than shown as full.
   const free = chosen?.freeMemoryBytes || undefined
@@ -1147,7 +1180,7 @@ function AppFormModal({
           </span>
         )}
       </div>
-      {choices.length > 1 && (
+      {!useBinds && choices.length > 1 && (
         <label className="field">
           <span>Node</span>
           <select value={nodeId} onChange={(e) => setNodeId(Number(e.target.value))}>
@@ -1161,19 +1194,19 @@ function AppFormModal({
         </label>
       )}
       <dl className="aside-facts">
-        {choices.length <= 1 && (
+        {(useBinds || choices.length <= 1) && (
           <>
             <dt>Node</dt>
-            <dd>{typeof node === 'string' ? node : chosen ? chosen.name : 'le plus puissant (auto)'}</dd>
+            <dd>{useBinds ? (bindNode?.name ?? 'à choisir') : typeof node === 'string' ? node : chosen ? chosen.name : 'le plus puissant (auto)'}</dd>
           </>
         )}
-        {chosen && (
+        {previewNode && (
           <>
             <dt>Machine</dt>
             <dd>
-              {chosen.cpus} CPU · {chosen.apps} app{chosen.apps > 1 ? 's' : ''}
+              {previewNode.cpus} CPU · {previewNode.apps} app{previewNode.apps > 1 ? 's' : ''}
             </dd>
-            {free !== undefined && (
+            {!useBinds && free !== undefined && (
               <>
                 <dt>Mémoire libre</dt>
                 <dd className={overFree ? 'state-warn' : ''}>{formatBytes(free)}</dd>
@@ -1182,7 +1215,8 @@ function AppFormModal({
           </>
         )}
         <dt>Données</dt>
-        <dd>{sandbox ? '/root gardé' : keptCount ? `${keptCount} volume${keptCount > 1 ? 's' : ''}` : 'non gardées'}</dd>
+        <dd>{useBinds ? `${bindMounts.length} accès hôte${keptCount ? ` · ${keptCount} volume(s)` : ''}` : sandbox ? '/root gardé' : keptCount ? `${keptCount} volume${keptCount > 1 ? 's' : ''}` : 'non gardées'}</dd>
+        {useBinds && <><dt>Approbation</dt><dd>En attente du superadmin avant création</dd></>}
         <dt>Source</dt>
         <dd>{sandbox ? 'Linux, accès SSH' : source === 'dockerfile' ? 'construite' : 'téléchargée'}</dd>
       </dl>
@@ -1196,7 +1230,7 @@ function AppFormModal({
       <span className="aside-spacer" />
       {error && <p className="error">{error}</p>}
       <button type="submit" className="btn btn-primary btn-block btn-big" disabled={busy}>
-        {busy ? 'Envoi…' : submitLabel}
+        {busy ? 'Envoi…' : useBinds ? 'Soumettre la demande' : submitLabel}
       </button>
       <button type="button" className="link-button aside-cancel" onClick={onClose} disabled={busy}>
         Annuler
@@ -1213,6 +1247,7 @@ function AppFormModal({
         onPick={(k) => {
           if (k === 'compose') return onCompose?.()
           setSource(k)
+          if (k !== 'image') { setUseBinds(false); if (!admin) setNodeId(0) }
           if (k === 'sandbox' && !image.trim()) setImage(sandboxSystems[0].image)
         }}
       />
@@ -1289,6 +1324,29 @@ function AppFormModal({
           <input type="number" min={64} max={16384} step={64} value={memory} onChange={(e) => setMemory(e.target.value)} required />
         </label>
       </div>
+      {!initial && source !== 'compose' && (
+        <div className="field">
+          <Switch checked={useBinds} onChange={(value) => { setUseBinds(value); if (!value && !admin) setNodeId(0) }} label="Utiliser des bind mounts" />
+          {useBinds && <>
+            <small>La soumission crée une demande. Seul le superadmin pourra autoriser ces accès avant la création de l’app.</small>
+            <label className="field"><span>Machine contenant les fichiers</span>
+              <select value={nodeId || ''} onChange={(e) => setNodeId(Number(e.target.value))} required>
+                <option value="" disabled>Choisir un node</option>
+                {bindNodes.map((n) => <option key={n.id} value={n.id}>{n.name} · {n.online ? 'en ligne' : 'hors ligne'}</option>)}
+              </select>
+            </label>
+            {bindNodeError && <p className="error">{bindNodeError}</p>}
+            {!bindNodeError && bindNodes.length === 0 && <p className="muted">Aucun node disponible pour une demande.</p>}
+            {bindMounts.map((m, i) => <div className="panel" key={i}>
+              <label className="field"><span>Source sur l’hôte</span><input className="mono" placeholder="/srv/media" value={m.source} onChange={(e) => setBindMounts(bindMounts.map((x,j) => j === i ? {...x, source:e.target.value} : x))} required /></label>
+              <label className="field"><span>Destination dans le conteneur</span><input className="mono" placeholder="/media" value={m.target} onChange={(e) => setBindMounts(bindMounts.map((x,j) => j === i ? {...x, target:e.target.value} : x))} required /></label>
+              <label className="field"><span>Accès</span><select value={m.readOnly ? 'ro' : 'rw'} onChange={(e) => setBindMounts(bindMounts.map((x,j) => j === i ? {...x, readOnly:e.target.value === 'ro'} : x))}><option value="ro">Lecture seule</option><option value="rw">Lecture / écriture</option></select></label>
+              <button type="button" className="link-button" disabled={bindMounts.length === 1} onClick={() => setBindMounts(bindMounts.filter((_,j) => j !== i))}>Retirer ce montage</button>
+            </div>)}
+            <button type="button" className="btn btn-small" disabled={bindMounts.length >= 10} onClick={() => setBindMounts([...bindMounts,{source:'',target:'',readOnly:true}])}>+ Ajouter un montage</button>
+          </>}
+        </div>
+      )}
       <details className="field" open={envOpen} onToggle={(e) => setEnvOpen(e.currentTarget.open)}>
         <summary>
           Variables d’environnement <span className="muted">{setCount ? `· ${setCount}` : '· aucune'}</span>
@@ -1401,9 +1459,43 @@ function AppFormModal({
 
 type DetailTab = 'observability' | 'logs' | 'terminal' | 'network' | 'events'
 
+function BindChangeModal({ app, onClose, onSubmitted }: { app: App; onClose: () => void; onSubmitted: (id: number) => void }) {
+  const [nodes, setNodes] = useState<BindNode[]>([])
+  const [nodeId, setNodeId] = useState(app.nodeId)
+  const [mounts, setMounts] = useState<BindMount[]>(app.bindMounts ?? [])
+  const [error, setError] = useState('')
+  const [busy, setBusy] = useState(false)
+  useEffect(() => { api.bindNodes().then((rows) => setNodes(rows), (err) => setError(errorMessage(err))) }, [])
+  async function submit(e: FormEvent) {
+    e.preventDefault(); setBusy(true); setError('')
+    try {
+      const request = await api.createBindChangeRequest({
+        change: { resourceId: app.id, resourceType: 'app', nodeId, bindMounts: mounts },
+        bindMounts: mounts,
+      })
+      onSubmitted(request.id)
+    } catch (err) { setError(errorMessage(err)); setBusy(false) }
+  }
+  return <Modal title={`Modifier les accès de ${app.name}`} subtitle={app.bindAuthorized ? "L’accès actuel reste en place jusqu’à la décision du superadmin." : "L’autorisation est révoquée. Choisissez un autre node pour demander explicitement de nouveaux accès."} onClose={onClose} onSubmit={submit}>
+    <label className="field"><span>Node des chemins</span><select value={nodeId} onChange={(e) => setNodeId(Number(e.target.value))}>{nodes.map((n) => <option key={n.id} value={n.id}>{n.name} · {n.online ? 'en ligne' : 'hors ligne'}</option>)}</select></label>
+    {mounts.map((m,i) => <div className="panel" key={i}>
+      <label className="field"><span>Source sur l’hôte</span><input className="mono" value={m.source} onChange={(e) => setMounts(mounts.map((x,j) => j===i ? {...x,source:e.target.value} : x))} required /></label>
+      <label className="field"><span>Destination</span><input className="mono" value={m.target} onChange={(e) => setMounts(mounts.map((x,j) => j===i ? {...x,target:e.target.value} : x))} required /></label>
+      <label className="field"><span>Accès</span><select value={m.readOnly?'ro':'rw'} onChange={(e) => setMounts(mounts.map((x,j) => j===i ? {...x,readOnly:e.target.value==='ro'} : x))}><option value="ro">Lecture seule</option><option value="rw">Lecture / écriture</option></select></label>
+      <button type="button" className="link-button" onClick={() => setMounts(mounts.filter((_,j)=>j!==i))}>Retirer</button>
+    </div>)}
+    <button type="button" className="btn" onClick={() => setMounts([...mounts,{source:'',target:'',readOnly:true}])}>Ajouter un montage</button>
+    {error && <p className="error" role="alert">{error}</p>}
+    <p className="muted">Un changement de node ne copie pas les fichiers. Il sera appliqué après validation des chemins sur le node cible.</p>
+    <button type="submit" className="btn btn-primary" disabled={busy || !nodeId}>{busy?'Envoi…':'Soumettre au superadmin'}</button>
+  </Modal>
+}
+
 function AppDetail({
   app,
   admin,
+  superadmin,
+  userId,
   nodes,
   onChange,
   go,
@@ -1411,6 +1503,8 @@ function AppDetail({
 }: {
   app: App
   admin: boolean
+  superadmin: boolean
+  userId: number
   nodes: Node[]
   onChange: () => void
   go: (path: string) => void
@@ -1423,6 +1517,7 @@ function AppDetail({
   const [moving, setMoving] = useState(false)
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
+  const [changingBinds, setChangingBinds] = useState(false)
   const [deleting, setDeleting] = useState(false)
 
   useEffect(() => {
@@ -1443,6 +1538,7 @@ function AppDetail({
   }
 
   const tone = appTone(app)
+  const bindsRevoked = !!app.bindMounts?.length && !app.bindAuthorized
   const [redeploying, startRedeploy] = useRedeploy(['pending', 'pulling', 'building', 'creating', 'deploying'].includes(app.state))
 
   return (
@@ -1588,6 +1684,20 @@ function AppDetail({
         )}
         {app.error && <p className="error">{app.error}</p>}
 
+        {!!app.bindMounts?.length && <section className="field">
+          <h3>Accès aux fichiers hôtes</h3>
+          <p>{app.bindAuthorized ? 'Autorisation approuvée' : 'Autorisation révoquée'}</p>
+          {bindsRevoked && <p className="hint">{app.state === 'node-offline'
+            ? 'Node hors ligne : l’arrêt sera appliqué à sa reconnexion et reste à confirmer.'
+            : ['stopped', 'exited', 'finished', 'completed'].includes(app.state)
+              ? 'Conteneur arrêté. Le redémarrage avec ces montages est bloqué.'
+              : `Arrêt demandé. État observé : ${stateText(app)}.`}</p>}
+          <ul>{app.bindMounts.map((m, i) => <li key={i}><code>{m.source}</code> → <code>{m.target}</code> · {m.readOnly ? 'lecture seule' : 'lecture / écriture'}</li>)}</ul>
+          {(admin || app.ownerId === userId) && app.bindMounts.length > 0 && <button type="button" className="btn" disabled={busy} onClick={() => setChangingBinds(true)}>{app.bindAuthorized ? 'Demander une modification des accès / du node' : 'Demander de nouveaux accès sur un autre node'}</button>}
+          {superadmin && app.bindAuthorized && !app.stackId && <button type="button" className="btn danger" disabled={busy} onClick={() => run(() => api.revokeAppBinds(app.id))}>Révoquer l’autorisation</button>}
+        </section>}
+        {changingBinds && <BindChangeModal app={app} onClose={() => setChangingBinds(false)} onSubmitted={(id) => { setChangingBinds(false); go(`bind-requests/${id}`) }} />}
+
         <dl className="kv">
           <dt>Image</dt>
           <dd className="mono">{app.image}</dd>
@@ -1665,7 +1775,7 @@ function AppDetail({
                 type="button"
                 className={`btn ${redeploying ? 'btn-busy' : ''}`}
                 aria-busy={redeploying}
-                disabled={busy || redeploying || app.suspended}
+                disabled={busy || redeploying || app.suspended || bindsRevoked}
                 onClick={() => {
                   startRedeploy()
                   run(() => api.appAction(app.id, 'redeploy'))
@@ -1678,8 +1788,8 @@ function AppDetail({
             <button
               type="button"
               className="btn btn-primary detail-actions-wide"
-              disabled={busy || app.suspended}
-              title={app.suspended ? 'Les apps de ce compte sont suspendues' : undefined}
+              disabled={busy || app.suspended || bindsRevoked}
+              title={bindsRevoked ? 'L’autorisation de bind mounts est révoquée' : app.suspended ? 'Les apps de ce compte sont suspendues' : undefined}
               onClick={() => run(() => api.appAction(app.id, 'start'))}
             >
               Démarrer

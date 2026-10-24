@@ -27,6 +27,9 @@ SELECT * FROM stacks WHERE owner_id = ? ORDER BY id;
 -- name: UpdateStack :one
 UPDATE stacks SET compose = ?, env_sealed = ?, registry_sealed = ?, updated_at = ? WHERE id = ? RETURNING *;
 
+-- name: ApplyBindChangeStack :execrows
+UPDATE stacks SET compose = ?, node_id = ?, updated_at = ? WHERE id = ? AND node_id = ? AND compose = ? AND env_sealed = ? AND registry_sealed = ?;
+
 -- name: SetStackVolumeOverrides :exec
 UPDATE stacks SET volume_overrides = ?, updated_at = ? WHERE id = ?;
 
@@ -46,6 +49,10 @@ UPDATE apps SET image = ?, port = ?, env_sealed = ?, memory_mb = ?, service_spec
     generation = generation + 1, updated_at = ?
 WHERE id = ?
 RETURNING *;
+
+-- name: UpdateStackAppPreserveRunning :exec
+UPDATE apps SET image = ?, port = ?, env_sealed = ?, memory_mb = ?, service_spec = ?, generation = generation + 1, updated_at = ?
+WHERE id = ?;
 
 -- name: SetStackRunning :exec
 UPDATE apps SET running = ?, generation = generation + ?, updated_at = ? WHERE stack_id = ?;

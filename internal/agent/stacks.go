@@ -162,7 +162,8 @@ func stackConfig(app *agentpb.AppSpec, config, hostConfig map[string]any, labels
 		}
 	}
 	hostConfig["RestartPolicy"] = restartPolicy(st)
-	var mounts []map[string]any
+	// Keep app-level approved bind mounts alongside the named volumes declared by Compose.
+	mounts, _ := hostConfig["Mounts"].([]map[string]any)
 	for _, v := range st.GetVolumes() {
 		mounts = append(mounts, map[string]any{
 			"Type": "volume", "Source": v.GetName(), "Target": v.GetTarget(), "ReadOnly": v.GetReadOnly(),
@@ -193,6 +194,9 @@ func restartPolicy(st *agentpb.StackService) map[string]any {
 // createContainer creates an app's container. An exposed service of a stack joins Forgeyard's network
 // too, where Traefik reaches it and other apps know it by its app name.
 func (r *Reconciler) createContainer(ctx context.Context, name string, app *agentpb.AppSpec, hash, ingressMode string) error {
+	if err := r.checkAppBinds(ctx, app); err != nil {
+		return err
+	}
 	if err := r.dc.Create(ctx, name, appContainerConfig(app, hash, ingressMode)); err != nil {
 		return fmt.Errorf("création du conteneur : %w", err)
 	}

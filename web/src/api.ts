@@ -258,6 +258,8 @@ export type AppState =
 
 export type App = {
   id: number
+  bindMounts?: BindMount[]
+  bindAuthorized: boolean
   name: string
   ownerId: number
   ownerName: string
@@ -426,6 +428,18 @@ export type AppInput = {
   gpu?: GpuRequest
 }
 
+export type BindMount = { source: string; target: string; readOnly: boolean; service?: string }
+export type BindNode = { id: number; name: string; online: boolean; cpus: number; apps: number }
+export type StackBindRequestInput = { name: string; compose: string; env: Record<string, string>; registry?: { server: string; username: string; password: string } }
+export type StackBindRequestConfig = Omit<StackBindRequestInput, 'env'> & { env?: null }
+export type BindRequestInput = (AppInput & { bindMounts: BindMount[]; logoImage?: string }) | { nodeId: number; bindMounts: BindMount[]; stack: StackBindRequestInput }
+export type BindChangeInput = { change: { resourceId: number; resourceType: 'app' | 'stack'; nodeId: number; bindMounts?: BindMount[]; stack?: StackBindRequestInput }; bindMounts?: BindMount[] }
+export type BindRequest = {
+  id: number; authorId: number; authorName: string; nodeName: string
+  config: Partial<Omit<AppInput, 'env'>> & { env?: null; bindMounts: BindMount[]; logoImage?: string; stack?: StackBindRequestConfig; change?: BindChangeInput['change'] }
+  envKeys: string[]; status: string; reason: string; createdAt: number; decidedAt: number; appId?: number; stackId?: number; deploymentState?: string; deploymentError?: string
+}
+
 /** The GPUs of its node an app may use: all, or some by ID. Access only, not a reservation. */
 export type GpuRequest = { vendor: 'nvidia'; all: boolean; ids?: string[] }
 
@@ -558,11 +572,24 @@ export const api = {
     request<DiscordSettings>('PUT', '/api/admin/settings/discord', { clientId, clientSecret }),
   apps: () => request<App[]>('GET', '/api/apps'),
   app: (id: number) => request<App>('GET', `/api/apps/${id}`),
+  bindNodes: () => request<BindNode[]>('GET', '/api/bind-requests/nodes'),
+  approveBindRequest: (id: number) => request<BindRequest>('POST', `/api/admin/bind-requests/${id}/approve`, {}),
+  retryBindRequest: (id: number) => request<BindRequest>('POST', `/api/admin/bind-requests/${id}/retry`, {}),
+  validateBindRequest: (id: number) => request<BindMount[]>('POST', `/api/admin/bind-requests/${id}/validate`, {}),
+  bindRequests: (review = false) => request<BindRequest[]>('GET', review ? '/api/admin/bind-requests' : '/api/bind-requests'),
+  bindRequest: (id: number) => request<BindRequest>('GET', `/api/bind-requests/${id}`),
+  createBindRequest: (input: BindRequestInput) => request<BindRequest>('POST', '/api/bind-requests', input),
+  createBindChangeRequest: (input: BindChangeInput) => request<BindRequest>('POST', '/api/bind-requests', input),
+  cancelBindRequest: (id: number) => request<BindRequest>('POST', `/api/bind-requests/${id}/cancel`, {}),
+  refuseBindRequest: (id: number, reason: string) => request<BindRequest>('POST', `/api/admin/bind-requests/${id}/refuse`, { reason }),
+  revealBindRequest: (id: number) => request<Record<string, string>>('POST', `/api/admin/bind-requests/${id}/reveal`, {}),
   createApp: (input: AppInput) => request<App>('POST', '/api/apps', input),
   gpus: () => request<(NodeGpus & { nodeId: number; nodeName: string })[]>('GET', '/api/gpus'),
   imagePorts: (image: string) => request<{ ports: number[]; volumes: string[]; volumesFrom?: 'image' | 'known'; hub?: string; error?: string }>('GET', `/api/images/ports?image=${encodeURIComponent(image)}`),
   updateApp: (id: number, input: AppInput) => request<App>('PUT', `/api/apps/${id}`, input),
   appAction: (id: number, action: 'start' | 'stop' | 'redeploy') => request<App>('POST', `/api/apps/${id}/${action}`, {}),
+  revokeAppBinds: (id: number) => request<App>('POST', `/api/admin/apps/${id}/bind-mounts/revoke`, {}),
+  revokeStackBinds: (id: number) => request<Stack>('POST', `/api/admin/stacks/${id}/bind-mounts/revoke`, {}),
   deleteApp: (id: number) => request<void>('DELETE', `/api/apps/${id}`, {}),
   appEvents: (id: number) => request<AppEvent[]>('GET', `/api/apps/${id}/events`),
   appUsage: (id: number) => request<AppUsage>('GET', `/api/apps/${id}/usage`),

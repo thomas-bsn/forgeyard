@@ -57,3 +57,8 @@ Chaque page a sa propre adresse (`#/apps/3`, `#/settings/domain`…).
 | [security/](security/README.md) | Chiffrement des secrets, certificats, protections de l'API |
 | [server/](server/README.md) | Organisation du code, base de données, [routes de l'API](server/api.md) |
 | [roadmap.md](roadmap.md) | Ce qui est fait, ce qui reste, limites actuelles |
+
+## Conceptions en préparation
+
+- [Demandes de création avec bind mounts](apps/bind-mount-requests.md) : conception validée ; fonctionnalité non implémentée.
+- [Spécification des bind mounts](apps/bind-mount-spec.md) : critères fonctionnels et tests validés, publiés dans l'[issue #8](https://github.com/thomas-bsn/forgeyard/issues/8), prête pour implémentation.

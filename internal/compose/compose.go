@@ -72,9 +72,11 @@ type Service struct {
 	MemoryMB int    `json:"-"`                // 0 for the default
 }
 
-// Mount puts a named volume of the stack in a service's container.
+// Mount puts a named volume or an explicitly requested host directory in a service's container.
 type Mount struct {
+	Kind     string `json:"kind,omitempty"` // "bind" for a host path; empty for a named volume.
 	Volume   string `json:"volume"`
+	Source   string `json:"source,omitempty"`
 	Target   string `json:"target"`
 	ReadOnly bool   `json:"readOnly,omitempty"`
 }
@@ -457,11 +459,12 @@ func (p *parser) mounts(n *yaml.Node, svc string, volumes map[string]bool) []Mou
 	for _, item := range n.Content {
 		item = resolve(item)
 		var m Mount
+		readOnlySet := false
 		switch item.Kind {
 		case yaml.ScalarNode:
 			parts := strings.Split(item.Value, ":")
 			if len(parts) == 1 {
-				p.errorf(item, "%s : volume anonyme %s : nommez-le (donnees:%s) et déclarez-le sous volumes:", svc, item.Value, item.Value)
+				p.errorf(item, "%s : volume anonyme %s : nommez-le (donnees:%s) et déclarez-le sous volumes:", svc, item.Value, strings.TrimPrefix(item.Value, "/"))
 				continue
 			}
 			if len(parts) > 3 || (len(parts) == 3 && parts[2] != "ro" && parts[2] != "rw") {
@@ -469,24 +472,39 @@ func (p *parser) mounts(n *yaml.Node, svc string, volumes map[string]bool) []Mou
 				continue
 			}
 			m = Mount{Volume: parts[0], Target: parts[1], ReadOnly: len(parts) == 3 && parts[2] == "ro"}
+			if strings.HasPrefix(parts[0], "/") {
+				m.Kind, m.Source = "bind", parts[0]
+				m.Volume = ""
+				m.ReadOnly = len(parts) != 3 || parts[2] == "ro"
+			}
 		case yaml.MappingNode:
 			kind := "volume"
+			source := ""
 			for _, kv := range pairs(item) {
 				switch kv.key {
 				case "type":
 					kind = p.scalar(kv.value, svc+".volumes.type")
 				case "source":
 					m.Volume = p.scalar(kv.value, svc+".volumes.source")
+					source = m.Volume
 				case "target":
 					m.Target = p.scalar(kv.value, svc+".volumes.target")
 				case "read_only":
 					m.ReadOnly = kv.value.Value == "true"
+					readOnlySet = true
 				default:
 					p.errorf(kv.keyN, "%s.volumes.%s n'est pas pris en charge", svc, kv.key)
 				}
 			}
-			if kind != "volume" {
-				p.errorf(item, "%s : volume de type %s refusé : seuls les volumes nommés sont pris en charge", svc, kind)
+			if kind == "bind" {
+				m.Kind = "bind"
+				m.Volume = ""
+				m.Source = source
+				if !readOnlySet {
+					m.ReadOnly = true
+				}
+			} else if kind != "volume" {
+				p.errorf(item, "%s : volume de type %s refusé : seuls les volumes nommés et bind mounts explicites sont pris en charge", svc, kind)
 				continue
 			}
 		default:
@@ -494,6 +512,16 @@ func (p *parser) mounts(n *yaml.Node, svc string, volumes map[string]bool) []Mou
 			continue
 		}
 		switch {
+		case m.Kind == "bind" && (!strings.HasPrefix(m.Source, "/") || strings.ContainsAny(m.Source, "\x00\n\r")):
+			p.errorf(item, "%s : la source du bind mount doit être un chemin hôte absolu", svc)
+		case m.Kind == "bind" && !strings.HasPrefix(m.Target, "/"):
+			p.errorf(item, "%s : la destination du bind mount doit être absolue", svc)
+		case m.Kind == "bind":
+			m.Source = strings.TrimSuffix(m.Source, "/")
+			if m.Source == "" {
+				m.Source = "/"
+			}
+			out = append(out, m)
 		case m.Volume == "" || strings.HasPrefix(m.Volume, "/") || strings.HasPrefix(m.Volume, ".") || strings.HasPrefix(m.Volume, "~"):
 			p.errorf(item, "%s : %s est un dossier de la machine : seuls les volumes nommés sont pris en charge (pas de bind mount)", svc, m.Volume)
 		case !volumes[m.Volume]:

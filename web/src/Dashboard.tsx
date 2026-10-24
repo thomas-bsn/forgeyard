@@ -7,6 +7,7 @@ import Apps from './Apps'
 import Users from './Users'
 import Profile from './Profile'
 import Support from './Support'
+import BindRequests from './BindRequests'
 import { MemberGrid, MemberPage } from './Members'
 
 const roleLabels: Record<User['role'], string> = {
@@ -76,12 +77,13 @@ export default function Dashboard({
           {admin && tab('nodes', 'Nodes')}
           {tab('members', 'Membres', admin ? pending : 0)}
           {tab('support', 'Support', support)}
+          {tab('bind-requests', 'Mes demandes')}
         </nav>
         <span className="spacer" />
         <UserMenu user={user} admin={admin} pending={pending} onLogout={logout} />
       </header>
 
-      {page === 'apps' && <Apps admin={admin} superadmin={user.role === 'superadmin'} layout={instance.appsLayout} route={route.length ? route : ['apps']} go={go} />}
+      {page === 'apps' && <Apps admin={admin} superadmin={user.role === 'superadmin'} userId={user.id} layout={instance.appsLayout} route={route.length ? route : ['apps']} go={go} />}
       {page === 'nodes' && admin && <Nodes localSupported={instance.localNodeSupported} />}
       {route[0] === 'u' && route[1] ? (
         <MemberPage id={Number(route[1])} me={user} />
@@ -89,6 +91,7 @@ export default function Dashboard({
         page === 'members' && (admin ? <Users me={user} onRequestsChange={setPending} /> : <MemberGrid />)
       )}
       {page === 'settings' && admin && <Settings superadmin={user.role === 'superadmin'} section={route[1]} onRenamed={onRefresh} />}
+      {page === 'bind-requests' && <BindRequests superadmin={user.role === 'superadmin'} route={route} go={go} />}
       {page === 'support' && <Support me={user} admin={admin} route={route} go={go} />}
       {page === 'profile' && <Profile user={user} section={route[1]} onChange={onRefresh} />}
     </div>
