@@ -1,52 +1,43 @@
 import { useEffect, useState } from 'react'
 import { api, errorMessage, type BindRequest, type BindMount } from './api'
-import { since } from './ui'
 
 const statusLabels: Record<string, string> = { pending: 'En attente du superadmin', cancelled: 'Annulée', refused: 'Refusée', approving: 'Approbation et création en cours', failed: 'Création impossible', created: 'Créée' }
 
-export default function BindRequests({ superadmin, route, go }: { superadmin: boolean; route: string[]; go: (path: string) => void }) {
-  const review = superadmin && route[1] === 'review'
-  const selected = Number(review ? route[2] : route[1]) || 0
-  const [requests, setRequests] = useState<BindRequest[]>([])
+export const bindStatusLabels = statusLabels
+const statusTone: Record<string, string> = { pending: 'warn', approving: 'warn', created: 'up', failed: 'down', refused: 'down' }
+
+/** A request to mount folders of a node, shown in the Support: what it asks, and for a superadmin the decision. */
+export function BindRequestDetail({ id, superadmin, onChange }: { id: number; superadmin: boolean; onChange: () => void }) {
+  const [request, setRequest] = useState<BindRequest | null>(null)
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
   const [reason, setReason] = useState('')
   const [validated, setValidated] = useState<BindMount[] | null>(null)
   const [secrets, setSecrets] = useState<Record<string, string> | null>(null)
-  const request = requests.find((r) => r.id === selected)
   const requestName = request?.config.stack?.name ?? request?.config.name ?? 'Demande'
-  const load = () => api.bindRequests(review).then((rows) => { setRequests(rows); setError('') }, (err) => setError(errorMessage(err)))
+  const load = () => api.bindRequest(id).then((r) => { setRequest(r); setError('') }, (err) => setError(errorMessage(err)))
   useEffect(() => {
     let live = true
-    const refresh = () => api.bindRequests(review).then((rows) => { if (live) { setRequests(rows); setError('') } }, (err) => live && setError(errorMessage(err)))
+    const refresh = () => api.bindRequest(id).then((r) => { if (live) { setRequest(r); setError('') } }, (err) => live && setError(errorMessage(err)))
     refresh()
     const timer = setInterval(refresh, 15000)
     return () => { live = false; clearInterval(timer) }
-  }, [review])
-  useEffect(() => { setSecrets(null); setReason(''); setValidated(null) }, [selected, review])
+  }, [id])
   async function act(action: () => Promise<unknown>) {
     setBusy(true); setError('')
-    try { await action(); await load() } catch (err) { setError(errorMessage(err)) }
+    try { await action(); await load(); onChange() } catch (err) { setError(errorMessage(err)) }
     finally { setBusy(false) }
   }
-  const base = review ? 'bind-requests/review' : 'bind-requests'
-  return <div className="section">
-    <div className="section-head"><h1>{review ? 'Demandes à examiner' : 'Mes demandes'}</h1>
-      {superadmin && <a className="btn" href={`#/${review ? 'bind-requests' : 'bind-requests/review'}`}>{review ? 'Mes demandes' : 'File du superadmin'}</a>}
-    </div>
+  if (!request) return error ? <p className="error" role="alert">{error}</p> : <p className="muted">Demande introuvable ou chargement en cours.</p>
+  return <>
     {error && <p className="error" role="alert">{error}</p>}
-    {!selected ? <div className="panel">
-      {requests.length === 0 && <p className="muted">Aucune demande.</p>}
-      {requests.map((r) => <a className="ticket-item" key={r.id} href={`#/${base}/${r.id}`}><span className="ticket-item-text"><strong>{r.config.stack?.name ?? r.config.name}</strong><span className="muted">{r.config.stack ? 'Projet Compose · ' : ''}{statusLabels[r.status] ?? r.status} · {r.nodeName} · {review ? `${r.authorName} · ` : ''}{since(r.createdAt)}</span></span></a>)}
-    </div> : request ? <article className="panel">
-      <button type="button" className="link-button" onClick={() => go(base)}>← Retour aux demandes</button>
-      <h2>{requestName}</h2>
-      <p>{statusLabels[request.status] ?? request.status}</p>
+    <article className="panel bind-request">
+      <div className="bind-request-head"><div><span className="bind-request-kind">Accès aux dossiers</span><h2>{requestName}</h2></div><span className={`overview-status ${statusTone[request.status] ?? ''}`}>{statusLabels[request.status] ?? request.status}</span></div>
       {request.appId && <p><a className="btn" href={`#/apps/${request.appId}`}>Ouvrir l’app</a> · Déploiement : {request.deploymentState ?? 'en attente'}</p>}
       {request.stackId && <p><a className="btn" href={`#/projects/${request.stackId}`}>Ouvrir le projet</a></p>}
       {request.config.change && request.status === 'created' && <p><a className="btn" href={request.config.change.resourceType === 'stack' ? `#/projects/${request.config.change.resourceId}` : `#/apps/${request.config.change.resourceId}`}>Ouvrir la ressource modifiée</a></p>}
       {request.deploymentError && <p className="error" role="alert">{request.deploymentError}</p>}
-      {review && (request.status === 'pending' || request.status === 'failed') && <div className="actions">
+      {superadmin && (request.status === 'pending' || request.status === 'failed') && <div className="actions">
         <button className="btn" type="button" disabled={busy} onClick={() => act(async () => setValidated(await api.validateBindRequest(request.id)))}>Vérifier les chemins sur le node</button>
         <button className="btn btn-primary" type="button" disabled={busy} onClick={() => act(() => request.status === 'failed' ? api.retryBindRequest(request.id) : api.approveBindRequest(request.id))}>{request.status === 'failed' ? 'Relancer la création' : 'Approuver et créer'}</button>
       </div>}
@@ -65,12 +56,12 @@ export default function BindRequests({ superadmin, route, go }: { superadmin: bo
         <button className="btn" type="button" disabled={busy} onClick={() => secrets ? setSecrets(null) : act(async () => setSecrets(await api.revealBindRequest(request.id)))}>{secrets ? 'Masquer les variables secrètes' : 'Révéler les variables secrètes'}</button>
         {secrets && <pre className="mono">{JSON.stringify(secrets, null, 2)}</pre>}
       </>}
-      {request.status === 'pending' && (review ? <form onSubmit={(e) => { e.preventDefault(); act(() => api.refuseBindRequest(request.id, reason)) }}>
+      {request.status === 'pending' && (superadmin ? <form onSubmit={(e) => { e.preventDefault(); act(() => api.refuseBindRequest(request.id, reason)) }}>
         <label className="field"><span>Motif du refus</span><textarea required maxLength={2000} value={reason} onChange={(e) => setReason(e.target.value)} /></label>
         <button className="btn" type="submit" disabled={busy || !reason.trim()}>Refuser la demande</button>
       </form> : <button className="btn" type="button" disabled={busy} onClick={() => act(() => api.cancelBindRequest(request.id))}>Annuler ma demande</button>)}
-      {!review && request.status === 'failed' && request.config.change && <button className="btn" type="button" disabled={busy} onClick={() => act(() => api.cancelBindRequest(request.id))}>Annuler cette demande en échec</button>}
-      <p className="muted">Cette configuration est figée. Pour la changer, annule la demande en attente et soumets une nouvelle configuration.</p>
-    </article> : <p className="muted">Demande introuvable ou chargement en cours.</p>}
-  </div>
+      {!superadmin && request.status === 'failed' && request.config.change && <button className="btn" type="button" disabled={busy} onClick={() => act(() => api.cancelBindRequest(request.id))}>Annuler cette demande en échec</button>}
+      {request.status === 'pending' && <p className="muted">Cette configuration est figée. Pour la changer, annule la demande en attente et refais-en une.</p>}
+    </article>
+  </>
 }

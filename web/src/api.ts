@@ -360,6 +360,8 @@ export type RegistryLogin = { server: string; username: string; password: string
 export type StackPreview = {
   services: { name: string; app: string; image: string; kind: App['kind']; port?: number; memoryMb?: number; dependsOn: { service: string; condition: string }[]; backup?: string }[]
   volumes: string[]
+  /** The host folders the services mount: they need a superadmin's approval, unless the user is one. */
+  binds?: { service: string; source: string; target: string; readOnly: boolean }[]
   errors: ComposeError[]
   error?: string
 }

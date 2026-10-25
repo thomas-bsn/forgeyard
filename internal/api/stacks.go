@@ -689,8 +689,17 @@ func (s *Server) handleGetStack(w http.ResponseWriter, r *http.Request) {
 type stackPreview struct {
 	Services []stackPreviewService `json:"services"`
 	Volumes  []string              `json:"volumes"`
-	Errors   compose.Errors        `json:"errors"`
-	Error    string                `json:"error,omitempty"`
+	// Binds are the host folders the services mount: they need a superadmin's approval, or none for a superadmin.
+	Binds  []stackPreviewBind `json:"binds"`
+	Errors compose.Errors     `json:"errors"`
+	Error  string             `json:"error,omitempty"`
+}
+
+type stackPreviewBind struct {
+	Service  string `json:"service"`
+	Source   string `json:"source"`
+	Target   string `json:"target"`
+	ReadOnly bool   `json:"readOnly"`
 }
 
 type stackPreviewService struct {
@@ -712,13 +721,20 @@ func (s *Server) handleValidateStack(w http.ResponseWriter, r *http.Request) {
 	}
 	creating := in.Name != ""
 	st, msg, errs := in.parse(creating)
-	out := stackPreview{Services: []stackPreviewService{}, Volumes: []string{}, Errors: errs, Error: msg}
+	out := stackPreview{Services: []stackPreviewService{}, Volumes: []string{}, Binds: []stackPreviewBind{}, Errors: errs, Error: msg}
 	if out.Errors == nil {
 		out.Errors = compose.Errors{}
 	}
 	if st != nil {
 		if st.Volumes != nil {
 			out.Volumes = st.Volumes
+		}
+		for _, svc := range st.Services {
+			for _, m := range svc.Volumes {
+				if m.Kind == "bind" {
+					out.Binds = append(out.Binds, stackPreviewBind{Service: svc.Name, Source: m.Source, Target: m.Target, ReadOnly: m.ReadOnly})
+				}
+			}
 		}
 		for _, p := range planServices(in.Name, st) {
 			var svc compose.Service

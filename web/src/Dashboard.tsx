@@ -8,7 +8,6 @@ import Apps from './Apps'
 import Users from './Users'
 import Profile from './Profile'
 import Support from './Support'
-import BindRequests from './BindRequests'
 import { MemberGrid, MemberPage } from './Members'
 
 const roleLabels: Record<User['role'], string> = {
@@ -41,15 +40,23 @@ export default function Dashboard({
   // Support: admins see the requests awaiting an answer, members the answers they got.
   const [support, setSupport] = useState(0)
   useEffect(() => {
+    // A superadmin also has the folder requests awaiting a decision.
     const load = () =>
-      api.tickets().then(
-        (ts) => setSupport(ts.filter((t) => t.status === 'open' && (admin ? t.waiting && t.authorId !== user.id : !t.waiting)).length),
+      Promise.all([api.tickets(), user.role === 'superadmin' ? api.bindRequests(true) : Promise.resolve([])]).then(
+        ([ts, binds]) => setSupport(ts.filter((t) => t.status === 'open' && (admin ? t.waiting && t.authorId !== user.id : !t.waiting)).length + binds.filter((r) => r.status === 'pending').length),
         () => {},
       )
     load()
     const t = setInterval(load, 60000)
     return () => clearInterval(t)
   }, [admin, user.id, route[0], route[1]])
+
+  // The folder requests used to have a page of their own: old links land in the Support.
+  useEffect(() => {
+    if (route[0] !== 'bind-requests') return
+    const id = Number(route[1] === 'review' ? route[2] : route[1])
+    go(id ? `support/bind/${id}` : 'support')
+  }, [route[0], route[1], route[2]])
 
   // A detail page names itself in the breadcrumb: its app, project or member rather than its id.
   const [crumb, setCrumb] = useState<{ key: string; name: string } | null>(null)
@@ -64,7 +71,7 @@ export default function Dashboard({
       : null
     load?.then((name) => setCrumb({ key, name }), () => {})
   }, [route[0], route[1]])
-  const crumbName = route[1] ? (crumb?.key === `${route[0]}/${route[1]}` ? crumb.name : /^\d+$/.test(route[1]) ? null : route[1]) : null
+  const crumbName = route[0] === 'support' && route[1] === 'bind' ? 'Accès aux dossiers' : route[1] ? (crumb?.key === `${route[0]}/${route[1]}` ? crumb.name : /^\d+$/.test(route[1]) ? null : route[1]) : null
 
   async function logout() {
     await api.logout()
@@ -74,7 +81,7 @@ export default function Dashboard({
   // An app, a project or an external container opens under Apps, a member's profile under Members.
   const aliases: Record<string, string> = { containers: 'apps', projects: 'apps', stacks: 'apps', users: 'members', u: 'members' }
   const page = aliases[route[0]] ?? route[0] ?? 'apps'
-  const pageLabels: Record<string, string> = { apps: 'Apps', nodes: 'Nodes', members: 'Membres', support: 'Support', 'bind-requests': 'Demandes', settings: 'Réglages', profile: 'Mon profil' }
+  const pageLabels: Record<string, string> = { apps: 'Apps', nodes: 'Nodes', members: 'Membres', support: 'Support', settings: 'Réglages', profile: 'Mon profil' }
   const tab = (value: string, label: string, count?: number) => (
     <a href={`#/${value}`} className={`chip ${page === value ? 'on' : ''}`} aria-current={page === value ? 'page' : undefined}>
       {label}
@@ -94,7 +101,6 @@ export default function Dashboard({
           {tab('nodes', 'Nodes')}
           {tab('members', 'Membres', admin ? pending : 0)}
           {tab('support', 'Support', support)}
-          {tab('bind-requests', 'Mes demandes')}
         </nav>
         <span className="spacer" />
         <UserMenu user={user} admin={admin} pending={pending} onLogout={logout} />
@@ -110,7 +116,6 @@ export default function Dashboard({
           page === 'members' && (admin ? <Users me={user} onRequestsChange={setPending} /> : <MemberGrid />)
         )}
         {page === 'settings' && admin && <Settings superadmin={user.role === 'superadmin'} section={route[1]} onRenamed={onRefresh} />}
-        {page === 'bind-requests' && <BindRequests superadmin={user.role === 'superadmin'} route={route} go={go} />}
         {page === 'support' && <Support me={user} admin={admin} route={route} go={go} />}
         {page === 'profile' && <Profile user={user} section={route[1]} onChange={onRefresh} />}
       </div>

@@ -1,6 +1,7 @@
 import { useEffect, useState, type FormEvent, type ReactNode } from 'react'
-import { api, errorMessage, type App, type Ticket, type TicketDetail, type TicketKind, type User } from './api'
+import { api, errorMessage, type App, type BindRequest, type Ticket, type TicketDetail, type TicketKind, type User } from './api'
 import { Avatar, Modal, since } from './ui'
+import { BindRequestDetail, bindStatusLabels } from './BindRequests'
 
 const POLL_MS = 15000
 
@@ -44,7 +45,18 @@ const kinds: { key: TicketKind; label: string; text: string; icon: ReactNode }[]
 
 const kindOf = (k: TicketKind) => kinds.find((x) => x.key === k)!
 
-type Filter = 'open' | 'closed' | 'all'
+type Filter = 'open' | 'review' | 'closed' | 'all'
+
+const folderIcon = (
+  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7Z" />
+  </svg>
+)
+
+/** What the list shows: a help ticket, or a request to mount folders of a node, both in the same list. */
+type Entry = { key: string; href: string; title: string; sub: string; status: 'open' | 'closed'; review: boolean; flag: boolean; updatedAt: number; ticket?: Ticket }
+
+const bindOpen = (r: BindRequest) => r.status === 'pending' || r.status === 'approving' || r.status === 'failed'
 
 /** Help requests: members write to the admins, about anything, one of their apps or the infrastructure. */
 export default function Support({ me, admin, route, go }: { me: User; admin: boolean; route: string[]; go: (path: string) => void }) {
@@ -52,17 +64,43 @@ export default function Support({ me, admin, route, go }: { me: User; admin: boo
   const [filter, setFilter] = useState<Filter>('open')
   const [creating, setCreating] = useState(false)
   const [error, setError] = useState('')
-  const selected = Number(route[1]) || 0
+  const [binds, setBinds] = useState<BindRequest[]>([])
+  const superadmin = me.role === 'superadmin'
+  const bindSelected = route[1] === 'bind' ? Number(route[2]) || 0 : 0
+  const selected = route[1] === 'bind' ? 0 : Number(route[1]) || 0
 
-  const load = () => api.tickets().then(setTickets, (err) => setError(errorMessage(err)))
+  const load = () => {
+    api.tickets().then(setTickets, (err) => setError(errorMessage(err)))
+    api.bindRequests(superadmin).then(setBinds, () => {})
+  }
   useEffect(() => {
     load()
     const t = setInterval(load, POLL_MS)
     return () => clearInterval(t)
   }, [])
 
-  const shown = (tickets ?? []).filter((t) => filter === 'all' || t.status === filter)
-  const count = (f: Filter) => (tickets ?? []).filter((t) => f === 'all' || t.status === f).length
+  const entries: Entry[] = [
+    ...(tickets ?? []).map((t): Entry => {
+      const k = kindOf(t.kind)
+      // Admins see what awaits an answer; members see what got one.
+      const flag = t.status === 'open' && (admin ? t.waiting && t.authorId !== me.id : !t.waiting)
+      return { key: `t${t.id}`, href: `#/support/${t.id}`, title: t.subject, sub: `${admin ? `${t.authorName} · ` : ''}${t.appName ? `${t.appName} · ` : k.label + ' · '}${since(t.updatedAt)}`, status: t.status, review: false, flag, updatedAt: t.updatedAt, ticket: t }
+    }),
+    ...binds.map((r): Entry => ({
+      key: `b${r.id}`,
+      href: `#/support/bind/${r.id}`,
+      title: r.config.stack?.name ?? r.config.name ?? 'Accès à des dossiers',
+      sub: `Accès aux dossiers · ${bindStatusLabels[r.status] ?? r.status} · ${superadmin ? `${r.authorName} · ` : ''}${since(r.createdAt)}`,
+      status: bindOpen(r) ? 'open' : 'closed',
+      review: superadmin && r.status === 'pending',
+      flag: superadmin && r.status === 'pending',
+      updatedAt: r.createdAt,
+    })),
+  ].sort((a, b) => b.updatedAt - a.updatedAt)
+  const matches = (e: Entry, f: Filter) => (f === 'all' ? true : f === 'review' ? e.review : e.status === f)
+  const shown = entries.filter((e) => matches(e, filter))
+  const count = (f: Filter) => entries.filter((e) => matches(e, f)).length
+  const filters: Filter[] = superadmin ? ['open', 'review', 'closed', 'all'] : ['open', 'closed', 'all']
 
   return (
     <div className="support">
@@ -74,9 +112,9 @@ export default function Support({ me, admin, route, go }: { me: User; admin: boo
           </button>
         </div>
         <div className="segmented segmented-small" role="tablist" aria-label="Filtrer les demandes">
-          {(['open', 'closed', 'all'] as Filter[]).map((f) => (
+          {filters.map((f) => (
             <button key={f} type="button" role="tab" aria-selected={filter === f} className={filter === f ? 'on' : ''} onClick={() => setFilter(f)}>
-              {{ open: 'Ouvertes', closed: 'Fermées', all: 'Toutes' }[f]} {count(f)}
+              {{ open: 'Ouvertes', review: 'À examiner', closed: 'Fermées', all: 'Toutes' }[f]} {count(f)}
             </button>
           ))}
         </div>
@@ -85,24 +123,18 @@ export default function Support({ me, admin, route, go }: { me: User; admin: boo
           <p className="muted support-empty">{filter === 'open' ? 'Aucune demande en cours.' : 'Rien ici.'}</p>
         )}
         <nav className="ticket-list" aria-label="Demandes">
-          {shown.map((t) => {
-            const k = kindOf(t.kind)
-            // Admins see what awaits an answer; members see what got one.
-            const flag = t.status === 'open' && (admin ? t.waiting && t.authorId !== me.id : !t.waiting)
+          {shown.map((e) => {
+            const current = e.ticket ? e.ticket.id === selected : e.key === `b${bindSelected}`
             return (
-              <a key={t.id} href={`#/support/${t.id}`} className={`ticket-item ${t.id === selected ? 'on' : ''}`} aria-current={t.id === selected ? 'page' : undefined}>
-                <span className={`ticket-kind kind-${t.kind}`} aria-hidden="true">
-                  {k.icon}
+              <a key={e.key} href={e.href} className={`ticket-item ${current ? 'on' : ''}`} aria-current={current ? 'page' : undefined}>
+                <span className={`ticket-kind ${e.ticket ? `kind-${e.ticket.kind}` : 'kind-folder'}`} aria-hidden="true">
+                  {e.ticket ? kindOf(e.ticket.kind).icon : folderIcon}
                 </span>
                 <span className="ticket-item-text">
-                  <strong>{t.subject}</strong>
-                  <span className="muted">
-                    {admin ? `${t.authorName} · ` : ''}
-                    {t.appName ? `${t.appName} · ` : k.label + ' · '}
-                    {since(t.updatedAt)}
-                  </span>
+                  <strong>{e.title}</strong>
+                  <span className="muted">{e.sub}</span>
                 </span>
-                {flag && <span className="ticket-flag" title={admin ? 'À répondre' : 'Réponse reçue'} />}
+                {e.flag && <span className="ticket-flag" title={e.ticket ? (admin ? 'À répondre' : 'Réponse reçue') : 'À examiner'} />}
               </a>
             )
           })}
@@ -110,7 +142,9 @@ export default function Support({ me, admin, route, go }: { me: User; admin: boo
       </aside>
 
       <main className="support-main">
-        {selected ? (
+        {bindSelected ? (
+          <BindRequestDetail key={bindSelected} id={bindSelected} superadmin={superadmin} onChange={load} />
+        ) : selected ? (
           <Thread
             key={selected}
             id={selected}
@@ -124,6 +158,7 @@ export default function Support({ me, admin, route, go }: { me: User; admin: boo
             <span>
               Écris aux admins de l’instance : une question, une app qui ne marche pas, un souci de node. Ils répondent ici
               {admin ? '' : ', et sur ton webhook Discord si tu en as un (Mon profil › Notifications)'}.
+              {' '}Les demandes d’accès à un dossier du node, faites en créant une app, se suivent ici aussi.
             </span>
             <button type="button" className="btn btn-primary" onClick={() => setCreating(true)}>
               Nouvelle demande

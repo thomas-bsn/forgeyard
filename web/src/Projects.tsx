@@ -277,6 +277,7 @@ export const kindLabels: Record<string, string> = { web: 'exposé', service: 'pr
 export function ProjectFormModal({
   stack,
   admin,
+  superadmin,
   onClose,
   onSaved,
   onSource,
@@ -284,6 +285,7 @@ export function ProjectFormModal({
 }: {
   stack?: Stack
   admin?: boolean
+  superadmin?: boolean
   onClose: () => void
   onSaved: (s: Stack) => void
   // onSource: another source picked in Nouvelle app, which then shows its own form.
@@ -307,8 +309,10 @@ export function ProjectFormModal({
   const [busy, setBusy] = useState(false)
   const [choices, setChoices] = useState<NodeChoice[]>([])
   const [nodeId, setNodeId] = useState(0)
-  const [useBindMounts, setUseBindMounts] = useState(false)
   const [bindNodes, setBindNodes] = useState<BindNode[]>([])
+  // The folders of the node the Compose mounts: found in the file itself, they make the creation a request.
+  const binds = (!stack && preview?.binds) || []
+  const useBindMounts = binds.length > 0
   const [domain, setDomain] = useState('')
   const [flowStep, setFlowStep] = useState(0)
   const [adaptationNeeded, setAdaptationNeeded] = useState(false)
@@ -335,7 +339,7 @@ export function ProjectFormModal({
     if (!useBindMounts || stack) return
     api.bindNodes().then((nodes) => {
       setBindNodes(nodes)
-      setNodeId((current) => current || nodes.find((n) => n.online)?.id || nodes[0]?.id || 0)
+      setNodeId((current) => (nodes.some((n) => n.id === current) ? current : nodes.find((n) => n.online)?.id || nodes[0]?.id || 0))
     }, (err) => setError(errorMessage(err)))
   }, [useBindMounts, stack])
 
@@ -531,7 +535,7 @@ export function ProjectFormModal({
         <button type="button" className="btn btn-primary btn-block btn-big" disabled={errors.length > 0 || !!preview?.error} onClick={() => setFlowStep(3)}>Vérifier le récapitulatif</button>
       ) : (
         <button key="confirm-compose" type="submit" className="btn btn-primary btn-block btn-big" disabled={busy || errors.length > 0 || !!preview?.error || (useBindMounts && !nodeId)}>
-          {busy ? 'Envoi…' : useBindMounts ? 'Soumettre au superadmin' : 'Confirmer et créer'}
+          {busy ? 'Envoi…' : useBindMounts && !superadmin ? 'Envoyer la demande' : 'Confirmer et créer'}
         </button>
       )}
       {flowStep > 0 && flowStep < 3 && <button type="button" className="link-button aside-cancel" onClick={() => { setFlowStep(flowStep === 2 && !adaptationNeeded ? 0 : flowStep - 1); setAdaptedCompose(''); setAdaptError('') }}>Retour</button>}
@@ -581,15 +585,19 @@ export function ProjectFormModal({
         <div className="compose-step-heading"><span className="aside-label">Étape {adaptationNeeded ? '3 sur 4' : '2 sur 3'}</span><h3>Configurer le projet</h3><p>Les services et volumes apparaissent une seule fois dans le récapitulatif à droite.</p></div>
         <label className="field"><span className="label">Nom du projet</span><input value={name} onChange={(e) => setName(e.target.value.toLowerCase())} required pattern="[a-z0-9]([a-z0-9\-]{0,30}[a-z0-9])?" /></label>
         <div className="field"><span className="label">Variables chiffrées</span><EnvEditor env={env} setEnv={setEnv} missing={missing} requiredNames={requiredNames} /></div>
-        <div className="field"><span className="label">Node</span><select value={nodeId} onChange={(e) => setNodeId(Number(e.target.value))}><option value={0}>Choix recommandé automatiquement</option>{choices.map((c) => <option key={c.id} value={c.id}>{c.name}{c.recommended ? ' (recommandé)' : ''}</option>)}</select></div>
-        <div className="field"><div className="setting-row"><Switch checked={useBindMounts} onChange={setUseBindMounts} label="Utiliser des bind mounts dans le Compose" /><strong>Accès aux dossiers du node</strong></div><small>Soumet le projet au superadmin pour approbation.</small></div>
-        {useBindMounts && bindNodes.length > 0 && <label className="field"><span className="label">Node qui héberge les chemins</span><select value={nodeId} onChange={(e) => setNodeId(Number(e.target.value))} required>{bindNodes.map((n) => <option key={n.id} value={n.id}>{n.name} · {n.online ? 'en ligne' : 'hors ligne'}</option>)}</select></label>}
+        {!useBindMounts && <div className="field"><span className="label">Node</span><select value={nodeId} onChange={(e) => setNodeId(Number(e.target.value))}><option value={0}>Choix recommandé automatiquement</option>{choices.map((c) => <option key={c.id} value={c.id}>{c.name}{c.recommended ? ' (recommandé)' : ''}</option>)}</select></div>}
+        {useBindMounts && <section className="bind-card" aria-label="Dossiers du node">
+          <div className="bind-card-head"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7Z" /></svg><div><strong>Dossiers du node</strong><span>{binds.length === 1 ? '1 dossier trouvé' : `${binds.length} dossiers trouvés`} dans le Compose</span></div></div>
+          {binds.map((b, i) => <div className="bind-row" key={i}><span><code>{b.source}</code><small>service {b.service}</small></span><code>{b.target}</code><span className="bind-mode">{b.readOnly ? 'Lecture seule' : 'Lecture et écriture'}</span></div>)}
+          <label className="bind-node"><span>Node qui héberge ces dossiers</span><select value={nodeId} onChange={(e) => setNodeId(Number(e.target.value))} required>{bindNodes.map((n) => <option key={n.id} value={n.id}>{n.name} · {n.online ? 'en ligne' : 'hors ligne'}</option>)}</select></label>
+        </section>}
+        {useBindMounts && <p className={`bind-note ${superadmin ? 'ok' : ''}`}>{superadmin ? 'Tu es superadmin : ces dossiers sont autorisés automatiquement, sans demande.' : 'Monter un dossier du node demande l’accord d’un superadmin. Le projet est créé quand il approuve, et tu suis la demande dans Support.'}</p>}
         <details className="field" open={registryOpen} onToggle={(e) => setRegistryOpen(e.currentTarget.open)}><summary>Registry privé <span className="muted">{registry.server ? `· ${registry.server}` : '· facultatif'}</span></summary><div className="env-list"><input aria-label="Adresse du registry" className="mono" value={registry.server} onChange={(e) => editRegistry({ server: e.target.value })} placeholder="ghcr.io" /><div className="env-row"><input aria-label="Identifiant" value={registry.username} onChange={(e) => editRegistry({ username: e.target.value })} placeholder="identifiant" autoComplete="off" /><input type="password" aria-label="Mot de passe ou token" value={registry.password} onChange={(e) => editRegistry({ password: e.target.value })} placeholder="token" autoComplete="new-password" /></div><small>Le token est chiffré avant l’enregistrement.</small></div></details>
         {errors.length > 0 && <ul className="compose-errors">{errors.map((e, i) => <li key={i}>{e.message}</li>)}</ul>}
       </>}
       {flowStep === 3 && <>
         <div className="compose-step-heading"><span className="aside-label">Étape {adaptationNeeded ? '4 sur 4' : '3 sur 3'}</span><h3>Confirmer le projet</h3><p>Vérifie les ressources avant la création.</p></div>
-        <dl className="compose-confirm-facts"><dt>Projet</dt><dd>{shownName}</dd><dt>Node</dt><dd>{choices.find((c) => c.id === nodeId)?.name ?? 'Choix recommandé automatiquement'}</dd><dt>Variables requises</dt><dd>{requiredMissing.length ? `${requiredMissing.length} à compléter` : 'Complétées'}</dd><dt>Bind mounts</dt><dd>{useBindMounts ? 'Soumis au superadmin' : 'Aucun'}</dd><dt>Registry privé</dt><dd>{registry.server || 'Aucun'}</dd></dl>
+        <dl className="compose-confirm-facts"><dt>Projet</dt><dd>{shownName}</dd><dt>Node</dt><dd>{(useBindMounts ? bindNodes : choices).find((c) => c.id === nodeId)?.name ?? 'Choix recommandé automatiquement'}</dd><dt>Variables requises</dt><dd>{requiredMissing.length ? `${requiredMissing.length} à compléter` : 'Complétées'}</dd>{useBindMounts ? <><dt>Dossiers du node</dt><dd>{binds.map((b, i) => <div key={i}><code>{b.source}</code> → <code>{b.target}</code> · {b.readOnly ? 'lecture seule' : 'lecture et écriture'}</div>)}</dd><dt>Autorisation</dt><dd>{superadmin ? 'Automatique (superadmin)' : 'À approuver par un superadmin'}</dd></> : null}<dt>Registry privé</dt><dd>{registry.server || 'Aucun'}</dd></dl>
         <details className="field"><summary>Relire le Compose final</summary><pre className="mono compose-final">{compose}</pre></details>
       </>}
     </>
@@ -763,7 +771,7 @@ export function ProjectDetail({
               {stack.services.some((service) => service.bindMounts?.length) && <button type="button" className="btn detail-actions-wide" disabled={busy || !full} onClick={() => setChangingBinds(true)}>{stack.services.some((service) => service.bindMounts?.length && !service.bindAuthorized) ? 'Demander de nouveaux accès sur un autre node' : 'Demander une modification des accès / du node'}</button>}
               {superadmin && stack.services.some((service) => service.bindMounts?.length && service.bindAuthorized) && <button type="button" className="btn danger detail-actions-wide" disabled={busy} onClick={() => run(() => api.revokeStackBinds(stack.id))}>Révoquer les bind mounts du projet</button>}
             </div>
-            {changingBinds && full && <ProjectBindChangeModal stack={full} onClose={() => setChangingBinds(false)} onSubmitted={(id) => { setChangingBinds(false); go(`bind-requests/${id}`) }} />}
+            {changingBinds && full && <ProjectBindChangeModal stack={full} onClose={() => setChangingBinds(false)} onSubmitted={(id) => { setChangingBinds(false); go(`support/bind/${id}`) }} />}
             <button type="button" className="link-button danger-link" disabled={busy} onClick={() => setDeleting(true)}>
               Supprimer le projet…
             </button>

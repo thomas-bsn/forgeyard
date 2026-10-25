@@ -283,7 +283,6 @@ function AppList({
     )
   const byKind = inNode.filter((i) => (kind === 'all' || (kind === 'external') === i.external) && (only === 'all' || i.external || (only === 'projects') === !!i.project))
   const shown = byKind.filter((i) => (stateFilter === 'all' || i.group === stateFilter) && matchesQuery(i))
-  const problems = (id?: number) => all.filter((i) => (id === undefined || nodeOf(i) === id) && i.group === 'problem').length
 
   const newApp = (
     <button type="button" className="btn btn-primary" onClick={() => setCreating('image')}>
@@ -339,6 +338,7 @@ function AppList({
     creating === 'compose' ? (
       <ProjectFormModal
         admin={admin}
+        superadmin={superadmin}
         onSource={setCreating}
         onClose={() => setCreating(null)}
         onSaved={(p) => {
@@ -348,7 +348,7 @@ function AppList({
         }}
         onRequest={(id) => {
           setCreating(null)
-          go(superadmin ? `bind-requests/review/${id}` : `bind-requests/${id}`)
+          go(`support/bind/${id}`)
         }}
       />
     ) : (
@@ -357,6 +357,7 @@ function AppList({
           key={creating}
           title="Nouvelle app"
           admin={admin}
+          superadmin={superadmin}
           initialSource={creating}
           onCompose={() => setCreating('compose')}
           submitLabel="Créer et démarrer"
@@ -365,7 +366,9 @@ function AppList({
             if (bindMounts) {
               const request = await api.createBindRequest({ ...input, bindMounts, logoImage: logo })
               setCreating(null)
-              go(`bind-requests/${request.id}`)
+              onChange()
+              // A superadmin's folders are authorized at once: the app is there. Otherwise the request is followed in the Support.
+              go(request.status === 'created' && request.appId ? `apps/${request.appId}` : `support/bind/${request.id}`)
               return
             }
             const app = await api.createApp(input)
@@ -381,32 +384,24 @@ function AppList({
   // Reference A: one overview, Compose projects with their services, then standalone apps.
   const overviewProjects = shown.filter((i) => i.project)
   const overviewSingles = shown.filter((i) => !i.project)
-  const onlineApps = inNode.filter((i) => i.app?.state === 'running').length
-  const onlineNodes = choices.filter((n) => n.state === 'online').length
   const overview = (
     <div className="overview-page">
       <div className="overview-heading"><div><h1>Apps</h1><p>Gère tes apps, projets Compose et conteneurs.</p></div>{newApp}</div>
-      {admin && <div className="overview-stats">
-        <div className="overview-stat"><strong>{onlineApps}</strong><span>Apps en ligne</span></div>
-        <div className="overview-stat"><strong>{inNode.filter((i) => !!i.project).length}</strong><span>Projets Compose</span></div>
-        <div className="overview-stat"><strong>{problems(node?.id)}</strong><span>À vérifier</span></div>
-        <div className="overview-stat"><strong>{onlineNodes}</strong><span>Nodes actifs</span></div>
-      </div>}
       <div className="overview-filters">
         {searchBox}
         <div className="overview-state-filters" role="group" aria-label="Filtrer par état">
           {([['all', 'Tout'], ['up', 'En ligne'], ['problem', 'À vérifier'], ['stopped', 'Arrêtées']] as const).map(([value, label]) => (
-            <button key={value} type="button" className={stateFilter === value ? 'selected' : ''} aria-pressed={stateFilter === value} onClick={() => setStateFilter(value)}>{label}{value === 'all' && <span>{byKind.length}</span>}</button>
+            <button key={value} type="button" className={stateFilter === value ? 'selected' : ''} aria-pressed={stateFilter === value} onClick={() => setStateFilter(value)}>{label}<span>{value === 'all' ? byKind.length : byKind.filter((i) => i.group === value).length}</span></button>
           ))}
         </div>
         <span className="spacer" />
-        {admin && <select aria-label="Filtrer par node" value={picked} onChange={(e) => setPicked(e.target.value)}><option value="all">Tous les nodes</option>{choices.map((n) => <option key={n.id} value={n.id}>{n.name}</option>)}</select>}
+        {admin && choices.length > 1 && <select aria-label="Filtrer par node" value={picked} onChange={(e) => setPicked(e.target.value)}><option value="all">Tous les nodes</option>{choices.map((n) => <option key={n.id} value={n.id}>{n.name}</option>)}</select>}
         {typeFilters}
       </div>
       {error && <p className="error" role="alert">{error}</p>}
       {empty}
       {overviewProjects.length > 0 && <>
-        <div className="overview-section-title"><h2>Projets <span>{overviewProjects.length}</span></h2><span className="muted">Services regroupés par projet</span></div>
+        <div className="overview-section-title"><h2>Projets <span>{overviewProjects.length}</span></h2></div>
         <div className="overview-project-list">{overviewProjects.map((item) => <OverviewProject key={item.key} project={item.project!} admin={admin} />)}</div>
       </>}
       {overviewSingles.length > 0 && <>
@@ -418,10 +413,11 @@ function AppList({
             return <div key={item.key} className={`overview-app-card ${item.tone === 'down' ? 'has-error' : ''}`}>
               <div className="overview-app-top">
                 <AppLogo url={item.app?.logo.url ?? item.app?.logo.autoUrl ?? item.container?.logoUrl} color={item.app?.logo.color} name={item.name} size={38} />
-                <span className="overview-app-title"><a href={itemHref(item)} className="overview-app-name" title={item.name}>{item.name}</a><small title={detail}>{detail}</small></span>
+                <span className="overview-app-title"><a href={itemHref(item)} className="overview-app-name" title={item.name}>{item.name}</a><small title={detail} className={item.app?.url ? 'overview-url' : ''}>{detail}</small></span>
+                {item.app && <CpuSpark ids={item.app.running ? [item.app.id] : []} tone={item.tone} />}
                 {item.app && <WithMenu item={item} admin={admin} onChange={onChange} place="table"><span /></WithMenu>}
               </div>
-              <div className="overview-app-foot"><span className="overview-app-node" title={nodeName}>{nodeName}</span><span className={`overview-status ${item.tone}`}>{itemState(item)}</span></div>
+              <div className="overview-app-foot"><span className="overview-app-node" title={nodeName}>{nodeName}{item.app?.state === 'running' && item.app.cpuPercent !== undefined ? ` · ${Math.round(item.app.cpuPercent)} % CPU` : ''}</span><span className={`overview-status ${item.tone}`}>{itemState(item)}</span></div>
             </div>
           })}
         </div>
@@ -431,11 +427,34 @@ function AppList({
   return <>{overview}{createModal}</>
 }
 
+/** The CPU of the last hour of some apps, summed, as a small line; nothing until measures exist. */
+function CpuSpark({ ids, tone }: { ids: number[]; tone: string }) {
+  const [points, setPoints] = useState<number[]>([])
+  const key = ids.join(',')
+  useEffect(() => {
+    let live = true
+    if (!ids.length) return
+    Promise.all(ids.map((id) => api.appUsage(id).then((u) => u.samples.map((x) => x.cpu), () => [] as number[]))).then((all) => {
+      if (!live) return
+      const len = Math.max(0, ...all.map((a) => a.length))
+      const sum = Array.from({ length: len }, (_, i) => all.reduce((t, a) => t + (a[a.length - len + i] ?? 0), 0))
+      const step = Math.max(1, Math.ceil(sum.length / 24))
+      setPoints(sum.filter((_, i) => i % step === 0))
+    })
+    return () => { live = false }
+  }, [key])
+  if (points.length < 2) return <span className="overview-spark" aria-hidden="true" />
+  const w = 84, h = 24, max = Math.max(...points, 1)
+  const d = points.map((y, i) => `${i ? 'L' : 'M'}${((i / (points.length - 1)) * w).toFixed(1)} ${(h - 2 - (y / max) * (h - 4)).toFixed(1)}`).join(' ')
+  return <svg className={`overview-spark ${tone}`} viewBox={`0 0 ${w} ${h}`} aria-hidden="true"><path d={d} /></svg>
+}
+
 function OverviewProject({ project, admin }: { project: Stack; admin: boolean }) {
   const state = projectStates[project.state] ?? { label: project.state, tone: '' }
   return <a href={`#/projects/${project.id}`} className={`overview-project ${state.tone === 'down' ? 'has-error' : ''}`}>
-    <div className="overview-project-head"><ProjectLogo project={project} size={42} /><span className="overview-project-title"><strong>{project.name}</strong><small>{project.nodeName}{admin && project.ownerName ? ` · ${project.ownerName}` : ''}</small></span><span className={`overview-status ${state.tone}`}>{state.label}</span></div>
-    <div className="overview-services">{project.services.slice(0, 6).map((service) => <span className="overview-service" key={service.id}><span className="overview-service-line"><strong>{service.service}</strong><span className={service.kind === 'web' ? 'overview-service-tag public' : 'overview-service-tag'}>{service.kind === 'web' ? 'Exposé' : 'Privé'}</span></span><small>{service.image} · {service.memoryMb} Mo</small></span>)}{project.services.length > 6 && <span className="muted">et {project.services.length - 6} autres services</span>}</div>
+    <div className="overview-project-head"><ProjectLogo project={project} size={38} /><span className="overview-project-title"><strong>{project.name}</strong><small className="overview-url">{project.url?.replace(/^https?:\/\//, '') ?? `${project.services.length} services`}</small></span><CpuSpark ids={project.services.filter((x) => x.running).map((x) => x.id)} tone={state.tone} /></div>
+    <div className="overview-services">{project.services.slice(0, 8).map((service) => <span className="overview-service" key={service.id} title={`${service.image} · ${service.memoryMb} Mo`}><span className={`overview-dot ${appTone(service)}`} />{service.service}</span>)}{project.services.length > 8 && <span className="muted">+{project.services.length - 8}</span>}</div>
+    <div className="overview-app-foot"><span className="overview-app-node">{project.nodeName}{admin && project.ownerName ? ` · ${project.ownerName}` : ''}</span><span className={`overview-status ${state.tone}`}>{state.label}</span></div>
   </a>
 }
 
@@ -710,6 +729,7 @@ function AppFormModal({
   submitLabel,
   initial,
   admin,
+  superadmin,
   initialSource,
   onCompose,
   onSubmit,
@@ -723,6 +743,8 @@ function AppFormModal({
   onCompose?: () => void
   // Admins pick the node of a new app; users' apps go to the recommended one.
   admin?: boolean
+  // A superadmin's folders are authorized at once, the others' wait for a decision.
+  superadmin?: boolean
   // logo: a framed picture chosen at creation, as a data URL.
   onSubmit: (input: AppInput, logo?: string, bindMounts?: BindMount[]) => Promise<void>
   onClose: () => void
@@ -933,7 +955,7 @@ function AppFormModal({
         )}
         <dt>Données</dt>
         <dd>{useBinds ? `${bindMounts.length} accès hôte${keptCount ? ` · ${keptCount} volume(s)` : ''}` : sandbox ? '/root gardé' : keptCount ? `${keptCount} volume${keptCount > 1 ? 's' : ''}` : 'non gardées'}</dd>
-        {useBinds && <><dt>Approbation</dt><dd>En attente du superadmin avant création</dd></>}
+        {useBinds && <><dt>Autorisation</dt><dd>{superadmin ? 'Automatique (superadmin)' : 'À approuver par un superadmin'}</dd></>}
         <dt>Source</dt>
         <dd>{sandbox ? 'Linux, accès SSH' : source === 'dockerfile' ? 'construite' : 'téléchargée'}</dd>
       </dl>
@@ -947,7 +969,7 @@ function AppFormModal({
       <span className="aside-spacer" />
       {error && <p className="error">{error}</p>}
       <button type="submit" className="btn btn-primary btn-block btn-big" disabled={busy}>
-        {busy ? 'Envoi…' : useBinds ? 'Soumettre la demande' : submitLabel}
+        {busy ? 'Envoi…' : useBinds && !superadmin ? 'Envoyer la demande' : submitLabel}
       </button>
       <button type="button" className="link-button aside-cancel" onClick={onClose} disabled={busy}>
         Annuler
@@ -1044,13 +1066,13 @@ function AppFormModal({
       {!initial && source !== 'compose' && (
         <div className="field">
           <div className="setting-row">
-            <Switch checked={useBinds} onChange={(value) => { setUseBinds(value); if (!value && !admin) setNodeId(0) }} label="Utiliser un dossier de la machine (bind mount)" />
-            <strong>Utiliser un dossier de la machine (bind mount)</strong>
+            <Switch checked={useBinds} onChange={(value) => { setUseBinds(value); if (!value && !admin) setNodeId(0) }} label="Monter un dossier du node" />
+            <strong>Monter un dossier du node</strong>
           </div>
-          <small>Monte un dossier existant sur la machine dans le conteneur. Les volumes ci-dessous restent gérés par Forgeyard.</small>
+          <small>Donne à l’app l’accès à un dossier qui existe déjà sur le node (bind mount). Les volumes ci-dessous restent gérés par Forgeyard.</small>
           {useBinds && <>
-            <small>La soumission crée une demande. Seul le superadmin pourra autoriser ces accès avant la création de l’app.</small>
-            <label className="field"><span>Machine contenant les fichiers</span>
+            <small>{superadmin ? 'Tu es superadmin : ces dossiers sont autorisés automatiquement, sans demande.' : 'Monter un dossier du node demande l’accord d’un superadmin. L’app est créée quand il approuve, et tu suis la demande dans Support.'}</small>
+            <label className="field"><span>Node qui héberge ces dossiers</span>
               <select value={nodeId || ''} onChange={(e) => setNodeId(Number(e.target.value))} required>
                 <option value="" disabled>Choisir un node</option>
                 {bindNodes.map((n) => <option key={n.id} value={n.id}>{n.name} · {n.online ? 'en ligne' : 'hors ligne'}</option>)}
@@ -1417,7 +1439,7 @@ function AppDetail({
           {(admin || app.ownerId === userId) && app.bindMounts.length > 0 && <button type="button" className="btn" disabled={busy} onClick={() => setChangingBinds(true)}>{app.bindAuthorized ? 'Demander une modification des accès / du node' : 'Demander de nouveaux accès sur un autre node'}</button>}
           {superadmin && app.bindAuthorized && !app.stackId && <button type="button" className="btn danger" disabled={busy} onClick={() => run(() => api.revokeAppBinds(app.id))}>Révoquer l’autorisation</button>}
         </section>}
-        {changingBinds && <BindChangeModal app={app} onClose={() => setChangingBinds(false)} onSubmitted={(id) => { setChangingBinds(false); go(`bind-requests/${id}`) }} />}
+        {changingBinds && <BindChangeModal app={app} onClose={() => setChangingBinds(false)} onSubmitted={(id) => { setChangingBinds(false); go(`support/bind/${id}`) }} />}
 
         <dl className="kv">
           <dt>Image</dt>

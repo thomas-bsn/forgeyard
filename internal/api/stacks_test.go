@@ -94,6 +94,19 @@ func setupStackServer(t *testing.T) (string, *Server, *http.Client, *fakeAgent) 
 	return ts.URL, server, admin, fa
 }
 
+func TestStackPreviewListsHostFolders(t *testing.T) {
+	url, _, admin, _ := setupStackServer(t)
+	var preview stackPreview
+	compose := "services:\n  media:\n    image: jellyfin/jellyfin\n    volumes:\n      - /srv/media:/media:ro\n      - config:/config\nvolumes:\n  config: {}\n"
+	if code := postJSON(t, admin, url+"/api/stacks/validate", stackInput{Name: "media", Compose: compose}, &preview); code != http.StatusOK || len(preview.Errors) != 0 {
+		t.Fatalf("preview: %d %+v", code, preview)
+	}
+	want := stackPreviewBind{Service: "media", Source: "/srv/media", Target: "/media", ReadOnly: true}
+	if len(preview.Binds) != 1 || preview.Binds[0] != want {
+		t.Fatalf("binds: %+v", preview.Binds)
+	}
+}
+
 func TestStackLifecycle(t *testing.T) {
 	url, _, admin, fa := setupStackServer(t)
 
