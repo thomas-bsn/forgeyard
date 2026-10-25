@@ -16,7 +16,7 @@ import {
   type StackVolume,
 } from './api'
 import { appTone, Dot, LogoChooser, Logs, SourcePick, stateText, type Source } from './Apps'
-import { AppLogo, formatBytes, Modal, since, Switch, useRedeploy } from './ui'
+import { AppLogo, formatBytes, Modal, OwnerChip, since, Switch, useRedeploy } from './ui'
 
 export const projectStates: Record<StackState, { label: string; tone: 'up' | 'warn' | 'down' | '' }> = {
   pending: { label: 'En attente', tone: '' },
@@ -732,7 +732,7 @@ export function ProjectDetail({
           )}
           <dt>Propriétaire</dt>
           <dd>
-            <a href={`#/u/${stack.ownerId}`}>{stack.ownerName}</a>
+            <OwnerChip id={stack.ownerId} name={stack.ownerName} />
           </dd>
           <dt>Modifiée</dt>
           <dd>{since(stack.updatedAt)}</dd>

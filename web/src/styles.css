@@ -656,6 +656,12 @@ a.chip {
   object-fit: cover;
 }
 
+.owner-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
 .row-actions {
   display: flex;
   align-items: center;

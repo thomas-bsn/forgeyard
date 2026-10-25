@@ -1,6 +1,6 @@
 import { lazy, Suspense, useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react'
 import { api, errorMessage, type BindMount, type BindNode, type App, type AppEvent, type AppInput, type AppState, type AppUsage, type Container, type GpuRequest, type Node, type NodeChoice, type NodeGpus, type Stack } from './api'
-import { AppLogo, AreaChart, CopyField, formatBytes, LOGO_COLORS, Modal, since, Switch, upFor, useRedeploy } from './ui'
+import { AppLogo, AreaChart, CopyField, formatBytes, LOGO_COLORS, Modal, OwnerChip, since, Switch, upFor, useRedeploy } from './ui'
 import { ImageCropper } from './Cropper'
 import { ProjectDetail, ProjectFormModal, ProjectLogo, projectStates } from './Projects'
 import { AppNetworkTab } from './Network'
@@ -1495,7 +1495,7 @@ function AppDetail({
           </dd>
           <dt>Propriétaire</dt>
           <dd>
-            <a href={`#/u/${app.ownerId}`}>{app.ownerName}</a>
+            <OwnerChip id={app.ownerId} name={app.ownerName} />
           </dd>
         </dl>
         <div className="setting-row small-setting">

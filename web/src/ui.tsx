@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react'
+import { api } from './api'
 
 /** The instance's icon when it has one, else Forgeyard's: a flame in a hexagon. */
 export function Logo({ size = 32, src }: { size?: number; src?: string }) {
@@ -354,6 +355,38 @@ export function Avatar({ url, name, size = 32 }: { url?: string; name: string; s
   return (
     <span className="avatar avatar-initial" aria-hidden="true" style={style}>
       {name.trim().charAt(0).toUpperCase() || '?'}
+    </span>
+  )
+}
+
+let memberAvatars: Promise<Map<number, string>> | undefined
+
+/** The pictures of the members, fetched once: an app only carries its owner's id and name. */
+function loadMemberAvatars() {
+  memberAvatars ??= api
+    .members()
+    .then((list) => new Map(list.map((m) => [m.id, m.avatarUrl ?? ''])))
+    .catch(() => {
+      memberAvatars = undefined
+      return new Map<number, string>()
+    })
+  return memberAvatars
+}
+
+/** An owner's small picture and name; the name links to their profile unless `link` is false. */
+export function OwnerChip({ id, name, link = true }: { id: number; name: string; link?: boolean }) {
+  const [url, setUrl] = useState<string>()
+  useEffect(() => {
+    let live = true
+    loadMemberAvatars().then((m) => live && setUrl(m.get(id)))
+    return () => {
+      live = false
+    }
+  }, [id])
+  return (
+    <span className="owner-chip">
+      <Avatar url={url} name={name} size={18} />
+      {link ? <a href={`#/u/${id}`}>{name}</a> : name}
     </span>
   )
 }
