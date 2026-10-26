@@ -280,6 +280,8 @@ function nodeEntry(n: TopoNode, nodes: TopoNode[]): string {
 }
 
 function containerTone(c: TopoContainer): string {
+  if (c.state === 'completed') return 'up'
+  if (c.state === 'finished') return 'idle'
   if (c.issue?.level === 'error' || (c.state !== 'running' && c.state !== 'created')) return 'down'
   if (c.issue) return 'warn'
   return 'up'
@@ -416,7 +418,7 @@ export function TopologyMap() {
         <div className="panel topo-canvas" ref={box} onClick={() => setSelected('')}>
           <svg className="topo-lines" aria-hidden="true">
             <defs>
-              {['up', 'warn', 'down', 'relay', 'muted'].map((t) => (
+              {['up', 'warn', 'down', 'relay', 'muted', 'idle'].map((t) => (
                 <marker key={t} id={`topo-arrow-${t}`} viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
                   <path d="M0 0L10 5L0 10z" className={`topo-arrow-${t}`} />
                 </marker>
@@ -594,6 +596,12 @@ function Inspector({ sel, nodes, onChange }: { sel: { n: TopoNode; c: TopoContai
     <p className="muted topo-legend">
       <span className="legend-line legend-route" /> route configurée <span className="legend-line legend-relay" /> relais{' '}
       <span className="legend-line legend-down" /> en erreur
+      <br />
+      <span className="legend-box legend-box-zone" /> réseau d’un projet Compose (ses services s’y joignent par leur nom){' '}
+      <span className="legend-box legend-box-main" /> réseau partagé des apps
+      <br />
+      <span className="dot dot-up" /> en ligne ou job terminé <span className="dot dot-idle" /> terminé de lui-même{' '}
+      <span className="dot dot-down" /> arrêté ou en erreur
       <br />
       Liens « possibles » (même réseau) masqués par défaut : être sur un même réseau permet de se joindre, sans dire qu’on le fait.
     </p>

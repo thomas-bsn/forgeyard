@@ -312,6 +312,8 @@ func (t *topoContext) stackServicePath(a db.App) ([]pathStep, []diagnosis) {
 	switch {
 	case a.Kind == kindJob && ok && st.Status.GetState() == "completed":
 		ct.Note = "job terminé"
+	case ok && st.Status.GetState() == "finished":
+		ct.Note = "terminé" // it ended by itself, its work done: not a crash
 	case a.Running == 0 || !ok || st.Status.GetState() != "running":
 		ct.State, ct.Note = "error", "pas en ligne"
 		diags = append(diags, diagnosis{Level: "error", Message: "Le service " + a.Service + " n'est pas en ligne.", Help: "Voir ses logs et ses événements."})
@@ -616,6 +618,10 @@ func (s *Server) handleTopology(w http.ResponseWriter, r *http.Request) {
 						tc.Role = "sandbox"
 					} else if host := webHost(t.c, a); host != "" {
 						tc.URL, tc.RoutePort = "https://"+host, a.Port
+					}
+					// A job that completed or a service that ended by itself is not a stopped container to worry about.
+					if st, ok := t.statusOf(a.ID); ok && (st.Status.GetState() == "completed" || st.Status.GetState() == "finished") {
+						tc.State = st.Status.GetState()
 					}
 					steps, diags := t.appPath(ctx, a, false)
 					tc.Steps = steps
