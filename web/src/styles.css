@@ -6128,6 +6128,11 @@ a.link-btn {
   color: var(--muted);
 }
 
+.topo-chip-also {
+  font-size: 0.68rem;
+  color: var(--accent);
+}
+
 .topo-role {
   flex: none;
   padding: 0 6px;
@@ -6229,11 +6234,33 @@ a.link-btn {
 }
 
 .topo-legend {
-  margin: 0;
   padding-top: 10px;
   border-top: 1px solid var(--border);
   font-size: 0.75rem;
-  line-height: 1.6;
+  line-height: 1.5;
+}
+
+.topo-legend ul {
+  display: grid;
+  gap: 6px;
+  margin: 0 0 10px;
+  padding: 0;
+  list-style: none;
+}
+
+.topo-legend li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.topo-legend li > span:first-child {
+  flex: none;
+  margin: 0;
+}
+
+.topo-legend p {
+  margin: 0;
 }
 
 .legend-line {

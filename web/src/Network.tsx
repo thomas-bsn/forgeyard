@@ -471,12 +471,17 @@ export function TopologyMap() {
               const traefik = n.containers.find((c) => c.role === 'traefik')
               const shown = n.containers.filter((c) => c.role !== 'traefik' && visible(c))
               const ordered = [...n.networks].sort((a, b) => Number(b.name === 'forgeyard') - Number(a.name === 'forgeyard'))
+              // A container on several networks is drawn once, in its project's network rather than the shared one.
+              const home = (c: TopoContainer) => {
+                const mine = c.endpoints.map((e) => e.network)
+                return ordered.find((net) => net.name !== 'forgeyard' && mine.includes(net.name))?.name ?? ordered.find((net) => mine.includes(net.name))?.name
+              }
               const groups = zones
-                ? ordered.map((net) => ({ net, members: shown.filter((c) => c.endpoints.some((e) => e.network === net.name)) })).filter((z) => z.members.length > 0)
+                ? ordered.map((net) => ({ net, members: shown.filter((c) => home(c) === net.name) })).filter((z) => z.members.length > 0)
                 : [{ net: null, members: shown }]
               const loose = zones ? shown.filter((c) => !c.endpoints.length) : []
               const chip = (c: TopoContainer) => (
-                <ContainerChip key={c.id} c={c} n={n} selected={selected} onSelect={setSelected} dim={dim(`c:${topoKey(n, c)}`)} />
+                <ContainerChip key={c.id} c={c} n={n} also={zones && home(c) !== 'forgeyard' && c.endpoints.some((e) => e.network === 'forgeyard')} selected={selected} onSelect={setSelected} dim={dim(`c:${topoKey(n, c)}`)} />
               )
               return (
                 <section key={n.id} className={`topo-node ${n.state === 'offline' ? 'topo-node-off' : ''}`}>
@@ -560,7 +565,7 @@ function FilterChip({ on, set, label }: { on: boolean; set: (v: boolean) => void
   )
 }
 
-function ContainerChip({ c, n, selected, onSelect, dim }: { c: TopoContainer; n: TopoNode; selected: string; onSelect: (k: string) => void; dim: boolean }) {
+function ContainerChip({ c, n, also, selected, onSelect, dim }: { c: TopoContainer; n: TopoNode; also: boolean; selected: string; onSelect: (k: string) => void; dim: boolean }) {
   const tone = containerTone(c)
   const key = topoKey(n, c)
   return (
@@ -584,6 +589,7 @@ function ContainerChip({ c, n, selected, onSelect, dim }: { c: TopoContainer; n:
         <strong>{c.name}</strong>
       </span>
       <span className="mono topo-chip-line">{chipLine(c)}</span>
+      {also && <span className="topo-chip-also">aussi sur le réseau forgeyard (Traefik)</span>}
     </button>
   )
 }
@@ -593,18 +599,38 @@ function Inspector({ sel, nodes, onChange }: { sel: { n: TopoNode; c: TopoContai
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const legend = (
-    <p className="muted topo-legend">
-      <span className="legend-line legend-route" /> route configurée <span className="legend-line legend-relay" /> relais{' '}
-      <span className="legend-line legend-down" /> en erreur
-      <br />
-      <span className="legend-box legend-box-zone" /> réseau d’un projet Compose (ses services s’y joignent par leur nom){' '}
-      <span className="legend-box legend-box-main" /> réseau partagé des apps
-      <br />
-      <span className="dot dot-up" /> en ligne ou job terminé <span className="dot dot-idle" /> terminé de lui-même{' '}
-      <span className="dot dot-down" /> arrêté ou en erreur
-      <br />
-      Liens « possibles » (même réseau) masqués par défaut : être sur un même réseau permet de se joindre, sans dire qu’on le fait.
-    </p>
+    <div className="topo-legend">
+      <ul>
+        <li>
+          <span className="legend-line legend-route" /> route configurée
+        </li>
+        <li>
+          <span className="legend-line legend-relay" /> relais
+        </li>
+        <li>
+          <span className="legend-line legend-down" /> en erreur
+        </li>
+        <li>
+          <span className="legend-box" /> réseau d’un projet Compose : ses services s’y joignent par leur nom
+        </li>
+        <li>
+          <span className="legend-box legend-box-main" /> réseau partagé des apps
+        </li>
+        <li>
+          <span className="dot dot-up" /> en ligne, ou job terminé
+        </li>
+        <li>
+          <span className="dot dot-idle" /> terminé de lui-même
+        </li>
+        <li>
+          <span className="dot dot-down" /> arrêté ou en erreur
+        </li>
+      </ul>
+      <p className="muted">
+        Un conteneur sur plusieurs réseaux n’est dessiné qu’une fois, dans le réseau de son projet. Liens « possibles » (même réseau) masqués par défaut : être sur un même
+        réseau permet de se joindre, sans dire qu’on le fait.
+      </p>
+    </div>
   )
   if (!sel) {
     const problems = nodes.flatMap((n) => n.containers.filter((c) => c.issue).map((c) => ({ n, c })))
