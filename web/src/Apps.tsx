@@ -4,6 +4,7 @@ import { AppLogo, AreaChart, CopyField, formatBytes, LOGO_COLORS, Modal, OwnerCh
 import { ImageCropper } from './Cropper'
 import { ProjectDetail, ProjectFormModal, ProjectLogo, projectStates } from './Projects'
 import { AppNetworkTab } from './Network'
+import Access, { RoleBadge } from './Access'
 // xterm.js is large: it loads only when a terminal opens.
 const Terminal = lazy(() => import('./Terminal'))
 
@@ -266,6 +267,7 @@ function AppList({
   const [query, setQuery] = useState('')
   const [kind, setKind] = useState<Kind>('apps') // Forgeyard's apps first; external containers are one click away
   const [stateFilter, setStateFilter] = useState<StateFilter>('all')
+  const [sharedOnly, setSharedOnly] = useState(false)
   const [picked, setPicked] = useSelectedNode()
 
   const all = toItems(apps ?? [], containers, projects)
@@ -282,7 +284,8 @@ function AppList({
       f.toLowerCase().includes(q),
     )
   const byKind = inNode.filter((i) => (kind === 'all' || (kind === 'external') === i.external) && (only === 'all' || i.external || (only === 'projects') === !!i.project))
-  const shown = byKind.filter((i) => (stateFilter === 'all' || i.group === stateFilter) && matchesQuery(i))
+  const sharedWithMe = (i: Item) => !!(i.app?.role || i.project?.role)
+  const shown = byKind.filter((i) => (stateFilter === 'all' || i.group === stateFilter) && (!sharedOnly || sharedWithMe(i)) && matchesQuery(i))
 
   const newApp = (
     <button type="button" className="btn btn-primary" onClick={() => setCreating('image')}>
@@ -394,6 +397,7 @@ function AppList({
             <button key={value} type="button" className={stateFilter === value ? 'selected' : ''} aria-pressed={stateFilter === value} onClick={() => setStateFilter(value)}>{label}<span>{value === 'all' ? byKind.length : byKind.filter((i) => i.group === value).length}</span></button>
           ))}
         </div>
+        {all.some(sharedWithMe) && <button type="button" className={`chip ${sharedOnly ? 'on' : ''}`} aria-pressed={sharedOnly} onClick={() => setSharedOnly(!sharedOnly)}>Partagées avec moi</button>}
         <span className="spacer" />
         {admin && choices.length > 1 && <select aria-label="Filtrer par node" value={picked} onChange={(e) => setPicked(e.target.value)}><option value="all">Tous les nodes</option>{choices.map((n) => <option key={n.id} value={n.id}>{n.name}</option>)}</select>}
         {typeFilters}
@@ -417,7 +421,7 @@ function AppList({
                 {item.app && <CpuSpark ids={item.app.running ? [item.app.id] : []} tone={item.tone} />}
                 {item.app && <WithMenu item={item} admin={admin} onChange={onChange} place="table"><span /></WithMenu>}
               </div>
-              <div className="overview-app-foot"><span className="overview-app-node" title={nodeName}>{nodeName}{item.app?.state === 'running' && item.app.cpuPercent !== undefined ? ` · ${Math.round(item.app.cpuPercent)} % CPU` : ''}</span><span className={`overview-status ${item.tone}`}>{itemState(item)}</span></div>
+              <div className="overview-app-foot"><span className="overview-app-node" title={nodeName}>{nodeName}{item.app?.state === 'running' && item.app.cpuPercent !== undefined ? ` · ${Math.round(item.app.cpuPercent)} % CPU` : ''}</span><RoleBadge role={item.app?.role} via={item.app?.via} /><span className={`overview-status ${item.tone}`}>{itemState(item)}</span></div>
             </div>
           })}
         </div>
@@ -454,7 +458,7 @@ function OverviewProject({ project, admin }: { project: Stack; admin: boolean })
   return <a href={`#/projects/${project.id}`} className={`overview-project ${state.tone === 'down' ? 'has-error' : ''}`}>
     <div className="overview-project-head"><ProjectLogo project={project} size={38} /><span className="overview-project-title"><strong>{project.name}</strong><small className="overview-url">{project.url?.replace(/^https?:\/\//, '') ?? `${project.services.length} services`}</small></span><CpuSpark ids={project.services.filter((x) => x.running).map((x) => x.id)} tone={state.tone} /></div>
     <div className="overview-services">{project.services.slice(0, 8).map((service) => <span className="overview-service" key={service.id} title={`${service.image} · ${service.memoryMb} Mo`}><span className={`overview-dot ${appTone(service)}`} />{service.service}</span>)}{project.services.length > 8 && <span className="muted">+{project.services.length - 8}</span>}</div>
-    <div className="overview-app-foot"><span className="overview-app-node">{project.nodeName}{admin && project.ownerName ? ` · ${project.ownerName}` : ''}</span><span className={`overview-status ${state.tone}`}>{state.label}</span></div>
+    <div className="overview-app-foot"><span className="overview-app-node">{project.nodeName}{admin && project.ownerName ? ` · ${project.ownerName}` : ''}</span><RoleBadge role={project.role} /><span className={`overview-status ${state.tone}`}>{state.label}</span></div>
   </a>
 }
 
@@ -494,6 +498,8 @@ function WithMenu({ item, admin, onChange, place, children }: { item: Item; admi
     }
   }, [open])
   if (!app) return <>{children}</>
+  // A viewer only reads: no menu at all. A contributor runs the app but does not delete it.
+  if (app.role === 'viewer') return <>{children}</>
 
   const act = (action: () => Promise<unknown>, removes = false) => async () => {
     setOpen(false)
@@ -553,7 +559,7 @@ function WithMenu({ item, admin, onChange, place, children }: { item: Item; admi
               Changer de node…
             </button>
           )}
-          {!app.stackId && (
+          {!app.stackId && !app.role && (
             <button
               type="button"
               role="menuitem"
@@ -731,6 +737,7 @@ function AppFormModal({
   admin,
   superadmin,
   initialSource,
+  canReveal,
   onCompose,
   onSubmit,
   onClose,
@@ -738,6 +745,8 @@ function AppFormModal({
   title: string
   submitLabel: string
   initial?: App
+  // canReveal: the signed-in user may read the saved values, which are never sent with the app.
+  canReveal?: boolean
   initialSource?: Source
   // onCompose: Docker Compose picked, whose form takes the place of this one.
   onCompose?: () => void
@@ -815,7 +824,8 @@ function AppFormModal({
     if (!portTouched && suggestedKey) setPort(suggestedKey.split(',')[0])
   }, [suggestedKey, portTouched])
   const [memory, setMemory] = useState(String(initial?.memoryMb ?? 512))
-  const [env, setEnv] = useState<{ key: string; value: string }[]>(Object.entries(initial?.env ?? {}).map(([key, value]) => ({ key, value })))
+  // The saved variables come back as names only: a row keeps its value until a new one is typed.
+  const [env, setEnv] = useState<{ key: string; value: string; kept?: boolean }[]>((initial?.envKeys ?? []).map((key) => ({ key, value: '', kept: true })))
   // Volumes start with the paths the image keeps (its VOLUMEs), until they are edited by hand.
   const [volumes, setVolumes] = useState<string[]>((initial?.volumes ?? []).filter((v) => !v.builtin).map((v) => v.path))
   const [volumesTouched, setVolumesTouched] = useState(!!initial)
@@ -850,7 +860,12 @@ function AppFormModal({
     setError('')
     try {
       const vars: Record<string, string> = {}
-      for (const { key, value } of env) if (key.trim()) vars[key.trim()] = value
+      const keep: string[] = []
+      for (const { key, value, kept } of env) {
+        if (!key.trim()) continue
+        if (kept) keep.push(key.trim())
+        else vars[key.trim()] = value
+      }
       await onSubmit(
         {
           name: initial ? undefined : name,
@@ -860,6 +875,7 @@ function AppFormModal({
           port: Number(port),
           memoryMb: Number(memory),
           env: vars,
+          keepEnv: keep.length ? keep : undefined,
           volumes: volumes.map((v) => v.trim()).filter(Boolean),
           nodeId: nodeId || undefined,
           gpu,
@@ -1097,8 +1113,8 @@ function AppFormModal({
         <div className="env-list">
           {env.map((v, i) => (
             <div className="env-row" key={i}>
-              <input aria-label="Nom de la variable" value={v.key} onChange={(e) => setEnv(env.map((x, j) => (j === i ? { ...x, key: e.target.value } : x)))} placeholder="NOM" />
-              <input aria-label="Valeur" value={v.value} onChange={(e) => setEnv(env.map((x, j) => (j === i ? { ...x, value: e.target.value } : x)))} placeholder="valeur" />
+              <input aria-label="Nom de la variable" value={v.key} readOnly={v.kept} onChange={(e) => setEnv(env.map((x, j) => (j === i ? { ...x, key: e.target.value } : x)))} placeholder="NOM" />
+              <input aria-label="Valeur" value={v.value} onChange={(e) => setEnv(env.map((x, j) => (j === i ? { ...x, value: e.target.value, kept: false } : x)))} placeholder={v.kept ? 'inchangée' : 'valeur'} />
               <button type="button" className="btn btn-ghost" onClick={() => setEnv(env.filter((_, j) => j !== i))} aria-label="Retirer la variable">
                 ✕
               </button>
@@ -1109,7 +1125,25 @@ function AppFormModal({
               + Ajouter une variable
             </button>
           </div>
-          <small>Chiffrées avant d’être enregistrées.</small>
+          <small>Chiffrées avant d’être enregistrées. Une valeur laissée vide sur une variable déjà enregistrée reste inchangée.</small>
+          {canReveal && initial && env.some((v) => v.kept) && (
+            <div>
+              <button
+                type="button"
+                className="btn btn-small"
+                onClick={async () => {
+                  try {
+                    const { env: values } = await api.appEnv(initial.id)
+                    setEnv(env.map((v) => (v.kept ? { key: v.key, value: values[v.key] ?? '' } : v)))
+                  } catch (err) {
+                    setError(errorMessage(err))
+                  }
+                }}
+              >
+                Afficher les valeurs
+              </button>
+            </div>
+          )}
         </div>
       </details>
       <details className="field" open={volumesOpen} onToggle={(e) => setVolumesOpen(e.currentTarget.open)}>
@@ -1200,7 +1234,7 @@ function AppFormModal({
   )
 }
 
-type DetailTab = 'observability' | 'logs' | 'terminal' | 'network' | 'events'
+type DetailTab = 'observability' | 'logs' | 'terminal' | 'network' | 'events' | 'access'
 
 function BindChangeModal({ app, onClose, onSubmitted }: { app: App; onClose: () => void; onSubmitted: (id: number) => void }) {
   const [nodes, setNodes] = useState<BindNode[]>([])
@@ -1282,6 +1316,9 @@ function AppDetail({
 
   const tone = appTone(app)
   const bindsRevoked = !!app.bindMounts?.length && !app.bindAuthorized
+  // No role: the owner or an admin. A viewer only reads; a contributor runs and edits, without the owner's rights.
+  const isOwner = !app.role
+  const canWrite = app.role !== 'viewer'
   const [redeploying, startRedeploy] = useRedeploy(['pending', 'pulling', 'building', 'creating', 'deploying'].includes(app.state))
 
   return (
@@ -1292,7 +1329,7 @@ function AppDetail({
           {app.stackId ? '← Projet' : '← Apps'}
         </a>
         <div className="detail-title">
-          <button type="button" className="logo-button" onClick={() => setChoosingLogo(true)} aria-label="Changer le logo" title="Changer le logo">
+          <button type="button" className="logo-button" disabled={!canWrite} onClick={() => setChoosingLogo(true)} aria-label="Changer le logo" title="Changer le logo">
             <AppLogo url={app.logo.url} color={app.logo.color} name={app.name} size={52} />
             <span className="logo-edit" aria-hidden="true">
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
@@ -1381,7 +1418,7 @@ function AppDetail({
             <span>
               L’app écoute sur le port {app.listeningPorts.join(', ')}, pas sur le {app.port} de sa configuration : ses visiteurs tombent
               sur « Bad Gateway ».{' '}
-              {full &&
+              {full && canWrite &&
                 app.listeningPorts.slice(0, 3).map((p) => (
                   <button
                     key={p}
@@ -1396,7 +1433,8 @@ function AppDetail({
                             dockerfile: full.dockerfile ?? '',
                             port: p,
                             memoryMb: full.memoryMb,
-                            env: full.env ?? {},
+                            env: {},
+                            keepEnv: full.envKeys,
                             volumes: full.volumes.filter((v) => !v.builtin).map((v) => v.path),
                             gpu: full.gpu,
                           }),
@@ -1498,17 +1536,24 @@ function AppDetail({
             <OwnerChip id={app.ownerId} name={app.ownerName} />
           </dd>
         </dl>
-        <div className="setting-row small-setting">
-          <span className="header-title">
-            <strong>Visible sur le profil</strong>
-            <span className="muted"> de {app.ownerName}</span>
-          </span>
-          <Switch checked={app.public} disabled={busy} onChange={(v) => run(() => api.setAppPublic(app.id, v))} label="Visible sur le profil du propriétaire" />
-        </div>
+        {isOwner && (
+          <div className="setting-row small-setting">
+            <span className="header-title">
+              <strong>Visible sur le profil</strong>
+              <span className="muted"> de {app.ownerName}</span>
+            </span>
+            <Switch checked={app.public} disabled={busy} onChange={(v) => run(() => api.setAppPublic(app.id, v))} label="Visible sur le profil du propriétaire" />
+          </div>
+        )}
+        {app.role && (
+          <p className="muted">
+            <RoleBadge role={app.role} via={app.via} /> {canWrite ? 'Vous pouvez la déployer et la configurer.' : 'Vous la consultez en lecture seule.'}
+          </p>
+        )}
 
         {error && <p className="error">{error}</p>}
         {/* Running: stop or redeploy it. Stopped: starting it deploys it afresh, so it is the only action. */}
-        <div className="detail-actions">
+        <div className="detail-actions" hidden={!canWrite}>
           {app.running ? (
             <>
               <button type="button" className="btn" disabled={busy} onClick={() => run(() => api.appAction(app.id, 'stop'))}>
@@ -1550,7 +1595,7 @@ function AppDetail({
         </div>
         <button
           type="button"
-          hidden={!!app.stackId}
+          hidden={!!app.stackId || !isOwner}
           className="link-button danger-link"
           disabled={busy}
           onClick={() => {
@@ -1573,7 +1618,7 @@ function AppDetail({
       </aside>
 
       <main className="detail-main">
-        <DetailTabs tab={tab} onTab={setTab} label="Vues de l’app" withTerminal withNetwork />
+        <DetailTabs tab={tab} onTab={setTab} label="Vues de l’app" withTerminal={isOwner} withNetwork withAccess />
         {tab === 'observability' && (
           <Observability
             m={{
@@ -1602,6 +1647,7 @@ function AppDetail({
           ))}
         {tab === 'network' && <AppNetworkTab app={app} onChange={onChange} />}
         {tab === 'events' && <Events eventsKey={`app-${app.id}`} load={() => api.appEvents(app.id)} />}
+        {tab === 'access' && <Access kind="apps" id={app.id} name={app.name} owner={isOwner} onTransferred={() => go('apps')} />}
       </main>
 
       {moving && (
@@ -1639,6 +1685,7 @@ function AppDetail({
           title={`Configuration de ${app.name}`}
           submitLabel="Enregistrer et redéployer"
           initial={full}
+          canReveal={!app.role}
           onClose={() => setEditing(false)}
           onSubmit={async (input) => {
             setFull(await api.updateApp(app.id, input))
@@ -1946,12 +1993,14 @@ function DetailTabs({
   label,
   withTerminal,
   withNetwork,
+  withAccess,
 }: {
   tab: DetailTab
   onTab: (t: DetailTab) => void
   label: string
   withTerminal?: boolean
   withNetwork?: boolean
+  withAccess?: boolean
 }) {
   return (
     <div className="segmented" role="tablist" aria-label={label}>
@@ -1962,6 +2011,7 @@ function DetailTabs({
           ...(withTerminal ? ([['terminal', 'Terminal']] as const) : []),
           ...(withNetwork ? ([['network', 'Réseau']] as const) : []),
           ['events', 'Événements'],
+          ...(withAccess ? ([['access', 'Accès']] as const) : []),
         ] as const
       ).map(([value, text]) => (
         <button key={value} type="button" role="tab" aria-selected={tab === value} className={tab === value ? 'on' : ''} onClick={() => onTab(value)}>

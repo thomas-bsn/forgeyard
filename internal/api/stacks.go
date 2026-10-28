@@ -188,7 +188,9 @@ type stackInput struct {
 	Compose string            `json:"compose"`
 	Env     map[string]string `json:"env"`
 	KeepEnv []string          `json:"keepEnv"` // variables left as they are, which the form never saw
-	NodeID  int64             `json:"nodeId"`  // at creation: where it runs, 0 for the recommended node
+	// StackID, when validating an edit, is the project whose saved variables fill in KeepEnv.
+	StackID int64 `json:"stackId"`
+	NodeID  int64 `json:"nodeId"` // at creation: where it runs, 0 for the recommended node
 	// Registry: the login of a private registry the images come from. Absent: unchanged; with an empty
 	// server: removed; with an empty password: the saved one is kept.
 	Registry *registryInput `json:"registry"`
@@ -454,6 +456,11 @@ func (s *Server) stackFromPath(w http.ResponseWriter, r *http.Request, act actio
 		writeError(w, http.StatusNotFound, "projet introuvable")
 		return db.Stack{}, false
 	}
+	return s.stackByID(w, r, id, act)
+}
+
+// stackByID loads a stack, if the current user may do the action on it.
+func (s *Server) stackByID(w http.ResponseWriter, r *http.Request, id int64, act action) (db.Stack, bool) {
 	st, err := s.store.GetStack(r.Context(), id)
 	if errors.Is(err, sql.ErrNoRows) {
 		writeError(w, http.StatusNotFound, "projet introuvable")
@@ -745,6 +752,22 @@ func (s *Server) handleValidateStack(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	creating := in.Name != ""
+	if in.StackID != 0 {
+		saved, ok := s.stackByID(w, r, in.StackID, actUpdate)
+		if !ok {
+			return
+		}
+		old, err := s.openStackEnv(saved.EnvSealed)
+		if err != nil {
+			s.internalError(w, r, err)
+			return
+		}
+		var kept string
+		if in.Env, kept = keepEnv(in.Env, in.KeepEnv, old); kept != "" {
+			writeError(w, http.StatusBadRequest, kept)
+			return
+		}
+	}
 	st, msg, errs := in.parse(creating)
 	out := stackPreview{Services: []stackPreviewService{}, Volumes: []string{}, Binds: []stackPreviewBind{}, Errors: errs, Error: msg}
 	if out.Errors == nil {

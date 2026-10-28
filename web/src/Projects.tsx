@@ -17,6 +17,7 @@ import {
 } from './api'
 import { appTone, Dot, LogoChooser, Logs, SourcePick, stateText, type Source } from './Apps'
 import { AppLogo, formatBytes, Modal, OwnerChip, since, Switch, useRedeploy } from './ui'
+import Access, { RoleBadge } from './Access'
 
 export const projectStates: Record<StackState, { label: string; tone: 'up' | 'warn' | 'down' | '' }> = {
   pending: { label: 'En attente', tone: '' },
@@ -60,7 +61,7 @@ function ProjectBindChangeModal({ stack, onClose, onSubmitted }: { stack: Stack;
   async function submit(e: FormEvent) {
     e.preventDefault(); setBusy(true); setError('')
     try {
-      const request = await api.createBindChangeRequest({ change: { resourceId: stack.id, resourceType: 'stack', nodeId, stack: { name: stack.name, compose, env: stack.env ?? {}, registry: { server: stack.registry?.server ?? '', username: stack.registry?.username ?? '', password: '' } } } })
+      const request = await api.createBindChangeRequest({ change: { resourceId: stack.id, resourceType: 'stack', nodeId, stack: { name: stack.name, compose, registry: { server: stack.registry?.server ?? '', username: stack.registry?.username ?? '', password: '' } } } })
       onSubmitted(request.id)
     } catch (err) { setError(errorMessage(err)); setBusy(false) }
   }
@@ -94,7 +95,8 @@ export function ProjectLogo({
   )
 }
 
-type EnvVar = { key: string; value: string; reveal?: boolean }
+/** kept: a saved variable whose value the form never received; it stays as it is unless a value is typed. */
+type EnvVar = { key: string; value: string; reveal?: boolean; kept?: boolean }
 
 const secretName = /SECRET|PASSWORD|TOKEN|KEY|DATABASE_URL/i
 
@@ -111,7 +113,7 @@ function EnvEditor({ env, setEnv, missing, requiredNames }: { env: EnvVar[]; set
   const i = Math.min(sel, env.length - 1)
   const v = env[i] as EnvVar | undefined
   const secret = !!v && secretName.test(v.key) && v.value !== ''
-  const requiredEmpty = (variable: EnvVar) => requiredNames.includes(variable.key.trim()) && variable.value === ''
+  const requiredEmpty = (variable: EnvVar) => !variable.kept && requiredNames.includes(variable.key.trim()) && variable.value === ''
   const valueRequired = !!v && requiredNames.includes(v.key.trim())
   const valueMissing = !!v && requiredEmpty(v)
 
@@ -123,7 +125,7 @@ function EnvEditor({ env, setEnv, missing, requiredNames }: { env: EnvVar[]; set
     }
   }, [i, v?.key, v?.value])
 
-  const patch = (p: Partial<EnvVar>) => setEnv(env.map((x, j) => (j === i ? { ...x, ...p } : x)))
+  const patch = (p: Partial<EnvVar>) => setEnv(env.map((x, j) => (j === i ? { ...x, ...p, ...(p.value !== undefined ? { kept: false } : {}) } : x)))
   const add = (key: string) => {
     setEnv([...env, { key, value: '' }])
     setSel(env.length)
@@ -144,7 +146,7 @@ function EnvEditor({ env, setEnv, missing, requiredNames }: { env: EnvVar[]; set
           <div className="env-detail">
             <label>
               <small className="muted">Nom</small>
-              <textarea ref={nameArea} rows={1} aria-label="Nom de la variable" value={v.key} spellCheck={false} placeholder="NOM" onChange={(e) => patch({ key: line(e.target.value) })} onKeyDown={(e) => e.key === 'Enter' && e.preventDefault()} />
+              <textarea ref={nameArea} rows={1} aria-label="Nom de la variable" value={v.key} readOnly={v.kept} spellCheck={false} placeholder="NOM" onChange={(e) => patch({ key: line(e.target.value) })} onKeyDown={(e) => e.key === 'Enter' && e.preventDefault()} />
             </label>
             <label>
               <small className={valueMissing ? 'text-down' : 'muted'}>Valeur{valueRequired ? ' · obligatoire' : ''}</small>
@@ -158,7 +160,7 @@ function EnvEditor({ env, setEnv, missing, requiredNames }: { env: EnvVar[]; set
                 className={secret && !v.reveal ? 'env-masked' : ''}
                 value={v.value}
                 spellCheck={false}
-                placeholder="valeur"
+                placeholder={v.kept ? 'inchangée' : 'valeur'}
                 onFocus={() => v.reveal === undefined && secret && patch({ reveal: true })}
                 onChange={(e) => patch({ value: line(e.target.value) })}
                 onKeyDown={(e) => e.key === 'Enter' && e.preventDefault()}
@@ -294,7 +296,7 @@ export function ProjectFormModal({
 }) {
   const [name, setName] = useState(stack?.name ?? '')
   const [compose, setCompose] = useState(stack?.compose ?? '')
-  const [env, setEnv] = useState<EnvVar[]>(Object.entries(stack?.env ?? {}).map(([key, value]) => ({ key, value })))
+  const [env, setEnv] = useState<EnvVar[]>((stack?.envKeys ?? []).map((key) => ({ key, value: '', kept: true })))
   // A private registry the images come from; the saved password never comes back, so it is kept unless retyped.
   const [registry, setRegistry] = useState({ server: stack?.registry?.server ?? '', username: stack?.registry?.username ?? '', password: '' })
   const [registryTouched, setRegistryTouched] = useState(false)
@@ -343,8 +345,9 @@ export function ProjectFormModal({
     }, (err) => setError(errorMessage(err)))
   }, [useBindMounts, stack])
 
-  const vars = Object.fromEntries(env.filter((v) => v.key.trim()).map((v) => [v.key.trim(), v.value]))
-  const varsKey = JSON.stringify(vars)
+  const vars = Object.fromEntries(env.filter((v) => v.key.trim() && !v.kept).map((v) => [v.key.trim(), v.value]))
+  const keep = env.filter((v) => v.key.trim() && v.kept).map((v) => v.key.trim())
+  const varsKey = JSON.stringify([vars, keep])
   // Checked as it is typed, once typing pauses.
   useEffect(() => {
     if (!compose.trim()) {
@@ -353,7 +356,7 @@ export function ProjectFormModal({
       return
     }
     const t = setTimeout(() => {
-      api.validateStack({ name: stack?.name ?? (name.trim() || 'projet'), compose, env: vars }).then(
+      api.validateStack({ name: stack?.name ?? (name.trim() || 'projet'), compose, env: vars, keepEnv: keep, stackId: stack?.id }).then(
         (p) => {
           setPreview(p)
           setErrors(p.errors)
@@ -378,9 +381,9 @@ export function ProjectFormModal({
   }, [adaptedCompose, varsKey, name])
 
   const variables = usedVariables(compose)
-  const missing = variables.filter((v) => !(v.name in vars))
+  const missing = variables.filter((v) => !(v.name in vars) && !keep.includes(v.name))
   const requiredNames = variables.filter((v) => v.required).map((v) => v.name)
-  const requiredMissing = requiredNames.filter((name) => !vars[name])
+  const requiredMissing = requiredNames.filter((name) => !vars[name] && !keep.includes(name))
 
   function goToLine(line: number) {
     const ta = editor.current
@@ -408,7 +411,7 @@ export function ProjectFormModal({
         else onRequest?.(request.id)
         return
       }
-      const saved = stack ? await api.updateStack(stack.id, { compose, env: vars, registry: login }) : await api.createStack({ name, compose, env: vars, nodeId: nodeId || undefined, registry: login })
+      const saved = stack ? await api.updateStack(stack.id, { compose, env: vars, keepEnv: keep, registry: login }) : await api.createStack({ name, compose, env: vars, nodeId: nodeId || undefined, registry: login })
       onSaved(saved)
     } catch (err) {
       if (err instanceof ApiError && err.composeErrors) setErrors(err.composeErrors)
@@ -606,7 +609,7 @@ export function ProjectFormModal({
   if (stack) return <Modal title={`Projet ${stack.name}`} onClose={onClose} onSubmit={submit} aside={legacyAside}>
     <label className="field"><span>docker-compose.yml</span><textarea ref={editor} className="mono compose-editor" value={compose} onChange={(e) => setCompose(e.target.value)} spellCheck={false} rows={20} required placeholder={composeExample} aria-invalid={errors.length > 0} /></label>
     {errors.length > 0 && <ul className="compose-errors" aria-live="polite">{errors.map((e, i) => <li key={i}>{e.line > 0 && <button type="button" className="link-button" onClick={() => goToLine(e.line)}>ligne {e.line}</button>}<span>{e.message}</span></li>)}</ul>}
-    <div className="field"><span>Variables <span className="muted">· chiffrées</span></span><EnvEditor env={env} setEnv={setEnv} missing={missing} requiredNames={requiredNames} /></div>
+    <div className="field"><span>Variables <span className="muted">· chiffrées</span></span><EnvEditor env={env} setEnv={setEnv} missing={missing} requiredNames={requiredNames} />{!stack.role && env.some((v) => v.kept) && <div><button type="button" className="btn btn-small" onClick={async () => { try { const { env: values } = await api.stackEnv(stack.id); setEnv(env.map((v) => (v.kept ? { key: v.key, value: values[v.key] ?? '' } : v))) } catch (err) { setError(errorMessage(err)) } }}>Afficher les valeurs</button></div>}<small className="muted">Une valeur laissée vide sur une variable déjà enregistrée reste inchangée.</small></div>
     <details className="field" open={registryOpen} onToggle={(e) => setRegistryOpen(e.currentTarget.open)}><summary>Registry privé <span className="muted">{registry.server ? `· ${registry.server}` : '· images publiques'}</span></summary><div className="env-list"><input aria-label="Adresse du registry" className="mono" value={registry.server} onChange={(e) => editRegistry({ server: e.target.value })} placeholder="ghcr.io" /><div className="env-row"><input aria-label="Identifiant" value={registry.username} onChange={(e) => editRegistry({ username: e.target.value })} placeholder="identifiant" autoComplete="off" /><input type="password" aria-label="Mot de passe ou token" value={registry.password} onChange={(e) => editRegistry({ password: e.target.value })} placeholder={stack.registry?.passwordSet ? 'inchangé' : 'token'} autoComplete="new-password" /></div></div></details>
   </Modal>
 
@@ -618,7 +621,7 @@ export function ProjectFormModal({
   </Modal>
 }
 
-type StackTab = 'services' | 'logs' | 'volumes' | 'compose'
+type StackTab = 'services' | 'logs' | 'volumes' | 'compose' | 'access'
 
 export function ProjectDetail({
   stack,
@@ -666,6 +669,9 @@ export function ProjectDetail({
   const [redeploying, startRedeploy] = useRedeploy(stack.state === 'deploying')
   const [choosingLogo, setChoosingLogo] = useState(false)
   const failedJob = stack.services.find((s) => s.state === 'failed')
+  // No role: the owner or an admin. A viewer only reads; a contributor runs and edits, without the owner's rights.
+  const isOwner = !stack.role
+  const canWrite = stack.role !== 'viewer'
 
   return (
     <div className="detail">
@@ -674,7 +680,7 @@ export function ProjectDetail({
           ← {readOnly ? stack.ownerName : 'Apps'}
         </a>
         <div className="detail-title">
-          {readOnly ? (
+          {readOnly || !canWrite ? (
             <ProjectLogo project={stack} size={52} />
           ) : (
             <button type="button" className="logo-button" onClick={() => setChoosingLogo(true)} aria-label="Changer le logo" title="Changer le logo">
@@ -738,7 +744,12 @@ export function ProjectDetail({
           <dd>{since(stack.updatedAt)}</dd>
         </dl>
         {error && <p className="error">{error}</p>}
-        {!readOnly && (
+        {!readOnly && stack.role && (
+          <p className="muted">
+            <RoleBadge role={stack.role} /> {canWrite ? 'Vous pouvez le déployer et le configurer.' : 'Vous le consultez en lecture seule.'}
+          </p>
+        )}
+        {!readOnly && canWrite && (
           <>
             <div className="detail-actions">
               {running ? (
@@ -768,13 +779,15 @@ export function ProjectDetail({
               <button type="button" className="btn detail-actions-wide" disabled={busy || !full} onClick={() => setEditing(true)}>
                 Modifier le compose
               </button>
-              {stack.services.some((service) => service.bindMounts?.length) && <button type="button" className="btn detail-actions-wide" disabled={busy || !full} onClick={() => setChangingBinds(true)}>{stack.services.some((service) => service.bindMounts?.length && !service.bindAuthorized) ? 'Demander de nouveaux accès sur un autre node' : 'Demander une modification des accès / du node'}</button>}
+              {isOwner && stack.services.some((service) => service.bindMounts?.length) && <button type="button" className="btn detail-actions-wide" disabled={busy || !full} onClick={() => setChangingBinds(true)}>{stack.services.some((service) => service.bindMounts?.length && !service.bindAuthorized) ? 'Demander de nouveaux accès sur un autre node' : 'Demander une modification des accès / du node'}</button>}
               {superadmin && stack.services.some((service) => service.bindMounts?.length && service.bindAuthorized) && <button type="button" className="btn danger detail-actions-wide" disabled={busy} onClick={() => run(() => api.revokeStackBinds(stack.id))}>Révoquer les bind mounts du projet</button>}
             </div>
             {changingBinds && full && <ProjectBindChangeModal stack={full} onClose={() => setChangingBinds(false)} onSubmitted={(id) => { setChangingBinds(false); go(`support/bind/${id}`) }} />}
-            <button type="button" className="link-button danger-link" disabled={busy} onClick={() => setDeleting(true)}>
-              Supprimer le projet…
-            </button>
+            {isOwner && (
+              <button type="button" className="link-button danger-link" disabled={busy} onClick={() => setDeleting(true)}>
+                Supprimer le projet…
+              </button>
+            )}
           </>
         )}
       </aside>
@@ -790,7 +803,8 @@ export function ProjectDetail({
                   ['services', 'Apps du projet'],
                   ['logs', 'Logs'],
                   ['volumes', 'Volumes et sauvegardes'],
-                  ['compose', 'Compose'],
+                  ...(canWrite ? ([['compose', 'Compose']] as const) : []),
+                  ['access', 'Accès'],
                 ] as const
               ).map(([value, text]) => (
                 <button key={value} type="button" role="tab" aria-selected={tab === value} className={tab === value ? 'on' : ''} onClick={() => setTab(value)}>
@@ -816,13 +830,14 @@ export function ProjectDetail({
             {tab === 'compose' && full && (
               <div className="panel compose-view">
                 <pre className="mono">{full.compose}</pre>
-                {full.env && Object.keys(full.env).length > 0 && (
+                {full.envKeys && full.envKeys.length > 0 && (
                   <p className="muted">
-                    Variables : <span className="mono">{Object.keys(full.env).join(', ')}</span>
+                    Variables : <span className="mono">{full.envKeys.join(', ')}</span>
                   </p>
                 )}
               </div>
             )}
+            {tab === 'access' && <Access kind="stacks" id={stack.id} name={stack.name} owner={isOwner} onTransferred={() => go('apps')} />}
           </>
         )}
       </main>

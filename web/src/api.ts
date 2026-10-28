@@ -21,6 +21,12 @@ export type User = {
   createdAt: number
 }
 
+/** What an owner gives to someone on an app or a project: read it, or run and edit it. */
+export type AccessRole = 'viewer' | 'contributor'
+
+export type AccessEntry = { userId: number; displayName: string; avatarUrl?: string; role: 'owner' | AccessRole; via?: 'project' }
+export type AccessList = { owner: AccessEntry; members: AccessEntry[]; role: 'owner' | AccessRole | '' }
+
 export type Member = {
   id: number
   displayName: string
@@ -300,8 +306,10 @@ export type App = {
   volumes: { path: string; sizeBytes: number; builtin?: boolean }[]
   logo: { mode: 'auto' | 'custom' | 'initial'; url?: string; color?: string; autoUrl?: string }
   updatedAt: number
-  env?: Record<string, string>
+  envKeys?: string[] // the names of the variables; their values come from api.appEnv, for the owner
   dockerfile?: string
+  role?: AccessRole // what the owner gave the signed-in user; absent for the owner and the admins
+  via?: 'project' // the role comes from the project the app belongs to
 }
 
 export type ComposeError = { line: number; message: string }
@@ -349,7 +357,8 @@ export type Stack = {
   volumes: StackVolume[]
   updatedAt: number
   compose?: string
-  env?: Record<string, string>
+  envKeys?: string[]
+  role?: AccessRole
   registry?: { server: string; username: string; passwordSet: boolean }
   logo: { mode: 'auto' | 'custom' | 'initial'; url?: string; color?: string }
 }
@@ -429,13 +438,14 @@ export type AppInput = {
   port: number
   memoryMb: number
   env: Record<string, string>
+  keepEnv?: string[] // variables of the saved app left as they are: their values never reach the form
   nodeId?: number
   gpu?: GpuRequest
 }
 
 export type BindMount = { source: string; target: string; readOnly: boolean; service?: string }
 export type BindNode = { id: number; name: string; online: boolean; cpus: number; apps: number }
-export type StackBindRequestInput = { name: string; compose: string; env: Record<string, string>; registry?: { server: string; username: string; password: string } }
+export type StackBindRequestInput = { name: string; compose: string; env?: Record<string, string>; registry?: { server: string; username: string; password: string } }
 export type StackBindRequestConfig = Omit<StackBindRequestInput, 'env'> & { env?: null }
 export type BindRequestInput = (AppInput & { bindMounts: BindMount[]; logoImage?: string }) | { nodeId: number; bindMounts: BindMount[]; stack: StackBindRequestInput }
 export type BindChangeInput = { change: { resourceId: number; resourceType: 'app' | 'stack'; nodeId: number; bindMounts?: BindMount[]; stack?: StackBindRequestInput }; bindMounts?: BindMount[] }
@@ -596,6 +606,13 @@ export const api = {
   revokeAppBinds: (id: number) => request<App>('POST', `/api/admin/apps/${id}/bind-mounts/revoke`, {}),
   revokeStackBinds: (id: number) => request<Stack>('POST', `/api/admin/stacks/${id}/bind-mounts/revoke`, {}),
   deleteApp: (id: number) => request<void>('DELETE', `/api/apps/${id}`, {}),
+  appEnv: (id: number) => request<{ env: Record<string, string> }>('GET', `/api/apps/${id}/env`),
+  stackEnv: (id: number) => request<{ env: Record<string, string> }>('GET', `/api/stacks/${id}/env`),
+  access: (kind: 'apps' | 'stacks', id: number) => request<AccessList>('GET', `/api/${kind}/${id}/members`),
+  setAccess: (kind: 'apps' | 'stacks', id: number, userId: number, role: AccessRole) =>
+    request<AccessList>('PUT', `/api/${kind}/${id}/members/${userId}`, { role }),
+  removeAccess: (kind: 'apps' | 'stacks', id: number, userId: number) => request<AccessList>('DELETE', `/api/${kind}/${id}/members/${userId}`, {}),
+  transfer: (kind: 'apps' | 'stacks', id: number, userId: number) => request<unknown>('POST', `/api/${kind}/${id}/transfer`, { userId }),
   appEvents: (id: number) => request<AppEvent[]>('GET', `/api/apps/${id}/events`),
   appUsage: (id: number) => request<AppUsage>('GET', `/api/apps/${id}/usage`),
   containerUsage: (c: Container) => request<AppUsage>('GET', `/api/admin/nodes/${c.nodeId}/containers/${c.id}/usage`),
@@ -673,11 +690,11 @@ export const api = {
   checkDomain: () => request<DomainCheck>('POST', '/api/admin/settings/domain/check', {}),
   stacks: () => request<Stack[]>('GET', '/api/stacks'),
   stack: (id: number) => request<Stack>('GET', `/api/stacks/${id}`),
-  validateStack: (body: { name: string; compose: string; env: Record<string, string> }) => request<StackPreview>('POST', '/api/stacks/validate', body),
+  validateStack: (body: { name: string; compose: string; env: Record<string, string>; keepEnv?: string[]; stackId?: number }) => request<StackPreview>('POST', '/api/stacks/validate', body),
   adaptStackPorts: (body: { compose: string; apply?: boolean; exposeService?: string; exposePort?: number }) =>
     request<{ compose?: string; candidates: ComposePortCandidate[]; error?: string }>('POST', '/api/stacks/adapt-ports', body),
   createStack: (body: { name: string; compose: string; env: Record<string, string>; nodeId?: number; registry?: RegistryLogin }) => request<Stack>('POST', '/api/stacks', body),
-  updateStack: (id: number, body: { compose: string; env: Record<string, string>; registry?: RegistryLogin }) => request<Stack>('PUT', `/api/stacks/${id}`, body),
+  updateStack: (id: number, body: { compose: string; env: Record<string, string>; keepEnv?: string[]; registry?: RegistryLogin }) => request<Stack>('PUT', `/api/stacks/${id}`, body),
   stackAction: (id: number, action: 'start' | 'stop' | 'redeploy') => request<Stack>('POST', `/api/stacks/${id}/${action}`, {}),
   deleteStack: (id: number, volumes: boolean) => request<void>('DELETE', `/api/stacks/${id}${volumes ? '?volumes=1' : ''}`, {}),
   saveBackupPolicy: (id: number, volume: string, body: { schedule: BackupPolicy['schedule']; hour: number; keep: number; enabled: boolean }) =>

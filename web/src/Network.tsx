@@ -86,7 +86,8 @@ async function setAppPort(appId: number, port: number) {
     dockerfile: a.dockerfile ?? '',
     port,
     memoryMb: a.memoryMb,
-    env: a.env ?? {},
+    env: {},
+    keepEnv: a.envKeys,
     volumes: a.volumes.filter((v) => !v.builtin).map((v) => v.path),
     gpu: a.gpu,
   })
