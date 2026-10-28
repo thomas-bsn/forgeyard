@@ -568,6 +568,84 @@ func (q *Queries) ListAppsByOwnerID(ctx context.Context, ownerID int64) ([]App, 
 	return items, nil
 }
 
+const listAppsByUser = `-- name: ListAppsByUser :many
+SELECT apps.id, apps.name, apps.owner_id, apps.node_id, apps.image, apps.port, apps.env_sealed, apps.running, apps.memory_mb, apps.generation, apps.dns_name, apps.created_at, apps.updated_at, apps.public, apps.logo_mode, apps.logo_color, apps.logo_updated_at, apps.crash_suspended, apps.moving_from, apps.moved_at, apps.dockerfile, apps.kind, apps.port_source, apps.volumes, apps.stack_id, apps.service, apps.service_spec, apps.gpu, apps.bind_mounts, apps.bind_authorized, users.display_name AS owner_name, users.apps_suspended AS owner_suspended, nodes.name AS node_name
+FROM apps
+JOIN users ON users.id = apps.owner_id
+JOIN nodes ON nodes.id = apps.node_id
+WHERE apps.owner_id = ?1
+   OR EXISTS (
+        SELECT 1 FROM resource_members m
+        WHERE m.user_id = ?1
+          AND ((m.resource_kind = 'app' AND m.resource_id = apps.id)
+            OR (m.resource_kind = 'stack' AND apps.stack_id != 0 AND m.resource_id = apps.stack_id)))
+ORDER BY apps.name
+`
+
+type ListAppsByUserRow struct {
+	App            App
+	OwnerName      string
+	OwnerSuspended int64
+	NodeName       string
+}
+
+func (q *Queries) ListAppsByUser(ctx context.Context, userID int64) ([]ListAppsByUserRow, error) {
+	rows, err := q.db.QueryContext(ctx, listAppsByUser, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListAppsByUserRow{}
+	for rows.Next() {
+		var i ListAppsByUserRow
+		if err := rows.Scan(
+			&i.App.ID,
+			&i.App.Name,
+			&i.App.OwnerID,
+			&i.App.NodeID,
+			&i.App.Image,
+			&i.App.Port,
+			&i.App.EnvSealed,
+			&i.App.Running,
+			&i.App.MemoryMb,
+			&i.App.Generation,
+			&i.App.DnsName,
+			&i.App.CreatedAt,
+			&i.App.UpdatedAt,
+			&i.App.Public,
+			&i.App.LogoMode,
+			&i.App.LogoColor,
+			&i.App.LogoUpdatedAt,
+			&i.App.CrashSuspended,
+			&i.App.MovingFrom,
+			&i.App.MovedAt,
+			&i.App.Dockerfile,
+			&i.App.Kind,
+			&i.App.PortSource,
+			&i.App.Volumes,
+			&i.App.StackID,
+			&i.App.Service,
+			&i.App.ServiceSpec,
+			&i.App.Gpu,
+			&i.App.BindMounts,
+			&i.App.BindAuthorized,
+			&i.OwnerName,
+			&i.OwnerSuspended,
+			&i.NodeName,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listAppsForNode = `-- name: ListAppsForNode :many
 SELECT id, name, owner_id, node_id, image, port, env_sealed, running, memory_mb, generation, dns_name, created_at, updated_at, public, logo_mode, logo_color, logo_updated_at, crash_suspended, moving_from, moved_at, dockerfile, kind, port_source, volumes, stack_id, service, service_spec, gpu, bind_mounts, bind_authorized FROM apps WHERE node_id = ?1 OR moving_from = ?1 ORDER BY id
 `

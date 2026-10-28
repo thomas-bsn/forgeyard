@@ -60,6 +60,7 @@ type AppEvent struct {
 	At      int64
 	Kind    string
 	Message string
+	ActorID sql.NullInt64
 }
 
 type AppLogo struct {
@@ -181,6 +182,15 @@ type Node struct {
 	Gpus            string
 	GpuStatus       string
 	GpuError        string
+}
+
+type ResourceMember struct {
+	ResourceKind string
+	ResourceID   int64
+	UserID       int64
+	Role         string
+	AddedBy      sql.NullInt64
+	CreatedAt    int64
 }
 
 type Session struct {

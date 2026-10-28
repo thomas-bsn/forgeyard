@@ -34,7 +34,7 @@ func (s *Server) handleRevokeAppBindMounts(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	if wasAuthorized {
-		s.appEvent(a.ID, eventWarning, "Autorisation de bind mounts révoquée par "+currentUser(r).DisplayName)
+		s.appEventBy(a.ID, currentUser(r).ID, eventWarning, "Autorisation de bind mounts révoquée par "+currentUser(r).DisplayName)
 	}
 	s.push(r.Context(), a.NodeID)
 	s.writeApp(w, r, http.StatusOK, a, false)
@@ -79,7 +79,7 @@ func (s *Server) handleRevokeStackBindMounts(w http.ResponseWriter, r *http.Requ
 	}
 	for _, a := range affected {
 		if a.BindAuthorized != 0 {
-			s.appEvent(a.ID, eventWarning, "Autorisation de bind mounts révoquée pour le projet par "+currentUser(r).DisplayName)
+			s.appEventBy(a.ID, currentUser(r).ID, eventWarning, "Autorisation de bind mounts révoquée pour le projet par "+currentUser(r).DisplayName)
 		}
 	}
 	s.push(r.Context(), st.NodeID)

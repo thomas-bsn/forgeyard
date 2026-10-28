@@ -126,6 +126,22 @@ func (s *Server) notifyAdmins(kind string, n notification) {
 	}()
 }
 
+// notifyAppTeam tells an app's owner and the contributors who can fix it, each on their own webhook.
+// Viewers are not told.
+func (s *Server) notifyAppTeam(ctx context.Context, a db.App, n notification) {
+	s.notifyUser(a.OwnerID, n)
+	ids, err := s.store.ListAppContributors(ctx, db.ListAppContributorsParams{AppID: a.ID, StackID: a.StackID})
+	if err != nil {
+		s.logger.Warn("listing the contributors to notify failed", "app_id", a.ID, "err", err)
+		return
+	}
+	for _, id := range ids {
+		if id != a.OwnerID {
+			s.notifyUser(id, n)
+		}
+	}
+}
+
 // notifyUser sends a notification to a user's own webhook, if they set one.
 func (s *Server) notifyUser(userID int64, n notification) {
 	go func() {
@@ -372,13 +388,13 @@ func (s *Server) crashed(appID int64, count int, why string) {
 			s.appEvent(appID, eventError, msg)
 			s.push(ctx, suspended.NodeID)
 			n := notification{Title: "« " + a.Name + " » est suspendue", Text: msg + ". Dernier crash : " + why + ".", Path: path, Color: colorError}
-			s.notifyUser(a.OwnerID, n)
+			s.notifyAppTeam(ctx, a, n)
 			s.notifyAdmins("crashes", n)
 		}
 		return
 	}
 	if tellUser {
-		s.notifyUser(a.OwnerID, notification{Title: "« " + a.Name + " » a planté", Text: why + ". Docker la relance.", Path: path, Color: colorWarning})
+		s.notifyAppTeam(ctx, a, notification{Title: "« " + a.Name + " » a planté", Text: why + ". Docker la relance.", Path: path, Color: colorWarning})
 	}
 }
 

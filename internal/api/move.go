@@ -98,7 +98,7 @@ func (s *Server) handleMoveApp(w http.ResponseWriter, r *http.Request) {
 	if movingFrom != 0 {
 		s.nodes.ResetApp(a.ID)
 	}
-	s.appEvent(a.ID, eventInfo, "Déplacement de "+from.Name+" vers "+target.Name+" demandé par "+currentUser(r).DisplayName)
+	s.appEventBy(a.ID, currentUser(r).ID, eventInfo, "Déplacement de "+from.Name+" vers "+target.Name+" demandé par "+currentUser(r).DisplayName)
 	s.logger.Info("app moving", "app", a.Name, "from", from.Name, "to", target.Name, "by", currentUser(r).DisplayName)
 	s.push(ctx, target.ID)
 	s.push(ctx, from.ID)

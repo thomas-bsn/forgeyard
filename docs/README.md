@@ -51,7 +51,7 @@ Chaque page a sa propre adresse (`#/apps/3`, `#/settings/domain`…).
 | [installation/](installation/README.md) | Lancer avec Docker Compose, wizard de premier lancement, mise à jour, réglages |
 | [auth/](auth/README.md) | Connexion Discord ou mot de passe, demandes de compte, rôles, lien de secours |
 | [nodes/](nodes/README.md) | Ajouter une machine, connexion agent ↔ server, réconciliation, métriques |
-| [apps/](apps/README.md) | Créer et gérer une app, placement, états, adresse, logs en direct ; [projets docker-compose](apps/projects.md) et [sauvegardes](apps/backups.md) |
+| [apps/](apps/README.md) | Créer et gérer une app, placement, états, adresse, logs en direct ; [projets docker-compose](apps/projects.md), [sauvegardes](apps/backups.md) et [accès partagé](apps/access.md) |
 | [support/](support/README.md) | Demandes d'aide, réponses des admins, salon support sur Discord |
 | [network/](network/README.md) | Chemin du trafic, [DNS](network/dns.md), [Traefik et reverse proxy](network/routing.md) |
 | [security/](security/README.md) | Chiffrement des secrets, certificats, protections de l'API |

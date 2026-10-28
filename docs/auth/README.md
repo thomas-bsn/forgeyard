@@ -46,7 +46,7 @@ Par webhook Discord, chiffré en base comme les autres secrets :
 
 - **Salon des admins** (Réglages › Notifications) : nouvelles demandes de compte, suivi des demandes de bind mounts à traiter par le superadmin, demandes d'aide ([support](../support/README.md)), apps suspendues après des crashs, node hors ligne depuis une minute puis de retour ; chaque type s'active à part. Un bouton envoie un message de test.
 - **Salon support** (facultatif, même page) : reçoit à la place les demandes de compte, de bind mounts et d'aide, pour les séparer des alertes.
-- **Webhook personnel** (Mon profil › Notifications) : les crashs et suspensions de ses propres apps, les réponses du support et le suivi de ses demandes de bind mounts. Le superadmin y reçoit aussi les demandes à examiner et leur suivi.
+- **Webhook personnel** (Mon profil › Notifications) : les crashs et suspensions de ses propres apps et de celles où il est [contributeur](../apps/access.md), les réponses du support et le suivi de ses demandes de bind mounts. Le superadmin y reçoit aussi les demandes à examiner et leur suivi.
 
 Le réglage **Demandes de compte et de bind mounts** active les notifications de soumission, annulation, refus, approbation et résultat de création des demandes de bind mounts. Les messages contiennent les identifiants de la demande et de son auteur, avec un lien vers « Mes demandes » ou la file réservée au superadmin. Les configurations, chemins, variables secrètes, motifs de refus et erreurs techniques restent dans Forgeyard. Un salon partagé ne donne aucun droit de traitement aux admins ordinaires. Discord reste facultatif ; une erreur d'envoi ne change pas le résultat de la demande.
 

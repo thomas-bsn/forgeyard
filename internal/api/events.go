@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -23,9 +24,14 @@ const (
 
 // appEvent records what happened to an app. It never fails the request that caused it.
 func (s *Server) appEvent(appID int64, kind, message string) {
+	s.appEventBy(appID, 0, kind, message)
+}
+
+// appEventBy records an event someone caused: actorID is that person, 0 for what the system did.
+func (s *Server) appEventBy(appID, actorID int64, kind, message string) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	err := s.store.AddAppEvent(ctx, db.AddAppEventParams{AppID: appID, At: time.Now().Unix(), Kind: kind, Message: message})
+	err := s.store.AddAppEvent(ctx, db.AddAppEventParams{AppID: appID, At: time.Now().Unix(), Kind: kind, Message: message, ActorID: sql.NullInt64{Int64: actorID, Valid: actorID != 0}})
 	if err == nil {
 		err = s.store.PruneAppEvents(ctx, appID)
 	}

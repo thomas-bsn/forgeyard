@@ -185,7 +185,7 @@ func (s *Server) approveStackBindRequest(ctx context.Context, r *http.Request, r
 		return err
 	}
 	for _, a := range apps {
-		s.appEvent(a.ID, eventInfo, "Projet Compose créé après approbation des bind mounts par "+currentUser(r).DisplayName)
+		s.appEventBy(a.ID, currentUser(r).ID, eventInfo, "Projet Compose créé après approbation des bind mounts par "+currentUser(r).DisplayName)
 	}
 	s.push(ctx, node.ID)
 	return nil

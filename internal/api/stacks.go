@@ -187,7 +187,8 @@ type stackInput struct {
 	Name    string            `json:"name"`
 	Compose string            `json:"compose"`
 	Env     map[string]string `json:"env"`
-	NodeID  int64             `json:"nodeId"` // at creation: where it runs, 0 for the recommended node
+	KeepEnv []string          `json:"keepEnv"` // variables left as they are, which the form never saw
+	NodeID  int64             `json:"nodeId"`  // at creation: where it runs, 0 for the recommended node
 	// Registry: the login of a private registry the images come from. Absent: unchanged; with an empty
 	// server: removed; with an empty password: the saved one is kept.
 	Registry *registryInput `json:"registry"`
@@ -416,7 +417,8 @@ type stackResponse struct {
 	Volumes   []stackVolumeInfo `json:"volumes"`
 	UpdatedAt int64             `json:"updatedAt"`
 	Compose   string            `json:"compose,omitempty"` // with the variables, for its owner
-	Env       map[string]string `json:"env,omitempty"`
+	Role      string            `json:"role,omitempty"`    // the caller's role when it is given to them: viewer or contributor
+	EnvKeys   []string          `json:"envKeys,omitempty"`
 	Registry  *registryInfo     `json:"registry,omitempty"`
 	Logo      stackLogo         `json:"logo"`
 }
@@ -461,13 +463,17 @@ func (s *Server) stackFromPath(w http.ResponseWriter, r *http.Request, act actio
 		s.internalError(w, r, err)
 		return db.Stack{}, false
 	}
-	allowed, err := s.can(r.Context(), currentUser(r), stackResource(st), act)
+	got, err := s.check(r.Context(), currentUser(r), stackResource(st), act)
 	if err != nil {
 		s.internalError(w, r, err)
 		return db.Stack{}, false
 	}
-	if !allowed {
+	switch got {
+	case accessHidden:
 		writeError(w, http.StatusNotFound, "projet introuvable")
+		return db.Stack{}, false
+	case accessForbidden:
+		writeError(w, http.StatusForbidden, errRole)
 		return db.Stack{}, false
 	}
 	return st, true
@@ -584,9 +590,11 @@ func (s *Server) describeStack(ctx context.Context, r *http.Request, st db.Stack
 	}
 	if withSource {
 		resp.Compose = st.Compose
-		if resp.Env, err = s.openStackEnv(st.EnvSealed); err != nil {
+		env, err := s.openStackEnv(st.EnvSealed)
+		if err != nil {
 			return resp, err
 		}
+		resp.EnvKeys = envKeys(env)
 		reg, err := s.openRegistry(st.RegistrySealed)
 		if err != nil {
 			return resp, err
@@ -626,12 +634,17 @@ func (s *Server) handleListStacks(w http.ResponseWriter, r *http.Request) {
 	if isAdmin(user) {
 		rows, err = s.store.ListStacks(ctx)
 	} else {
-		var own []db.ListStacksByOwnerRow
-		own, err = s.store.ListStacksByOwner(ctx, user.ID)
+		var own []db.ListStacksByUserRow
+		own, err = s.store.ListStacksByUser(ctx, user.ID)
 		for _, o := range own {
 			rows = append(rows, db.ListStacksRow(o))
 		}
 	}
+	if err != nil {
+		s.internalError(w, r, err)
+		return
+	}
+	memberships, err := s.memberships(ctx, user)
 	if err != nil {
 		s.internalError(w, r, err)
 		return
@@ -643,6 +656,7 @@ func (s *Server) handleListStacks(w http.ResponseWriter, r *http.Request) {
 			s.internalError(w, r, err)
 			return
 		}
+		resp.Role, _ = memberships.of(stackResource(row.Stack))
 		out = append(out, resp)
 	}
 	writeJSON(w, http.StatusOK, out)
@@ -664,12 +678,14 @@ func (s *Server) handleGetStack(w http.ResponseWriter, r *http.Request) {
 		s.internalError(w, r, err)
 		return
 	}
-	manage, err := s.can(ctx, currentUser(r), stackResource(st), actView)
+	// A member sees the whole project. Only who may change it also sees its compose file and variables.
+	have, err := s.roleOn(ctx, currentUser(r), stackResource(st))
 	if err != nil {
 		s.internalError(w, r, err)
 		return
 	}
-	resp, err := s.describeStack(ctx, r, st, owner.DisplayName, node.Name, manage)
+	manage := have >= roleViewer
+	resp, err := s.describeStack(ctx, r, st, owner.DisplayName, node.Name, have >= roleContributor)
 	if err != nil {
 		s.internalError(w, r, err)
 		return
@@ -990,6 +1006,16 @@ func (s *Server) handleUpdateStack(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	in.Name = st.Name
+	oldEnv, err := s.openStackEnv(st.EnvSealed)
+	if err != nil {
+		s.internalError(w, r, err)
+		return
+	}
+	var kept string
+	if in.Env, kept = keepEnv(in.Env, in.KeepEnv, oldEnv); kept != "" {
+		writeError(w, http.StatusBadRequest, kept)
+		return
+	}
 	parsed, msg, errs := in.parse(false)
 	if msg != "" {
 		writeError(w, http.StatusBadRequest, msg)
@@ -1009,11 +1035,6 @@ func (s *Server) handleUpdateStack(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusConflict, "l'autorisation des bind mounts du projet est révoquée")
 			return
 		}
-	}
-	oldEnv, err := s.openStackEnv(st.EnvSealed)
-	if err != nil {
-		s.internalError(w, r, err)
-		return
 	}
 	oldCompose, oldErrs := compose.Parse([]byte(st.Compose), oldEnv)
 	if oldErrs != nil {
@@ -1186,7 +1207,7 @@ func (s *Server) handleStackAction(w http.ResponseWriter, r *http.Request) {
 			delete(s.crashes, a.ID)
 			s.mu.Unlock()
 		}
-		s.appEvent(a.ID, eventInfo, verb+" avec le projet par "+currentUser(r).DisplayName)
+		s.appEventBy(a.ID, currentUser(r).ID, eventInfo, verb+" avec le projet par "+currentUser(r).DisplayName)
 	}
 	s.logger.Info("stack "+action, "stack", st.Name, "by", currentUser(r).DisplayName)
 	s.push(ctx, st.NodeID)

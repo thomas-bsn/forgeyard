@@ -33,7 +33,7 @@ func (s *Server) handleAppTerminal(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.serveTerminal(w, r, a.NodeID, a.ID, "", func() {
-		s.appEvent(a.ID, eventInfo, "Terminal ouvert par "+currentUser(r).DisplayName)
+		s.appEventBy(a.ID, currentUser(r).ID, eventInfo, "Terminal ouvert par "+currentUser(r).DisplayName)
 	})
 }
 

@@ -240,7 +240,7 @@ func (s *Server) approveBindRequest(r *http.Request, row db.BindRequest) (result
 	if err != nil {
 		return err
 	}
-	s.appEvent(app.ID, eventInfo, "Bind mounts approuvés par "+currentUser(r).DisplayName)
+	s.appEventBy(app.ID, currentUser(r).ID, eventInfo, "Bind mounts approuvés par "+currentUser(r).DisplayName)
 	s.push(ctx, node.ID)
 	s.notifyBindRequest(row, bindRequestCreated)
 	return nil

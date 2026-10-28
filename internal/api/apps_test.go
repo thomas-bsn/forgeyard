@@ -200,7 +200,7 @@ func TestAppLifecycle(t *testing.T) {
 		var list []appResponse
 		get(t, admin, ts.URL+"/api/apps", &list)
 		if len(list) == 1 && list[0].State == "running" {
-			if list[0].Env != nil {
+			if list[0].EnvKeys != nil {
 				t.Fatal("list exposes the environment")
 			}
 			break

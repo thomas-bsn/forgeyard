@@ -7,10 +7,11 @@ package db
 
 import (
 	"context"
+	"database/sql"
 )
 
 const addAppEvent = `-- name: AddAppEvent :exec
-INSERT INTO app_events (app_id, at, kind, message) VALUES (?, ?, ?, ?)
+INSERT INTO app_events (app_id, at, kind, message, actor_id) VALUES (?, ?, ?, ?, ?)
 `
 
 type AddAppEventParams struct {
@@ -18,6 +19,7 @@ type AddAppEventParams struct {
 	At      int64
 	Kind    string
 	Message string
+	ActorID sql.NullInt64
 }
 
 func (q *Queries) AddAppEvent(ctx context.Context, arg AddAppEventParams) error {
@@ -26,6 +28,7 @@ func (q *Queries) AddAppEvent(ctx context.Context, arg AddAppEventParams) error 
 		arg.At,
 		arg.Kind,
 		arg.Message,
+		arg.ActorID,
 	)
 	return err
 }
@@ -54,7 +57,7 @@ func (q *Queries) AddContainerEvent(ctx context.Context, arg AddContainerEventPa
 }
 
 const listAppEvents = `-- name: ListAppEvents :many
-SELECT id, app_id, at, kind, message FROM app_events WHERE app_id = ? ORDER BY id DESC LIMIT ?
+SELECT id, app_id, at, kind, message, actor_id FROM app_events WHERE app_id = ? ORDER BY id DESC LIMIT ?
 `
 
 type ListAppEventsParams struct {
@@ -77,6 +80,7 @@ func (q *Queries) ListAppEvents(ctx context.Context, arg ListAppEventsParams) ([
 			&i.At,
 			&i.Kind,
 			&i.Message,
+			&i.ActorID,
 		); err != nil {
 			return nil, err
 		}

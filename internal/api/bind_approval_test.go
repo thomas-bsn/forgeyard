@@ -77,8 +77,12 @@ func TestBindApprovalCreatesExactConfigurationOnce(t *testing.T) {
 		t.Fatal("no deployment after approval")
 	}
 	var app appResponse
-	if code := get(t, owner, base+"/api/apps/"+itoa(row.AppID), &app); code != http.StatusOK || app.OwnerName != "lea" || app.NodeID != node.nodeID || app.Env["TOKEN"] != "keep-secret" {
+	if code := get(t, owner, base+"/api/apps/"+itoa(row.AppID), &app); code != http.StatusOK || app.OwnerName != "lea" || app.NodeID != node.nodeID || len(app.EnvKeys) != 1 || app.EnvKeys[0] != "TOKEN" {
 		t.Fatalf("created app: %d %+v", code, app)
+	}
+	var revealed envReveal
+	if code := get(t, owner, base+"/api/apps/"+itoa(row.AppID)+"/env", &revealed); code != http.StatusOK || revealed.Env["TOKEN"] != "keep-secret" {
+		t.Fatalf("revealed env: %d %+v", code, revealed)
 	}
 	if code := postJSON(t, superadmin, approve, struct{}{}, &row); code != http.StatusOK {
 		t.Fatalf("repeat approval: %d", code)

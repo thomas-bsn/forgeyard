@@ -422,6 +422,63 @@ func (q *Queries) ListStacksByOwnerID(ctx context.Context, ownerID int64) ([]Sta
 	return items, nil
 }
 
+const listStacksByUser = `-- name: ListStacksByUser :many
+SELECT stacks.id, stacks.name, stacks.owner_id, stacks.node_id, stacks.compose, stacks.env_sealed, stacks.volume_overrides, stacks.created_at, stacks.updated_at, stacks.registry_sealed, stacks.logo_mode, stacks.logo_color, stacks.logo_updated_at, users.display_name AS owner_name, nodes.name AS node_name
+FROM stacks
+JOIN users ON users.id = stacks.owner_id
+JOIN nodes ON nodes.id = stacks.node_id
+WHERE stacks.owner_id = ?1
+   OR EXISTS (
+        SELECT 1 FROM resource_members m
+        WHERE m.user_id = ?1 AND m.resource_kind = 'stack' AND m.resource_id = stacks.id)
+ORDER BY stacks.name
+`
+
+type ListStacksByUserRow struct {
+	Stack     Stack
+	OwnerName string
+	NodeName  string
+}
+
+func (q *Queries) ListStacksByUser(ctx context.Context, userID int64) ([]ListStacksByUserRow, error) {
+	rows, err := q.db.QueryContext(ctx, listStacksByUser, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListStacksByUserRow{}
+	for rows.Next() {
+		var i ListStacksByUserRow
+		if err := rows.Scan(
+			&i.Stack.ID,
+			&i.Stack.Name,
+			&i.Stack.OwnerID,
+			&i.Stack.NodeID,
+			&i.Stack.Compose,
+			&i.Stack.EnvSealed,
+			&i.Stack.VolumeOverrides,
+			&i.Stack.CreatedAt,
+			&i.Stack.UpdatedAt,
+			&i.Stack.RegistrySealed,
+			&i.Stack.LogoMode,
+			&i.Stack.LogoColor,
+			&i.Stack.LogoUpdatedAt,
+			&i.OwnerName,
+			&i.NodeName,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const nameTaken = `-- name: NameTaken :one
 SELECT CAST(EXISTS (SELECT 1 FROM apps a WHERE a.name = ?1) OR EXISTS (SELECT 1 FROM stacks s WHERE s.name = ?1) AS INTEGER) AS taken
 `

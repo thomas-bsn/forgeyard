@@ -2,7 +2,7 @@
 
 Une **app** = un conteneur Docker lancé depuis une image (publiée, ou construite depuis un Dockerfile), avec ses variables d'environnement, sa limite mémoire et son adresse.
 
-Plusieurs conteneurs qui vont ensemble (une base, un job de migration, une API, un front) se déploient en **[projet](projects.md)** depuis un `docker-compose.yml` : chaque service y devient une app. Leurs volumes se [sauvegardent](backups.md) vers un stockage S3.
+Plusieurs conteneurs qui vont ensemble (une base, un job de migration, une API, un front) se déploient en **[projet](projects.md)** depuis un `docker-compose.yml` : chaque service y devient une app. Leurs volumes se [sauvegardent](backups.md) vers un stockage S3. Une app ou un projet se [partage](access.md) avec des viewers et des contributeurs.
 
 ## D'où vient l'app
 

@@ -49,8 +49,10 @@ type appInput struct {
 	Dockerfile string            `json:"dockerfile"`
 	Port       int               `json:"port"`
 	Env        map[string]string `json:"env"`
-	MemoryMB   int               `json:"memoryMb"`
-	NodeID     int64             `json:"nodeId"` // at creation: where it runs, 0 for the recommended node
+	// KeepEnv names the variables of the app left as they are: their values are never sent back to the form.
+	KeepEnv  []string `json:"keepEnv"`
+	MemoryMB int      `json:"memoryMb"`
+	NodeID   int64    `json:"nodeId"` // at creation: where it runs, 0 for the recommended node
 	// Volumes are the paths of the container kept across redeployments.
 	Volumes []string `json:"volumes"`
 	// GPU: the GPUs of its node the app may use; none without it.
@@ -451,48 +453,50 @@ func (s *Server) setAppRecord(ctx context.Context, c dnsConfig, p dns.Provider, 
 }
 
 type appResponse struct {
-	ID             int64             `json:"id"`
-	BindMounts     []bindMount       `json:"bindMounts,omitempty"`
-	BindAuthorized bool              `json:"bindAuthorized"`
-	Name           string            `json:"name"`
-	OwnerID        int64             `json:"ownerId"`
-	OwnerName      string            `json:"ownerName"`
-	NodeID         int64             `json:"nodeId"`
-	NodeName       string            `json:"nodeName"`
-	Image          string            `json:"image"`
-	Port           int64             `json:"port"`
-	MemoryMB       int64             `json:"memoryMb"`
-	Running        bool              `json:"running"`
-	URL            string            `json:"url,omitempty"`
-	State          string            `json:"state"`
-	Error          string            `json:"error,omitempty"`
-	ExitCode       int32             `json:"exitCode,omitempty"`
-	OOMKilled      bool              `json:"oomKilled,omitempty"`
-	RestartCount   int32             `json:"restartCount,omitempty"`
-	StartedAt      int64             `json:"startedAt,omitempty"`
-	HostPort       int32             `json:"hostPort,omitempty"`
-	CPUPercent     float64           `json:"cpuPercent,omitempty"` // in percent of one core: 250 is 2.5 cores busy
-	CPUCores       float64           `json:"cpuCores,omitempty"`   // the node's cores, as its Docker sees them
-	CPULimit       float64           `json:"cpuLimit,omitempty"`   // the container's CPU limit in cores, 0 without one
-	MemoryUsed     uint64            `json:"memoryUsedBytes,omitempty"`
-	Suspended      bool              `json:"suspended,omitempty"`
-	Public         bool              `json:"public"`
-	Logo           appLogo           `json:"logo"`
-	CrashSuspended bool              `json:"crashSuspended,omitempty"`
-	MovingFrom     int64             `json:"movingFrom,omitempty"`     // the node it leaves, while it moves
-	ListeningPorts []int32           `json:"listeningPorts,omitempty"` // what it really listens on, while running
-	UpdatedAt      int64             `json:"updatedAt"`
-	Env            map[string]string `json:"env,omitempty"`
-	Dockerfile     string            `json:"dockerfile,omitempty"` // with the env, for the app's owner
-	Kind           string            `json:"kind"`                 // web, sandbox, or service and job in a stack
-	Volumes        []appVolume       `json:"volumes"`
-	SSH            string            `json:"ssh,omitempty"`  // the command reaching it through the SSH gateway
-	SFTP           string            `json:"sftp,omitempty"` // the same for SFTP
-	GPU            *gpuRequest       `json:"gpu,omitempty"`
-	GPUNames       []string          `json:"gpuNames,omitempty"` // the GPUs it may use, as its node names them
-	StackID        int64             `json:"stackId,omitempty"`
-	Service        string            `json:"service,omitempty"`    // its name in its stack's compose file
-	WaitingFor     string            `json:"waitingFor,omitempty"` // what a service of a stack waits for to start
+	ID             int64       `json:"id"`
+	BindMounts     []bindMount `json:"bindMounts,omitempty"`
+	BindAuthorized bool        `json:"bindAuthorized"`
+	Name           string      `json:"name"`
+	OwnerID        int64       `json:"ownerId"`
+	OwnerName      string      `json:"ownerName"`
+	NodeID         int64       `json:"nodeId"`
+	NodeName       string      `json:"nodeName"`
+	Image          string      `json:"image"`
+	Port           int64       `json:"port"`
+	MemoryMB       int64       `json:"memoryMb"`
+	Running        bool        `json:"running"`
+	URL            string      `json:"url,omitempty"`
+	State          string      `json:"state"`
+	Error          string      `json:"error,omitempty"`
+	ExitCode       int32       `json:"exitCode,omitempty"`
+	OOMKilled      bool        `json:"oomKilled,omitempty"`
+	RestartCount   int32       `json:"restartCount,omitempty"`
+	StartedAt      int64       `json:"startedAt,omitempty"`
+	HostPort       int32       `json:"hostPort,omitempty"`
+	CPUPercent     float64     `json:"cpuPercent,omitempty"` // in percent of one core: 250 is 2.5 cores busy
+	CPUCores       float64     `json:"cpuCores,omitempty"`   // the node's cores, as its Docker sees them
+	CPULimit       float64     `json:"cpuLimit,omitempty"`   // the container's CPU limit in cores, 0 without one
+	MemoryUsed     uint64      `json:"memoryUsedBytes,omitempty"`
+	Suspended      bool        `json:"suspended,omitempty"`
+	Public         bool        `json:"public"`
+	Logo           appLogo     `json:"logo"`
+	CrashSuspended bool        `json:"crashSuspended,omitempty"`
+	MovingFrom     int64       `json:"movingFrom,omitempty"`     // the node it leaves, while it moves
+	ListeningPorts []int32     `json:"listeningPorts,omitempty"` // what it really listens on, while running
+	UpdatedAt      int64       `json:"updatedAt"`
+	EnvKeys        []string    `json:"envKeys,omitempty"`    // the names only: the values are shown by the reveal route
+	Dockerfile     string      `json:"dockerfile,omitempty"` // with the env, for the app's owner
+	Kind           string      `json:"kind"`                 // web, sandbox, or service and job in a stack
+	Volumes        []appVolume `json:"volumes"`
+	SSH            string      `json:"ssh,omitempty"`  // the command reaching it through the SSH gateway
+	SFTP           string      `json:"sftp,omitempty"` // the same for SFTP
+	GPU            *gpuRequest `json:"gpu,omitempty"`
+	GPUNames       []string    `json:"gpuNames,omitempty"` // the GPUs it may use, as its node names them
+	StackID        int64       `json:"stackId,omitempty"`
+	Service        string      `json:"service,omitempty"`    // its name in its stack's compose file
+	WaitingFor     string      `json:"waitingFor,omitempty"` // what a service of a stack waits for to start
+	Role           string      `json:"role,omitempty"`       // the caller's role when it is given to them: viewer or contributor
+	Via            string      `json:"via,omitempty"`        // "project" when an app has it from its project
 }
 
 // toAppResponse describes an app. localHost is the host Forgeyard is reached at, used as the address of its
@@ -639,8 +643,8 @@ func (s *Server) handleListApps(w http.ResponseWriter, r *http.Request) {
 	if isAdmin(user) {
 		rows, err = s.store.ListApps(ctx)
 	} else {
-		var own []db.ListAppsByOwnerRow
-		own, err = s.store.ListAppsByOwner(ctx, user.ID)
+		var own []db.ListAppsByUserRow
+		own, err = s.store.ListAppsByUser(ctx, user.ID)
 		for _, o := range own {
 			rows = append(rows, db.ListAppsRow(o))
 		}
@@ -663,9 +667,16 @@ func (s *Server) handleListApps(w http.ResponseWriter, r *http.Request) {
 	for i := range nodeList {
 		byID[nodeList[i].ID] = &nodeList[i]
 	}
+	memberships, err := s.memberships(ctx, user)
+	if err != nil {
+		s.internalError(w, r, err)
+		return
+	}
 	out := make([]appResponse, 0, len(rows))
 	for _, row := range rows {
-		out = append(out, s.toAppResponse(row.App, row.OwnerName, row.OwnerSuspended != 0, row.NodeName, c, byID[row.App.NodeID], s.publicHost(ctx, r)))
+		resp := s.toAppResponse(row.App, row.OwnerName, row.OwnerSuspended != 0, row.NodeName, c, byID[row.App.NodeID], s.publicHost(ctx, r))
+		resp.Role, resp.Via = memberships.of(appResource(row.App))
+		out = append(out, resp)
 	}
 	writeJSON(w, http.StatusOK, out)
 }
@@ -686,13 +697,17 @@ func (s *Server) appFromPath(w http.ResponseWriter, r *http.Request, act action)
 		s.internalError(w, r, err)
 		return db.App{}, false
 	}
-	allowed, err := s.can(r.Context(), currentUser(r), appResource(a), act)
+	got, err := s.check(r.Context(), currentUser(r), appResource(a), act)
 	if err != nil {
 		s.internalError(w, r, err)
 		return db.App{}, false
 	}
-	if !allowed {
+	switch got {
+	case accessHidden:
 		writeError(w, http.StatusNotFound, "app introuvable")
+		return db.App{}, false
+	case accessForbidden:
+		writeError(w, http.StatusForbidden, errRole)
 		return db.App{}, false
 	}
 	return a, true
@@ -717,19 +732,29 @@ func (s *Server) writeApp(w http.ResponseWriter, r *http.Request, status int, a 
 	}
 	resp := s.toAppResponse(a, owner.DisplayName, owner.AppsSuspended != 0, node.Name, c, &node, s.publicHost(ctx, r))
 	if withEnv {
-		if resp.Env, err = s.openEnv(a.EnvSealed); err != nil {
+		env, err := s.openEnv(a.EnvSealed)
+		if err != nil {
 			s.internalError(w, r, err)
 			return
 		}
+		resp.EnvKeys = envKeys(env)
 		resp.Dockerfile = a.Dockerfile
 	}
 	writeJSON(w, status, resp)
 }
 
 func (s *Server) handleGetApp(w http.ResponseWriter, r *http.Request) {
-	if a, ok := s.appFromPath(w, r, actView); ok {
-		s.writeApp(w, r, http.StatusOK, a, true)
+	a, ok := s.appFromPath(w, r, actView)
+	if !ok {
+		return
 	}
+	// The Dockerfile and the variable names are for who may change them; a viewer reads the state.
+	have, err := s.roleOn(r.Context(), currentUser(r), appResource(a))
+	if err != nil {
+		s.internalError(w, r, err)
+		return
+	}
+	s.writeApp(w, r, http.StatusOK, a, have >= roleContributor)
 }
 
 func (s *Server) handleCreateApp(w http.ResponseWriter, r *http.Request) {
@@ -843,7 +868,7 @@ func (s *Server) handleCreateApp(w http.ResponseWriter, r *http.Request) {
 		s.appEvent(app.ID, eventInfo, "DNS créé : "+host)
 	}
 
-	s.appEvent(app.ID, eventInfo, "Créée par "+currentUser(r).DisplayName+" sur le node "+node.Name)
+	s.appEventBy(app.ID, currentUser(r).ID, eventInfo, "Créée par "+currentUser(r).DisplayName+" sur le node "+node.Name)
 	s.logger.Info("app created", "app", app.Name, "image", app.Image, "node", node.Name, "by", currentUser(r).DisplayName)
 	s.push(ctx, node.ID)
 	s.writeApp(w, r, http.StatusCreated, app, true)
@@ -870,6 +895,28 @@ func (s *Server) handleUpdateApp(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	in.Kind = a.Kind // set at creation
+	oldEnv, err := s.openEnv(a.EnvSealed)
+	if err != nil {
+		s.internalError(w, r, err)
+		return
+	}
+	var msg string
+	if in.Env, msg = keepEnv(in.Env, in.KeepEnv, oldEnv); msg != "" {
+		writeError(w, http.StatusBadRequest, msg)
+		return
+	}
+	// GPUs, like host folders and nodes, are not for a contributor to hand themselves.
+	if sealGpu(in.GPU) != sealGpu(appGpu(a)) {
+		isOwner, err := s.can(r.Context(), currentUser(r), appResource(a), actGrantHost)
+		if err != nil {
+			s.internalError(w, r, err)
+			return
+		}
+		if !isOwner {
+			writeError(w, http.StatusForbidden, errRole)
+			return
+		}
+	}
 	if msg := in.validate(false); msg != "" {
 		writeError(w, http.StatusBadRequest, msg)
 		return
@@ -916,7 +963,7 @@ func (s *Server) handleUpdateApp(w http.ResponseWriter, r *http.Request) {
 	if a.Dockerfile != "" {
 		source = "Dockerfile"
 	}
-	s.appEvent(a.ID, eventInfo, "Configuration modifiée par "+currentUser(r).DisplayName+" : "+source)
+	s.appEventBy(a.ID, currentUser(r).ID, eventInfo, "Configuration modifiée par "+currentUser(r).DisplayName+" : "+source)
 	s.logger.Info("app updated", "app", a.Name, "image", a.Image, "by", currentUser(r).DisplayName)
 	s.push(r.Context(), a.NodeID)
 	s.writeApp(w, r, http.StatusOK, a, true)
@@ -986,7 +1033,7 @@ func (s *Server) handleAppAction(w http.ResponseWriter, r *http.Request) {
 		s.mu.Unlock()
 	}
 	verb := map[string]string{"start": "Démarrée", "stop": "Arrêtée", "redeploy": "Redéployée"}[action]
-	s.appEvent(a.ID, eventInfo, verb+" par "+currentUser(r).DisplayName)
+	s.appEventBy(a.ID, currentUser(r).ID, eventInfo, verb+" par "+currentUser(r).DisplayName)
 	s.logger.Info("app "+action, "app", a.Name, "by", currentUser(r).DisplayName)
 	s.push(r.Context(), a.NodeID)
 	s.writeApp(w, r, http.StatusOK, a, false)

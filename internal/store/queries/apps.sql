@@ -21,6 +21,19 @@ JOIN nodes ON nodes.id = apps.node_id
 WHERE apps.owner_id = ?
 ORDER BY apps.name;
 
+-- name: ListAppsByUser :many
+SELECT sqlc.embed(apps), users.display_name AS owner_name, users.apps_suspended AS owner_suspended, nodes.name AS node_name
+FROM apps
+JOIN users ON users.id = apps.owner_id
+JOIN nodes ON nodes.id = apps.node_id
+WHERE apps.owner_id = sqlc.arg(user_id)
+   OR EXISTS (
+        SELECT 1 FROM resource_members m
+        WHERE m.user_id = sqlc.arg(user_id)
+          AND ((m.resource_kind = 'app' AND m.resource_id = apps.id)
+            OR (m.resource_kind = 'stack' AND apps.stack_id != 0 AND m.resource_id = apps.stack_id)))
+ORDER BY apps.name;
+
 -- name: ListAppsByNode :many
 SELECT * FROM apps WHERE node_id = ? ORDER BY id;
 

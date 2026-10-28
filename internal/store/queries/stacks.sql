@@ -21,6 +21,17 @@ JOIN nodes ON nodes.id = stacks.node_id
 WHERE stacks.owner_id = ?
 ORDER BY stacks.name;
 
+-- name: ListStacksByUser :many
+SELECT sqlc.embed(stacks), users.display_name AS owner_name, nodes.name AS node_name
+FROM stacks
+JOIN users ON users.id = stacks.owner_id
+JOIN nodes ON nodes.id = stacks.node_id
+WHERE stacks.owner_id = sqlc.arg(user_id)
+   OR EXISTS (
+        SELECT 1 FROM resource_members m
+        WHERE m.user_id = sqlc.arg(user_id) AND m.resource_kind = 'stack' AND m.resource_id = stacks.id)
+ORDER BY stacks.name;
+
 -- name: ListStacksByOwnerID :many
 SELECT * FROM stacks WHERE owner_id = ? ORDER BY id;
 

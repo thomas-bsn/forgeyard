@@ -301,7 +301,7 @@ func (q *Queries) GetUserByUsername(ctx context.Context, username sql.NullString
 }
 
 const listMemberActivity = `-- name: ListMemberActivity :many
-SELECT app_events.id, app_events.app_id, app_events.at, app_events.kind, app_events.message, apps.name AS app_name
+SELECT app_events.id, app_events.app_id, app_events.at, app_events.kind, app_events.message, app_events.actor_id, apps.name AS app_name
 FROM app_events
 JOIN apps ON apps.id = app_events.app_id
 WHERE apps.owner_id = ? AND apps.public = 1
@@ -320,6 +320,7 @@ type ListMemberActivityRow struct {
 	At      int64
 	Kind    string
 	Message string
+	ActorID sql.NullInt64
 	AppName string
 }
 
@@ -338,6 +339,7 @@ func (q *Queries) ListMemberActivity(ctx context.Context, arg ListMemberActivity
 			&i.At,
 			&i.Kind,
 			&i.Message,
+			&i.ActorID,
 			&i.AppName,
 		); err != nil {
 			return nil, err

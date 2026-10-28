@@ -1,5 +1,5 @@
 -- name: AddAppEvent :exec
-INSERT INTO app_events (app_id, at, kind, message) VALUES (?, ?, ?, ?);
+INSERT INTO app_events (app_id, at, kind, message, actor_id) VALUES (?, ?, ?, ?, ?);
 
 -- name: PruneAppEvents :exec
 DELETE FROM app_events
