@@ -88,7 +88,7 @@ type appEventResponse struct {
 }
 
 func (s *Server) handleAppEvents(w http.ResponseWriter, r *http.Request) {
-	a, ok := s.appFromPath(w, r)
+	a, ok := s.appFromPath(w, r, actView)
 	if !ok {
 		return
 	}
@@ -110,7 +110,7 @@ func (s *Server) handleAppEvents(w http.ResponseWriter, r *http.Request) {
 
 // handleAppUsage returns an app's CPU and memory use over the last hour.
 func (s *Server) handleAppUsage(w http.ResponseWriter, r *http.Request) {
-	a, ok := s.appFromPath(w, r)
+	a, ok := s.appFromPath(w, r, actView)
 	if !ok {
 		return
 	}

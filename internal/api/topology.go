@@ -376,7 +376,7 @@ type appNetworkResponse struct {
 
 func (s *Server) handleAppNetwork(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	a, ok := s.appFromPath(w, r)
+	a, ok := s.appFromPath(w, r, actView)
 	if !ok {
 		return
 	}
@@ -452,7 +452,7 @@ type probeResult struct {
 
 // handleAppProbe requests the app's address from Forgeyard's machine, as a visitor would.
 func (s *Server) handleAppProbe(w http.ResponseWriter, r *http.Request) {
-	a, ok := s.appFromPath(w, r)
+	a, ok := s.appFromPath(w, r, actProbe)
 	if !ok {
 		return
 	}

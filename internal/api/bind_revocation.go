@@ -15,7 +15,7 @@ func (s *Server) handleRevokeAppBindMounts(w http.ResponseWriter, r *http.Reques
 	if !decodeJSON(w, r, &empty) {
 		return
 	}
-	a, ok := s.appFromPath(w, r)
+	a, ok := s.appFromPath(w, r, actRevokeBinds)
 	if !ok {
 		return
 	}
@@ -45,7 +45,7 @@ func (s *Server) handleRevokeStackBindMounts(w http.ResponseWriter, r *http.Requ
 	if !decodeJSON(w, r, &empty) {
 		return
 	}
-	st, ok := s.stackFromPath(w, r)
+	st, ok := s.stackFromPath(w, r, actRevokeBinds)
 	if !ok {
 		return
 	}

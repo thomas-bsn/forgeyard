@@ -445,24 +445,29 @@ func stackState(services []appResponse) string {
 	return "running"
 }
 
-func canManageStack(u db.User, st db.Stack) bool {
-	return isAdmin(u) || st.OwnerID == u.ID
-}
-
-// stackFromPath loads the stack named in the path, if the current user may manage it.
-func (s *Server) stackFromPath(w http.ResponseWriter, r *http.Request) (db.Stack, bool) {
+// stackFromPath loads the stack named in the path, if the current user may do the action on it.
+func (s *Server) stackFromPath(w http.ResponseWriter, r *http.Request, act action) (db.Stack, bool) {
 	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
 	if err != nil {
 		writeError(w, http.StatusNotFound, "projet introuvable")
 		return db.Stack{}, false
 	}
 	st, err := s.store.GetStack(r.Context(), id)
-	if errors.Is(err, sql.ErrNoRows) || (err == nil && !canManageStack(currentUser(r), st)) {
+	if errors.Is(err, sql.ErrNoRows) {
 		writeError(w, http.StatusNotFound, "projet introuvable")
 		return db.Stack{}, false
 	}
 	if err != nil {
 		s.internalError(w, r, err)
+		return db.Stack{}, false
+	}
+	allowed, err := s.can(r.Context(), currentUser(r), stackResource(st), act)
+	if err != nil {
+		s.internalError(w, r, err)
+		return db.Stack{}, false
+	}
+	if !allowed {
+		writeError(w, http.StatusNotFound, "projet introuvable")
 		return db.Stack{}, false
 	}
 	return st, true
@@ -659,7 +664,11 @@ func (s *Server) handleGetStack(w http.ResponseWriter, r *http.Request) {
 		s.internalError(w, r, err)
 		return
 	}
-	manage := canManageStack(currentUser(r), st)
+	manage, err := s.can(ctx, currentUser(r), stackResource(st), actView)
+	if err != nil {
+		s.internalError(w, r, err)
+		return
+	}
 	resp, err := s.describeStack(ctx, r, st, owner.DisplayName, node.Name, manage)
 	if err != nil {
 		s.internalError(w, r, err)
@@ -972,7 +981,7 @@ func (s *Server) createAppRecord(ctx context.Context, c dnsConfig, a db.App, nod
 // deployed again, the others keep running untouched.
 func (s *Server) handleUpdateStack(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	st, ok := s.stackFromPath(w, r)
+	st, ok := s.stackFromPath(w, r, actUpdate)
 	if !ok {
 		return
 	}
@@ -1122,7 +1131,7 @@ func (s *Server) handleUpdateStack(w http.ResponseWriter, r *http.Request) {
 // containers (images pulled again) and run the jobs again.
 func (s *Server) handleStackAction(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	st, ok := s.stackFromPath(w, r)
+	st, ok := s.stackFromPath(w, r, actDeploy)
 	if !ok {
 		return
 	}
@@ -1186,7 +1195,7 @@ func (s *Server) handleStackAction(w http.ResponseWriter, r *http.Request) {
 
 // handleDeleteStack deletes a stack, its apps and its network; its volumes only when ?volumes=1 confirms.
 func (s *Server) handleDeleteStack(w http.ResponseWriter, r *http.Request) {
-	st, ok := s.stackFromPath(w, r)
+	st, ok := s.stackFromPath(w, r, actDelete)
 	if !ok {
 		return
 	}

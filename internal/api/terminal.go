@@ -28,7 +28,7 @@ type terminalControl struct {
 
 // handleAppTerminal opens a shell in an app's container.
 func (s *Server) handleAppTerminal(w http.ResponseWriter, r *http.Request) {
-	a, ok := s.appFromPath(w, r)
+	a, ok := s.appFromPath(w, r, actShell)
 	if !ok {
 		return
 	}

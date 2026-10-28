@@ -123,7 +123,13 @@ func (s *Server) handleCreateTicket(w http.ResponseWriter, r *http.Request) {
 	appName := ""
 	if in.Kind == "app" {
 		a, err := s.store.GetApp(ctx, in.AppID)
-		if errors.Is(err, sql.ErrNoRows) || (err == nil && !canManage(user, a)) {
+		if err == nil {
+			var allowed bool
+			if allowed, err = s.can(ctx, user, appResource(a), actView); err == nil && !allowed {
+				err = sql.ErrNoRows
+			}
+		}
+		if errors.Is(err, sql.ErrNoRows) {
 			writeError(w, http.StatusBadRequest, "choisissez une de vos apps")
 			return
 		}

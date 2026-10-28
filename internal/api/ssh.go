@@ -169,7 +169,10 @@ func (s *Server) sshAuth(ctx context.Context, appName string, key ssh.PublicKey)
 		return nil, refused
 	}
 	app, err := s.store.GetAppByName(ctx, strings.ToLower(appName))
-	if err != nil || !canManage(user, app) {
+	if err != nil {
+		return nil, refused
+	}
+	if allowed, err := s.can(ctx, user, appResource(app), actShell); err != nil || !allowed {
 		return nil, refused
 	}
 	return &ssh.Permissions{Extensions: map[string]string{

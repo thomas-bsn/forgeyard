@@ -176,7 +176,7 @@ func (s *Server) handleGetMember(w http.ResponseWriter, r *http.Request) {
 
 // handleSetAppPublic shows or hides an app on its owner's public profile.
 func (s *Server) handleSetAppPublic(w http.ResponseWriter, r *http.Request) {
-	a, ok := s.appFromPath(w, r)
+	a, ok := s.appFromPath(w, r, actPublish)
 	if !ok {
 		return
 	}

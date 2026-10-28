@@ -18,7 +18,7 @@ const dnsSettle = 6 * time.Minute // the DNS record's TTL is 5 minutes
 
 func (s *Server) handleMoveApp(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	a, ok := s.appFromPath(w, r)
+	a, ok := s.appFromPath(w, r, actMove)
 	if !ok {
 		return
 	}

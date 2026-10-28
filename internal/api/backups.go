@@ -454,8 +454,8 @@ func (s *Server) doBackup(ctx context.Context, p db.BackupPolicy) (string, error
 }
 
 // policyFromPath loads the stack of the path and the backup policy of its volume (zero when it has none).
-func (s *Server) policyFromPath(w http.ResponseWriter, r *http.Request) (db.Stack, db.BackupPolicy, bool) {
-	st, ok := s.stackFromPath(w, r)
+func (s *Server) policyFromPath(w http.ResponseWriter, r *http.Request, act action) (db.Stack, db.BackupPolicy, bool) {
+	st, ok := s.stackFromPath(w, r, act)
 	if !ok {
 		return st, db.BackupPolicy{}, false
 	}
@@ -476,7 +476,7 @@ func (s *Server) policyFromPath(w http.ResponseWriter, r *http.Request) (db.Stac
 // handlePutBackupPolicy sets a volume's backup schedule.
 func (s *Server) handlePutBackupPolicy(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	st, p, ok := s.policyFromPath(w, r)
+	st, p, ok := s.policyFromPath(w, r, actBackupConfig)
 	if !ok {
 		return
 	}
@@ -544,7 +544,7 @@ func (s *Server) stackUsesVolume(ctx context.Context, st db.Stack, volume string
 }
 
 func (s *Server) handleDeleteBackupPolicy(w http.ResponseWriter, r *http.Request) {
-	_, p, ok := s.policyFromPath(w, r)
+	_, p, ok := s.policyFromPath(w, r, actBackupConfig)
 	if !ok {
 		return
 	}
@@ -559,7 +559,7 @@ func (s *Server) handleDeleteBackupPolicy(w http.ResponseWriter, r *http.Request
 
 // handleRunBackup saves a volume now, in the background.
 func (s *Server) handleRunBackup(w http.ResponseWriter, r *http.Request) {
-	_, p, ok := s.policyFromPath(w, r)
+	_, p, ok := s.policyFromPath(w, r, actBackupRun)
 	if !ok {
 		return
 	}
@@ -578,7 +578,7 @@ func (s *Server) handleRunBackup(w http.ResponseWriter, r *http.Request) {
 // handleListSnapshots lists a volume's snapshots, newest first.
 func (s *Server) handleListSnapshots(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	st, p, ok := s.policyFromPath(w, r)
+	st, p, ok := s.policyFromPath(w, r, actView)
 	if !ok {
 		return
 	}
@@ -624,7 +624,7 @@ var snapshotPattern = regexp.MustCompile(`^[0-9a-f]{8,64}$`)
 // volume in use is left as it is.
 func (s *Server) handleRestoreBackup(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	st, p, ok := s.policyFromPath(w, r)
+	st, p, ok := s.policyFromPath(w, r, actRestore)
 	if !ok {
 		return
 	}
@@ -688,7 +688,7 @@ func (s *Server) handleRestoreBackup(w http.ResponseWriter, r *http.Request) {
 // it. The previous volume stays on the node (deleted with the stack, if asked then).
 func (s *Server) handleUseRestore(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	st, p, ok := s.policyFromPath(w, r)
+	st, p, ok := s.policyFromPath(w, r, actRestore)
 	if !ok {
 		return
 	}

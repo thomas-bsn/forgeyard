@@ -631,10 +631,6 @@ func (s *Server) syncApps(ctx context.Context) error {
 	return nil
 }
 
-func canManage(u db.User, a db.App) bool {
-	return isAdmin(u) || a.OwnerID == u.ID
-}
-
 func (s *Server) handleListApps(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	user := currentUser(r)
@@ -674,20 +670,29 @@ func (s *Server) handleListApps(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, out)
 }
 
-// appFromPath loads the app named in the path, if the current user may manage it.
-func (s *Server) appFromPath(w http.ResponseWriter, r *http.Request) (db.App, bool) {
+// appFromPath loads the app named in the path, if the current user may do the action on it.
+func (s *Server) appFromPath(w http.ResponseWriter, r *http.Request, act action) (db.App, bool) {
 	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
 	if err != nil {
 		writeError(w, http.StatusNotFound, "app introuvable")
 		return db.App{}, false
 	}
 	a, err := s.store.GetApp(r.Context(), id)
-	if errors.Is(err, sql.ErrNoRows) || (err == nil && !canManage(currentUser(r), a)) {
+	if errors.Is(err, sql.ErrNoRows) {
 		writeError(w, http.StatusNotFound, "app introuvable")
 		return db.App{}, false
 	}
 	if err != nil {
 		s.internalError(w, r, err)
+		return db.App{}, false
+	}
+	allowed, err := s.can(r.Context(), currentUser(r), appResource(a), act)
+	if err != nil {
+		s.internalError(w, r, err)
+		return db.App{}, false
+	}
+	if !allowed {
+		writeError(w, http.StatusNotFound, "app introuvable")
 		return db.App{}, false
 	}
 	return a, true
@@ -722,7 +727,7 @@ func (s *Server) writeApp(w http.ResponseWriter, r *http.Request, status int, a 
 }
 
 func (s *Server) handleGetApp(w http.ResponseWriter, r *http.Request) {
-	if a, ok := s.appFromPath(w, r); ok {
+	if a, ok := s.appFromPath(w, r, actView); ok {
 		s.writeApp(w, r, http.StatusOK, a, true)
 	}
 }
@@ -852,7 +857,7 @@ func (s *Server) failCreate(w http.ResponseWriter, r *http.Request, app db.App, 
 }
 
 func (s *Server) handleUpdateApp(w http.ResponseWriter, r *http.Request) {
-	a, ok := s.appFromPath(w, r)
+	a, ok := s.appFromPath(w, r, actUpdate)
 	if !ok {
 		return
 	}
@@ -920,7 +925,7 @@ func (s *Server) handleUpdateApp(w http.ResponseWriter, r *http.Request) {
 // handleAppAction starts, stops or redeploys an app. Starting and redeploying create a fresh container
 // (and pull the image again), which also gets a crashed app going.
 func (s *Server) handleAppAction(w http.ResponseWriter, r *http.Request) {
-	a, ok := s.appFromPath(w, r)
+	a, ok := s.appFromPath(w, r, actDeploy)
 	if !ok {
 		return
 	}
@@ -988,7 +993,7 @@ func (s *Server) handleAppAction(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleDeleteApp(w http.ResponseWriter, r *http.Request) {
-	a, ok := s.appFromPath(w, r)
+	a, ok := s.appFromPath(w, r, actDelete)
 	if !ok {
 		return
 	}
@@ -1078,7 +1083,7 @@ func (s *Server) appVolumeSizes(a db.App) map[string]int64 {
 
 // handleAppLogs streams an app's output as server-sent events, starting with the last lines.
 func (s *Server) handleAppLogs(w http.ResponseWriter, r *http.Request) {
-	a, ok := s.appFromPath(w, r)
+	a, ok := s.appFromPath(w, r, actLogs)
 	if !ok {
 		return
 	}

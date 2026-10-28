@@ -254,7 +254,7 @@ type logoRequest struct {
 // handlePutAppLogo sets how an app's logo is chosen, with the uploaded picture for "custom".
 func (s *Server) handlePutAppLogo(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	a, ok := s.appFromPath(w, r)
+	a, ok := s.appFromPath(w, r, actLogo)
 	if !ok {
 		return
 	}
@@ -352,7 +352,7 @@ func toStackLogo(st db.Stack) stackLogo {
 // handlePutStackLogo sets how a project's logo is chosen, with the uploaded picture for "custom".
 func (s *Server) handlePutStackLogo(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	st, ok := s.stackFromPath(w, r)
+	st, ok := s.stackFromPath(w, r, actLogo)
 	if !ok {
 		return
 	}
