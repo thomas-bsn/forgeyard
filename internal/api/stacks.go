@@ -742,7 +742,9 @@ type stackPreviewService struct {
 	Port      int                  `json:"port,omitempty"`
 	MemoryMB  int                  `json:"memoryMb"`
 	DependsOn []compose.Dependency `json:"dependsOn"`
-	Backup    string               `json:"backup,omitempty"`
+	// Mounts are the named volumes and host folders the service mounts, as the Compose declares them.
+	Mounts []compose.Mount `json:"mounts"`
+	Backup string          `json:"backup,omitempty"`
 }
 
 // handleValidateStack checks a compose file as it is typed, without saving anything.
@@ -795,7 +797,11 @@ func (s *Server) handleValidateStack(w http.ResponseWriter, r *http.Request) {
 			if memoryMB == 0 {
 				memoryMB = 512
 			}
-			out.Services = append(out.Services, stackPreviewService{Name: p.Service, App: p.Name, Image: p.Image, Kind: p.Kind, Port: int(p.Port), MemoryMB: memoryMB, DependsOn: deps, Backup: svc.Backup})
+			mounts := svc.Volumes
+			if mounts == nil {
+				mounts = []compose.Mount{}
+			}
+			out.Services = append(out.Services, stackPreviewService{Name: p.Service, App: p.Name, Image: p.Image, Kind: p.Kind, Port: int(p.Port), MemoryMB: memoryMB, DependsOn: deps, Mounts: mounts, Backup: svc.Backup})
 		}
 	}
 	writeJSON(w, http.StatusOK, out)

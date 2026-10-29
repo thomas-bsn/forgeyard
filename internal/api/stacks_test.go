@@ -105,6 +105,16 @@ func TestStackPreviewListsHostFolders(t *testing.T) {
 	if len(preview.Binds) != 1 || preview.Binds[0] != want {
 		t.Fatalf("binds: %+v", preview.Binds)
 	}
+	// The right-hand preview lists what each service mounts, named volumes included.
+	if len(preview.Services) != 1 || len(preview.Services[0].Mounts) != 2 {
+		t.Fatalf("mounts: %+v", preview.Services)
+	}
+	if m := preview.Services[0].Mounts[0]; m.Kind != "bind" || m.Source != "/srv/media" || m.Target != "/media" || !m.ReadOnly {
+		t.Fatalf("bind mount: %+v", m)
+	}
+	if m := preview.Services[0].Mounts[1]; m.Kind != "" || m.Volume != "config" || m.Target != "/config" {
+		t.Fatalf("named volume: %+v", m)
+	}
 }
 
 func TestStackLifecycle(t *testing.T) {

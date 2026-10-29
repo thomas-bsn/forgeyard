@@ -6694,6 +6694,8 @@ a.link-btn {
   flex-wrap: wrap;
   gap: 6px;
 }
+/* In the preview, a host folder stands out from a named volume: it needs the superadmin's approval. */
+.stack-preview .preview-mount-host { color: var(--accent); }
 
 .stack-services {
   margin: 0;

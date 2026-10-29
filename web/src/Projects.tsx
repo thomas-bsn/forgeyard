@@ -145,11 +145,11 @@ function StackBinds({
         </svg>
         <div>
           <strong>Dossiers du node</strong>
-          <span>{binds.length === 0 ? 'Aucun dossier monté dans ce Compose' : binds.length === 1 ? '1 dossier monté dans ce Compose' : `${binds.length} dossiers montés dans ce Compose`}</span>
+          <span>{binds.length === 0 ? 'Aucun dossier de l’hôte monté' : binds.length === 1 ? '1 dossier monté dans ce Compose' : `${binds.length} dossiers montés dans ce Compose`}</span>
         </div>
       </div>
       {binds.length === 0 ? (
-        <p className="bind-empty muted">Aucun chemin de l’hôte n’est monté : ce projet ne touche pas aux dossiers du node.</p>
+        <p className="bind-empty muted">Ce projet ne monte aucun chemin de l’hôte : rien à approuver pour ce Compose. Les volumes nommés restent visibles dans l’aperçu, à droite.</p>
       ) : (
         <>
           <label className="bind-node">
@@ -612,6 +612,13 @@ export function ProjectFormModal({
             {s.backup && <span className="badge">pg_dump</span>}
           </span>
           <span className="mono muted">{s.image}</span>
+          {s.mounts?.map((m, i) => (
+            <span key={i} className={`muted preview-mount${m.kind === 'bind' ? ' preview-mount-host' : ''}`}>
+              {m.kind === 'bind' ? 'Dossier ' : 'Volume '}
+              <span className="mono">{m.kind === 'bind' ? m.source : m.volume}</span> → <span className="mono">{m.target}</span>
+              {m.readOnly ? ' · lecture seule' : ''}
+            </span>
+          ))}
           <span className="muted">Mémoire : {s.memoryMb ?? 512} Mo</span>
           {s.kind === 'web' && domain && <span className="muted">→ {shownName}.{domain}</span>}
           {s.dependsOn.length > 0 && <span className="muted">après {s.dependsOn.map((d) => d.service).join(', ')}</span>}
