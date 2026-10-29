@@ -124,6 +124,61 @@ function BindHelper({ compose, setCompose, note }: { compose: string; setCompose
   )
 }
 
+/** The host folders the Compose mounts, read from the file itself; one service at a time when one is picked. */
+function StackBinds({
+  binds,
+  chosen,
+  onChoose,
+}: {
+  binds: { service: string; source: string; target: string; readOnly: boolean }[]
+  chosen: string
+  onChoose: (service: string) => void
+}) {
+  const services = [...new Set(binds.map((b) => b.service))]
+  const service = services.includes(chosen) ? chosen : ''
+  const shown = service ? binds.filter((b) => b.service === service) : binds
+  return (
+    <section className="bind-card" aria-label="Dossiers du node">
+      <div className="bind-card-head">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7Z" />
+        </svg>
+        <div>
+          <strong>Dossiers du node</strong>
+          <span>{binds.length === 0 ? 'Aucun dossier monté dans ce Compose' : binds.length === 1 ? '1 dossier monté dans ce Compose' : `${binds.length} dossiers montés dans ce Compose`}</span>
+        </div>
+      </div>
+      {binds.length === 0 ? (
+        <p className="bind-empty muted">Aucun chemin de l’hôte n’est monté : ce projet ne touche pas aux dossiers du node.</p>
+      ) : (
+        <>
+          <label className="bind-node">
+            <span>Service</span>
+            <select value={service} onChange={(e) => onChoose(e.target.value)}>
+              <option value="">Tous les services</option>
+              {services.map((s) => (
+                <option key={s} value={s}>
+                  {s}
+                </option>
+              ))}
+            </select>
+          </label>
+          {shown.map((b, i) => (
+            <div className="bind-row" key={`${b.service}-${b.source}-${b.target}-${i}`}>
+              <span>
+                <code>{b.source}</code>
+                <small>service {b.service}</small>
+              </span>
+              <code>{b.target}</code>
+              <span className="bind-mode">{b.readOnly ? 'Lecture seule' : 'Lecture et écriture'}</span>
+            </div>
+          ))}
+        </>
+      )}
+    </section>
+  )
+}
+
 function ProjectBindChangeModal({ stack, onClose, onSubmitted }: { stack: Stack; onClose: () => void; onSubmitted: (id: number) => void }) {
   const [nodes, setNodes] = useState<BindNode[]>([])
   const [nodeId, setNodeId] = useState(stack.nodeId)
@@ -375,6 +430,8 @@ export function ProjectFormModal({
   const [registry, setRegistry] = useState({ server: stack?.registry?.server ?? '', username: stack?.registry?.username ?? '', password: '' })
   const [registryTouched, setRegistryTouched] = useState(false)
   const [registryOpen, setRegistryOpen] = useState(!!stack?.registry)
+  // The service whose host folders the edit form shows; empty lists them all.
+  const [bindService, setBindService] = useState('')
   const editRegistry = (patch: Partial<typeof registry>) => {
     setRegistry({ ...registry, ...patch })
     setRegistryTouched(true)
@@ -683,6 +740,7 @@ export function ProjectFormModal({
 
   if (stack) return <Modal title={`Projet ${stack.name}`} onClose={onClose} onSubmit={submit} aside={legacyAside}>
     <label className="field"><span>docker-compose.yml</span><textarea ref={editor} className="mono compose-editor" value={compose} onChange={(e) => setCompose(e.target.value)} spellCheck={false} rows={20} required placeholder={composeExample} aria-invalid={errors.length > 0} /></label>
+    <StackBinds binds={preview?.binds ?? []} chosen={bindService} onChoose={setBindService} />
     <small className="muted">Les dossiers du node ne se modifient pas ici : « Monter un dossier du node… » sur la page du projet envoie la demande au superadmin.</small>
     {errors.length > 0 && <ul className="compose-errors" aria-live="polite">{errors.map((e, i) => <li key={i}>{e.line > 0 && <button type="button" className="link-button" onClick={() => goToLine(e.line)}>ligne {e.line}</button>}<span>{e.message}</span></li>)}</ul>}
     <div className="field"><span>Variables <span className="muted">· chiffrées</span></span><EnvEditor env={env} setEnv={setEnv} missing={missing} requiredNames={requiredNames} />{!stack.role && env.some((v) => v.kept) && <div><button type="button" className="btn btn-small" onClick={async () => { try { const { env: values } = await api.stackEnv(stack.id); setEnv(env.map((v) => (v.kept ? { key: v.key, value: values[v.key] ?? '' } : v))) } catch (err) { setError(errorMessage(err)) } }}>Afficher les valeurs</button></div>}<small className="muted">Une valeur laissée vide sur une variable déjà enregistrée reste inchangée.</small></div>

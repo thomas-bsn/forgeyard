@@ -7110,6 +7110,7 @@ a.link-btn {
 .bind-row > span, .bind-row code { min-width: 0; overflow-wrap: anywhere; }
 .bind-row small { display: block; color: var(--muted); font-size: .74rem; }
 .bind-mode { padding: 3px 9px; border-radius: 7px; background: color-mix(in srgb, var(--muted) 12%, var(--card)); font-size: .74rem; font-weight: 600; white-space: nowrap; }
+.bind-empty { margin: 0; padding: 12px 14px; border-top: 1px solid var(--border); font-size: .84rem; }
 .bind-node { display: grid; gap: 6px; padding: 12px 14px; border-top: 1px solid var(--border); font-size: .84rem; font-weight: 600; }
 .bind-note { padding: 10px 13px; border-radius: 10px; background: color-mix(in srgb, var(--accent) 10%, var(--card)); color: var(--accent); font-size: .84rem; }
 .bind-note.ok { background: color-mix(in srgb, var(--up) 12%, var(--card)); color: var(--up); }
