@@ -10,6 +10,7 @@ Conception validée à l'issue de l'entretien et de la confirmation de la synth�
 - Seul le superadmin peut approuver. L'approbation déclenche la création de l'app à partir de la configuration conservée, sans nouvelle saisie par le demandeur.
 - Chaque montage demandé indique le chemin source sur l'hôte, la destination dans le conteneur et le mode lecture seule ou lecture/écriture. La lecture seule est le défaut. La demande désigne un node précis.
 - Le parcours app couvre Image Docker, Dockerfile et Sandbox ; le parcours projet couvre Docker Compose et l'ensemble de ses services.
+- À la création d'un projet Compose, « Monter un dossier du node » ajoute le dossier au `docker-compose.yml` (ligne sous `volumes:` du service choisi) ; le formulaire détecte alors le dossier et envoie une demande. Sur un projet existant, même sans bind mount, « Monter un dossier du node… » envoie une demande de modification avec le Compose contenant le dossier. Modifier directement le Compose pour en ajouter un reste refusé.
 - Lorsque le superadmin soumet lui-même une création avec bind mounts, sa soumission vaut approbation et cette approbation est enregistrée ; il peut créer directement.
 - L'autorisation porte sur les montages. Le propriétaire et les admins conservent la gestion habituelle de l'app, notamment image, variables, terminal et SSH, avec accès aux fichiers montés dans le mode approuvé.
 - Changer une source, une destination, un mode d'accès ou le node exige une nouvelle approbation. L'app conserve sa configuration approuvée pendant l'attente.

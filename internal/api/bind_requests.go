@@ -145,10 +145,6 @@ func (s *Server) handleCreateBindChange(w http.ResponseWriter, r *http.Request, 
 			writeError(w, http.StatusConflict, "le projet ne contient plus de services")
 			return
 		}
-		if len(oldMounts) == 0 {
-			writeError(w, http.StatusConflict, "le projet ne possède aucun bind mount")
-			return
-		}
 		currentNode = stack.NodeID
 		originalMountsJSON = ""
 		oldStackEnv, err = s.openStackEnv(stack.EnvSealed)

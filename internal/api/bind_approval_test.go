@@ -701,3 +701,46 @@ func TestBindApprovalPreservesDockerfileAndSandboxSources(t *testing.T) {
 		})
 	}
 }
+
+// A project made without host folders can ask for one afterwards: the owner submits the Compose with the
+// folder, and only the superadmin's approval adds it.
+func TestProjectWithoutBindMountsCanRequestOne(t *testing.T) {
+	base, server, superadmin, _ := setupStackServer(t)
+	node := connectFakeAgent(t, base, server, superadmin, "late-bind-node", func(h *agentpb.Hello) { h.BindMounts = true })
+	node.desired(t)
+	answerBindChecks(node, func(check *agentpb.ValidateBindMounts) *agentpb.BindValidationResult {
+		return &agentpb.BindValidationResult{Mounts: check.Mounts}
+	})
+	owner := bindTestUser(t, server, base, "late-owner", "user")
+	composeText := "services:\n  web:\n    image: nginx:alpine\n    x-forgeyard:\n      expose: { port: 80 }\n"
+	var st stackResponse
+	if code := postJSON(t, owner, base+"/api/stacks", stackInput{Name: "late-bind", Compose: composeText}, &st); code != http.StatusCreated {
+		t.Fatalf("create project: %d", code)
+	}
+
+	// Editing the Compose to add the folder directly is still refused.
+	withBind := strings.Replace(composeText, "    image: nginx:alpine\n", "    image: nginx:alpine\n    volumes:\n      - /srv/late:/data:ro\n", 1)
+	if code := putJSON(t, owner, base+"/api/stacks/"+itoa(st.ID), stackInput{Compose: withBind}, nil); code != http.StatusBadRequest {
+		t.Fatalf("direct edit adding a host folder: %d", code)
+	}
+	// A request without any folder is refused too.
+	if code := postJSON(t, owner, base+"/api/bind-requests", map[string]any{"change": map[string]any{"resourceId": st.ID, "resourceType": "stack", "nodeId": node.nodeID, "stack": map[string]any{"name": "late-bind", "compose": composeText}}}, nil); code != http.StatusBadRequest {
+		t.Fatalf("request without a folder: %d", code)
+	}
+
+	var row bindRequestResponse
+	if code := postJSON(t, owner, base+"/api/bind-requests", map[string]any{"change": map[string]any{"resourceId": st.ID, "resourceType": "stack", "nodeId": node.nodeID, "stack": map[string]any{"name": "late-bind", "compose": withBind}}}, &row); code != http.StatusCreated || row.Status != "pending" {
+		t.Fatalf("request the folder: %d %+v", code, row)
+	}
+	if code := postJSON(t, owner, base+"/api/admin/bind-requests/"+itoa(row.ID)+"/approve", struct{}{}, nil); code != http.StatusForbidden {
+		t.Fatalf("the owner approving: %d", code)
+	}
+	if code := postJSON(t, superadmin, base+"/api/admin/bind-requests/"+itoa(row.ID)+"/approve", struct{}{}, &row); code != http.StatusOK || row.Status != "created" {
+		t.Fatalf("approve: %d %+v", code, row)
+	}
+	var after stackResponse
+	if code := get(t, owner, base+"/api/stacks/"+itoa(st.ID), &after); code != http.StatusOK || len(after.Services) != 1 ||
+		len(after.Services[0].BindMounts) != 1 || after.Services[0].BindMounts[0].Source != "/srv/late" || !after.Services[0].BindAuthorized {
+		t.Fatalf("project after approval: %d %+v", code, after.Services)
+	}
+}

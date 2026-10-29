@@ -18,6 +18,7 @@ import {
 import { appTone, Dot, LogoChooser, Logs, SourcePick, stateText, type Source } from './Apps'
 import { AppLogo, formatBytes, Modal, OwnerChip, since, Switch, useRedeploy } from './ui'
 import Access, { RoleBadge } from './Access'
+import { addBindToCompose, composeServices } from './composeBind'
 
 export const projectStates: Record<StackState, { label: string; tone: 'up' | 'warn' | 'down' | '' }> = {
   pending: { label: 'En attente', tone: '' },
@@ -51,6 +52,78 @@ volumes:
   data:
 `
 
+/** Adds a host folder of the node to a service of the Compose file, as the line it writes in `volumes:`. */
+function BindHelper({ compose, setCompose, note }: { compose: string; setCompose: (c: string) => void; note?: string }) {
+  const services = composeServices(compose)
+  const [service, setService] = useState('')
+  const [source, setSource] = useState('')
+  const [target, setTarget] = useState('')
+  const [readOnly, setReadOnly] = useState(true)
+  const [message, setMessage] = useState('')
+  const chosen = services.includes(service) ? service : (services[0] ?? '')
+  const valid = chosen !== '' && source.trim().startsWith('/') && target.trim().startsWith('/')
+
+  function add() {
+    const next = addBindToCompose(compose, chosen, source.trim(), target.trim(), readOnly)
+    if (next === null) {
+      setMessage(`Je ne peux pas modifier ce fichier sans risque : ajoutez vous-même « - ${source.trim()}:${target.trim()}${readOnly ? ':ro' : ''} » sous volumes: du service ${chosen}.`)
+      return
+    }
+    setCompose(next)
+    setSource('')
+    setTarget('')
+    setMessage(`Ajouté au service ${chosen}.`)
+  }
+
+  return (
+    <details className="field bind-helper">
+      <summary>Monter un dossier du node</summary>
+      <div className="env-list">
+        <small>{note ?? 'Le dossier est ajouté au docker-compose.yml. Le projet est alors créé par une demande, que le superadmin approuve.'}</small>
+        {services.length === 0 ? (
+          <small className="muted">Écrivez d’abord un docker-compose.yml avec ses services.</small>
+        ) : (
+          <>
+            <div className="bind-row">
+              <label className="field">
+                <span>Service</span>
+                <select value={chosen} onChange={(e) => setService(e.target.value)}>
+                  {services.map((s) => (
+                    <option key={s} value={s}>
+                      {s}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="field">
+                <span>Dossier sur le node</span>
+                <input className="mono" value={source} onChange={(e) => setSource(e.target.value)} placeholder="/srv/media" />
+              </label>
+              <label className="field">
+                <span>Destination dans le conteneur</span>
+                <input className="mono" value={target} onChange={(e) => setTarget(e.target.value)} placeholder="/media" />
+              </label>
+              <label className="field">
+                <span>Accès</span>
+                <select value={readOnly ? 'ro' : 'rw'} onChange={(e) => setReadOnly(e.target.value === 'ro')}>
+                  <option value="ro">Lecture seule</option>
+                  <option value="rw">Lecture / écriture</option>
+                </select>
+              </label>
+            </div>
+            <div>
+              <button type="button" className="btn btn-small" disabled={!valid} onClick={add}>
+                Ajouter au Compose
+              </button>
+            </div>
+          </>
+        )}
+        {message && <small role="status">{message}</small>}
+      </div>
+    </details>
+  )
+}
+
 function ProjectBindChangeModal({ stack, onClose, onSubmitted }: { stack: Stack; onClose: () => void; onSubmitted: (id: number) => void }) {
   const [nodes, setNodes] = useState<BindNode[]>([])
   const [nodeId, setNodeId] = useState(stack.nodeId)
@@ -69,6 +142,7 @@ function ProjectBindChangeModal({ stack, onClose, onSubmitted }: { stack: Stack;
   return <Modal title={`Modifier les accès de ${stack.name}`} subtitle={revoked ? "L’autorisation est révoquée. Choisissez un autre node pour demander explicitement de nouveaux accès." : "Le Compose et les accès actifs restent en place jusqu’à la décision du superadmin."} onClose={onClose} onSubmit={submit}>
     <label className="field"><span>Node des chemins</span><select value={nodeId} onChange={(e)=>setNodeId(Number(e.target.value))}>{nodes.map((n)=><option key={n.id} value={n.id}>{n.name} · {n.online?'en ligne':'hors ligne'}</option>)}</select></label>
     <label className="field"><span>Compose avec les nouveaux bind mounts</span><textarea className="mono compose-editor" rows={18} value={compose} onChange={(e)=>setCompose(e.target.value)} required /></label>
+    <BindHelper compose={compose} setCompose={setCompose} note="Le dossier est ajouté au Compose ci-dessus. Le superadmin approuve la demande avant qu’il soit monté." />
     <p className="muted">Conservez les volumes nommés. Les chemins hôtes ne sont pas copiés lors d’un changement de node.</p>
     {error && <p className="error" role="alert">{error}</p>}
     <button type="submit" className="btn btn-primary" disabled={busy || !nodeId}>{busy?'Envoi…':'Soumettre au superadmin'}</button>
@@ -560,6 +634,7 @@ export function ProjectFormModal({
           <textarea ref={editor} className="mono compose-editor" value={compose} onChange={(e) => setCompose(e.target.value)} spellCheck={false} rows={16} required placeholder={composeExample} aria-invalid={errors.length > 0} />
           <small>Les règles locales analysent les ports et les ressources. Le fichier n’est pas enregistré avant ta confirmation.</small>
         </label>
+        <BindHelper compose={compose} setCompose={setCompose} />
         {errors.length > 0 && <ul className="compose-errors" aria-live="polite">{errors.map((e, i) => <li key={i}>{e.line > 0 && <button type="button" className="link-button" onClick={() => goToLine(e.line)}>ligne {e.line}</button>}<span>{e.message}</span></li>)}</ul>}
       </>}
       {flowStep === 1 && <>
@@ -608,6 +683,7 @@ export function ProjectFormModal({
 
   if (stack) return <Modal title={`Projet ${stack.name}`} onClose={onClose} onSubmit={submit} aside={legacyAside}>
     <label className="field"><span>docker-compose.yml</span><textarea ref={editor} className="mono compose-editor" value={compose} onChange={(e) => setCompose(e.target.value)} spellCheck={false} rows={20} required placeholder={composeExample} aria-invalid={errors.length > 0} /></label>
+    <small className="muted">Les dossiers du node ne se modifient pas ici : « Monter un dossier du node… » sur la page du projet envoie la demande au superadmin.</small>
     {errors.length > 0 && <ul className="compose-errors" aria-live="polite">{errors.map((e, i) => <li key={i}>{e.line > 0 && <button type="button" className="link-button" onClick={() => goToLine(e.line)}>ligne {e.line}</button>}<span>{e.message}</span></li>)}</ul>}
     <div className="field"><span>Variables <span className="muted">· chiffrées</span></span><EnvEditor env={env} setEnv={setEnv} missing={missing} requiredNames={requiredNames} />{!stack.role && env.some((v) => v.kept) && <div><button type="button" className="btn btn-small" onClick={async () => { try { const { env: values } = await api.stackEnv(stack.id); setEnv(env.map((v) => (v.kept ? { key: v.key, value: values[v.key] ?? '' } : v))) } catch (err) { setError(errorMessage(err)) } }}>Afficher les valeurs</button></div>}<small className="muted">Une valeur laissée vide sur une variable déjà enregistrée reste inchangée.</small></div>
     <details className="field" open={registryOpen} onToggle={(e) => setRegistryOpen(e.currentTarget.open)}><summary>Registry privé <span className="muted">{registry.server ? `· ${registry.server}` : '· images publiques'}</span></summary><div className="env-list"><input aria-label="Adresse du registry" className="mono" value={registry.server} onChange={(e) => editRegistry({ server: e.target.value })} placeholder="ghcr.io" /><div className="env-row"><input aria-label="Identifiant" value={registry.username} onChange={(e) => editRegistry({ username: e.target.value })} placeholder="identifiant" autoComplete="off" /><input type="password" aria-label="Mot de passe ou token" value={registry.password} onChange={(e) => editRegistry({ password: e.target.value })} placeholder={stack.registry?.passwordSet ? 'inchangé' : 'token'} autoComplete="new-password" /></div></div></details>
@@ -779,7 +855,7 @@ export function ProjectDetail({
               <button type="button" className="btn detail-actions-wide" disabled={busy || !full} onClick={() => setEditing(true)}>
                 Modifier le compose
               </button>
-              {isOwner && stack.services.some((service) => service.bindMounts?.length) && <button type="button" className="btn detail-actions-wide" disabled={busy || !full} onClick={() => setChangingBinds(true)}>{stack.services.some((service) => service.bindMounts?.length && !service.bindAuthorized) ? 'Demander de nouveaux accès sur un autre node' : 'Demander une modification des accès / du node'}</button>}
+              {isOwner && <button type="button" className="btn detail-actions-wide" disabled={busy || !full} onClick={() => setChangingBinds(true)}>{!stack.services.some((service) => service.bindMounts?.length) ? 'Monter un dossier du node…' : stack.services.some((service) => service.bindMounts?.length && !service.bindAuthorized) ? 'Demander de nouveaux accès sur un autre node' : 'Demander une modification des accès / du node'}</button>}
               {superadmin && stack.services.some((service) => service.bindMounts?.length && service.bindAuthorized) && <button type="button" className="btn danger detail-actions-wide" disabled={busy} onClick={() => run(() => api.revokeStackBinds(stack.id))}>Révoquer les bind mounts du projet</button>}
             </div>
             {changingBinds && full && <ProjectBindChangeModal stack={full} onClose={() => setChangingBinds(false)} onSubmitted={(id) => { setChangingBinds(false); go(`support/bind/${id}`) }} />}
