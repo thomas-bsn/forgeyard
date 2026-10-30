@@ -18,7 +18,7 @@ import {
 import { appTone, Dot, LogoChooser, Logs, SourcePick, stateText, type Source } from './Apps'
 import { AppLogo, formatBytes, Modal, OwnerChip, since, Switch, useRedeploy } from './ui'
 import Access, { RoleBadge } from './Access'
-import { addBindToCompose, composeServices } from './composeBind'
+import { addBindToCompose, changeComposeBind, composeBinds, composeServices } from './composeBind'
 
 export const projectStates: Record<StackState, { label: string; tone: 'up' | 'warn' | 'down' | '' }> = {
   pending: { label: 'En attente', tone: '' },
@@ -52,76 +52,95 @@ volumes:
   data:
 `
 
-/** Adds a host folder of the node to a service of the Compose file, as the line it writes in `volumes:`. */
+function BindAccess({ readOnly, onChange, label }: { readOnly: boolean; onChange: (value: boolean) => void; label: string }) {
+  return <div className="bind-access" role="group" aria-label={label}>
+    <button type="button" aria-pressed={readOnly} onClick={() => onChange(true)}>RO<span>Lecture seule</span></button>
+    <button type="button" aria-pressed={!readOnly} onClick={() => onChange(false)}>RW<span>Lecture / écriture</span></button>
+  </div>
+}
+
 function BindHelper({ compose, setCompose, note }: { compose: string; setCompose: (c: string) => void; note?: string }) {
   const services = composeServices(compose)
+  let mounts: ReturnType<typeof composeBinds> = []
+  let parseError = ''
+  try { mounts = composeBinds(compose) } catch (err) { parseError = errorMessage(err) }
+  const [adding, setAdding] = useState(false)
+  const [selected, setSelected] = useState('')
+  const mountKey = (mount: ReturnType<typeof composeBinds>[number]) => JSON.stringify([mount.service, mount.source, mount.target])
+  const active = mounts.find(mount => mountKey(mount) === selected) ?? mounts[0]
+  const detailId = useId()
   const [service, setService] = useState('')
   const [source, setSource] = useState('')
   const [target, setTarget] = useState('')
   const [readOnly, setReadOnly] = useState(true)
   const [message, setMessage] = useState('')
-  const chosen = services.includes(service) ? service : (services[0] ?? '')
+  const [error, setError] = useState('')
+  const addButton = useRef<HTMLButtonElement>(null)
+  const chosen = services.includes(service) ? service : (services.includes('app') ? 'app' : services[0] ?? '')
   const valid = chosen !== '' && source.trim().startsWith('/') && target.trim().startsWith('/')
+  const showForm = adding || mounts.length === 0
 
   function add() {
     const next = addBindToCompose(compose, chosen, source.trim(), target.trim(), readOnly)
     if (next === null) {
-      setMessage(`Je ne peux pas modifier ce fichier sans risque : ajoutez vous-même « - ${source.trim()}:${target.trim()}${readOnly ? ':ro' : ''} » sous volumes: du service ${chosen}.`)
+      setError('Ajout impossible. Vérifiez le Compose et que la destination n’est pas déjà utilisée par ce service.')
       return
     }
-    setCompose(next)
-    setSource('')
-    setTarget('')
-    setMessage(`Ajouté au service ${chosen}.`)
+    setSelected(JSON.stringify([chosen, source.trim(), target.trim()]))
+    setCompose(next); setSource(''); setTarget(''); setAdding(false); setError('')
+    setMessage(`Dossier ajouté à ${chosen}. Le Compose est à jour.`)
+    requestAnimationFrame(() => addButton.current?.focus())
   }
 
-  return (
-    <details className="field bind-helper">
-      <summary>Monter un dossier du node</summary>
-      <div className="env-list">
-        <small>{note ?? 'Le dossier est ajouté au docker-compose.yml. Le projet est alors créé par une demande, que le superadmin approuve.'}</small>
-        {services.length === 0 ? (
-          <small className="muted">Écrivez d’abord un docker-compose.yml avec ses services.</small>
-        ) : (
-          <>
-            <div className="bind-row">
-              <label className="field">
-                <span>Service</span>
-                <select value={chosen} onChange={(e) => setService(e.target.value)}>
-                  {services.map((s) => (
-                    <option key={s} value={s}>
-                      {s}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="field">
-                <span>Dossier sur le node</span>
-                <input className="mono" value={source} onChange={(e) => setSource(e.target.value)} placeholder="/srv/media" />
-              </label>
-              <label className="field">
-                <span>Destination dans le conteneur</span>
-                <input className="mono" value={target} onChange={(e) => setTarget(e.target.value)} placeholder="/media" />
-              </label>
-              <label className="field">
-                <span>Accès</span>
-                <select value={readOnly ? 'ro' : 'rw'} onChange={(e) => setReadOnly(e.target.value === 'ro')}>
-                  <option value="ro">Lecture seule</option>
-                  <option value="rw">Lecture / écriture</option>
-                </select>
-              </label>
-            </div>
-            <div>
-              <button type="button" className="btn btn-small" disabled={!valid} onClick={add}>
-                Ajouter au Compose
-              </button>
-            </div>
-          </>
-        )}
-        {message && <small role="status">{message}</small>}
+  return <section className="bind-manager" aria-label="Bind mounts">
+    <header className="bind-manager-head">
+      <div><h3>Dossiers du node</h3><p>{mounts.length === 0 ? 'Connectez un dossier à votre application.' : `${mounts.length} montage${mounts.length > 1 ? 's' : ''} dans le Compose`}</p></div>
+
+    </header>
+    {parseError && <p className="error" role="alert">{parseError}</p>}
+    <div className="bind-explorer">
+      <aside className="bind-sidebar" aria-label="Dossiers montés">
+        <div className="bind-sidebar-heading"><strong>Dossiers</strong><span>{mounts.length}</span></div>
+        <ul className="bind-folder-list" aria-label="Liste des dossiers" tabIndex={0}>
+          {mounts.map(mount => <li key={mountKey(mount)}><button type="button" aria-pressed={!showForm && active === mount} aria-controls={detailId} onClick={() => { setSelected(mountKey(mount)); setAdding(false); setError('') }}>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden="true"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v10H3Z" /></svg>
+            <span><strong>{mount.target}</strong><small>{mount.service} · {mount.readOnly ? 'RO' : 'RW'}</small></span>
+          </button></li>)}
+        </ul>
+        {mounts.length === 0 && <p className="muted">Aucun dossier monté.</p>}
+        <button ref={addButton} type="button" className="btn" disabled={!services.length} aria-controls={detailId} aria-expanded={showForm} onClick={() => { setAdding(true); setError('') }}>Ajouter un dossier</button>
+      </aside>
+      <div className="bind-detail" id={detailId}>
+      {!showForm && active && <>
+        <div className="bind-mount-heading"><h4>{active.target}</h4><span className="bind-service">{active.service}</span></div>
+        <dl className="bind-paths"><div><dt>Sur le node</dt><dd><code>{active.source}</code></dd></div><div><dt>Dans le conteneur</dt><dd><code>{active.target}</code></dd></div></dl>
+        <div className="bind-permissions"><h4>Permissions</h4><p>Choisissez les droits du service sur ce dossier.</p>
+          <BindAccess label={`Accès de ${active.source} dans ${active.service}`} readOnly={active.readOnly} onChange={value => {
+            try { setCompose(changeComposeBind(compose, active, value)); setMessage('Accès modifié. Le Compose est à jour.'); setError('') } catch (err) { setError(errorMessage(err)) }
+          }} />
+        </div>
+        <p className="bind-permission-note">{active.readOnly ? 'Le service peut lire les fichiers, sans les modifier.' : 'Le service peut lire, créer, modifier et supprimer les fichiers.'}</p>
+        <div className="bind-detail-remove"><button type="button" className="bind-remove" aria-label={`Supprimer ${active.source} de ${active.service}`} onClick={() => {
+          try { setCompose(changeComposeBind(compose, active, null)); setMessage('Montage retiré. Le dossier sur le node est conservé.'); setError(''); addButton.current?.focus() } catch (err) { setError(errorMessage(err)) }
+        }}>Supprimer le montage</button></div>
+      </>}
+    {showForm && services.length > 0 && <div className="bind-add-form">
+      <h4>{mounts.length ? 'Nouveau montage' : 'Ajouter un premier dossier'}</h4>
+      <label className="field"><span>Service destinataire</span><select value={chosen} onChange={e => setService(e.target.value)}>{services.map(name => <option key={name}>{name}</option>)}</select></label>
+      <div className="bind-add-paths">
+        <label className="field"><span>Dossier sur le node</span><input className="mono" value={source} onChange={e => setSource(e.target.value)} placeholder="/volume1/Vidéos" spellCheck={false} /><small>Chemin absolu d’un dossier existant.</small></label>
+        <label className="field"><span>Destination dans le conteneur</span><input className="mono" value={target} onChange={e => setTarget(e.target.value)} placeholder="/videos" spellCheck={false} /><small>Chemin utilisé par votre application.</small></label>
       </div>
-    </details>
-  )
+      <div><span className="bind-access-label">Accès au dossier</span><BindAccess label="Accès du nouveau montage" readOnly={readOnly} onChange={setReadOnly} /></div>
+      <div className="bind-add-actions">{mounts.length > 0 && <button type="button" className="btn" onClick={() => { setAdding(false); setError('') }}>Annuler</button>}<button type="button" className="btn btn-primary" disabled={!valid || !!parseError} onClick={add}>Ajouter le montage</button></div>
+    </div>}
+      </div>
+    </div>
+    {services.length === 0 && !parseError && <p className="muted">Ajoutez d’abord un service dans le Compose.</p>}
+    {error && <p className="error" role="alert">{error}</p>}
+    {message && <p className="bind-feedback" role="status">{message}</p>}
+    <p className="bind-manager-note">{note ?? 'Le Compose est mis à jour automatiquement. Les accès seront soumis à l’approbation du superadmin.'}</p>
+  </section>
 }
 
 /** The host folders the Compose mounts, read from the file itself; one service at a time when one is picked. */
@@ -194,10 +213,10 @@ function ProjectBindChangeModal({ stack, onClose, onSubmitted }: { stack: Stack;
     } catch (err) { setError(errorMessage(err)); setBusy(false) }
   }
   const revoked = stack.services.some((service) => service.bindMounts?.length && !service.bindAuthorized)
-  return <Modal title={`Modifier les accès de ${stack.name}`} subtitle={revoked ? "L’autorisation est révoquée. Choisissez un autre node pour demander explicitement de nouveaux accès." : "Le Compose et les accès actifs restent en place jusqu’à la décision du superadmin."} onClose={onClose} onSubmit={submit}>
+  return <Modal wide title={`Dossiers de ${stack.name}`} subtitle={revoked ? "L’autorisation est révoquée. Choisissez un autre node pour demander explicitement de nouveaux accès." : "Le Compose et les accès actifs restent en place jusqu’à la décision du superadmin."} onClose={onClose} onSubmit={submit}>
     <label className="field"><span>Node des chemins</span><select value={nodeId} onChange={(e)=>setNodeId(Number(e.target.value))}>{nodes.map((n)=><option key={n.id} value={n.id}>{n.name} · {n.online?'en ligne':'hors ligne'}</option>)}</select></label>
-    <label className="field"><span>Compose avec les nouveaux bind mounts</span><textarea className="mono compose-editor" rows={18} value={compose} onChange={(e)=>setCompose(e.target.value)} required /></label>
-    <BindHelper compose={compose} setCompose={setCompose} note="Le dossier est ajouté au Compose ci-dessus. Le superadmin approuve la demande avant qu’il soit monté." />
+    <BindHelper compose={compose} setCompose={setCompose} note="Les modifications sont inscrites automatiquement dans le Compose. Elles seront appliquées après approbation de la demande." />
+    <details className="field"><summary>Voir ou modifier le Compose</summary><label className="field"><span>Compose de la demande</span><textarea className="mono compose-editor" rows={12} value={compose} onChange={(e)=>setCompose(e.target.value)} required /></label></details>
     <p className="muted">Conservez les volumes nommés. Les chemins hôtes ne sont pas copiés lors d’un changement de node.</p>
     {error && <p className="error" role="alert">{error}</p>}
     <button type="submit" className="btn btn-primary" disabled={busy || !nodeId}>{busy?'Envoi…':'Soumettre au superadmin'}</button>
@@ -920,7 +939,7 @@ export function ProjectDetail({
               <button type="button" className="btn detail-actions-wide" disabled={busy || !full} onClick={() => setEditing(true)}>
                 Modifier le compose
               </button>
-              {isOwner && <button type="button" className="btn detail-actions-wide" disabled={busy || !full} onClick={() => setChangingBinds(true)}>{!stack.services.some((service) => service.bindMounts?.length) ? 'Monter un dossier du node…' : stack.services.some((service) => service.bindMounts?.length && !service.bindAuthorized) ? 'Demander de nouveaux accès sur un autre node' : 'Demander une modification des accès / du node'}</button>}
+              {isOwner && <button type="button" className="btn detail-actions-wide" disabled={busy || !full} onClick={() => setChangingBinds(true)}>{!stack.services.some((service) => service.bindMounts?.length) ? 'Monter un dossier du node…' : stack.services.some((service) => service.bindMounts?.length && !service.bindAuthorized) ? 'Demander de nouveaux accès sur un autre node' : 'Gérer les dossiers du node'}</button>}
               {superadmin && stack.services.some((service) => service.bindMounts?.length && service.bindAuthorized) && <button type="button" className="btn danger detail-actions-wide" disabled={busy} onClick={() => run(() => api.revokeStackBinds(stack.id))}>Révoquer les bind mounts du projet</button>}
             </div>
             {changingBinds && full && <ProjectBindChangeModal stack={full} onClose={() => setChangingBinds(false)} onSubmitted={(id) => { setChangingBinds(false); go(`support/bind/${id}`) }} />}
