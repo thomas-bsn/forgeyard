@@ -124,7 +124,7 @@ export default function Apps({
     const project = projects.find((p) => p.id === Number(route[1]))
     // A member's own project, or any project for an admin: the full page. Otherwise someone opened a
     // project from a profile: read-only.
-    if (project) return <ProjectDetail key={project.id} stack={project} onChange={load} go={go} superadmin={superadmin} />
+    if (project) return <ProjectDetail key={project.id} stack={project} onChange={load} go={go} admin={admin} superadmin={superadmin} />
     return <ProjectPage key={route[1]} id={Number(route[1])} go={go} />
   }
 
@@ -1236,7 +1236,7 @@ function AppFormModal({
 
 type DetailTab = 'observability' | 'logs' | 'terminal' | 'network' | 'events' | 'access'
 
-function BindChangeModal({ app, onClose, onSubmitted }: { app: App; onClose: () => void; onSubmitted: (id: number) => void }) {
+function BindChangeModal({ app, admin, superadmin, onClose, onSubmitted, onRevoked }: { app: App; admin: boolean; superadmin: boolean; onClose: () => void; onSubmitted: (id: number) => void; onRevoked: () => void }) {
   const [nodes, setNodes] = useState<BindNode[]>([])
   const [nodeId, setNodeId] = useState(app.nodeId)
   const [mounts, setMounts] = useState<BindMount[]>(app.bindMounts ?? [])
@@ -1253,7 +1253,11 @@ function BindChangeModal({ app, onClose, onSubmitted }: { app: App; onClose: () 
       onSubmitted(request.id)
     } catch (err) { setError(errorMessage(err)); setBusy(false) }
   }
-  return <Modal title={`Modifier les accès de ${app.name}`} subtitle={app.bindAuthorized ? "L’accès actuel reste en place jusqu’à la décision du superadmin." : "L’autorisation est révoquée. Choisissez un autre node pour demander explicitement de nouveaux accès."} onClose={onClose} onSubmit={submit}>
+  async function revoke() {
+    setBusy(true); setError('')
+    try { await api.revokeAppBinds(app.id); onRevoked() } catch (err) { setError(errorMessage(err)); setBusy(false) }
+  }
+  return <Modal title={`Modifier les accès de ${app.name}`} subtitle={app.bindAuthorized ? "L’accès actuel reste en place jusqu’à validation des modifications." : "L’autorisation est révoquée. Demandez explicitement de nouveaux accès pour les rétablir."} onClose={onClose} onSubmit={submit}>
     <label className="field"><span>Node des chemins</span><select value={nodeId} onChange={(e) => setNodeId(Number(e.target.value))}>{nodes.map((n) => <option key={n.id} value={n.id}>{n.name} · {n.online ? 'en ligne' : 'hors ligne'}</option>)}</select></label>
     {mounts.map((m,i) => <div className="panel" key={i}>
       <label className="field"><span>Source sur l’hôte</span><input className="mono" value={m.source} onChange={(e) => setMounts(mounts.map((x,j) => j===i ? {...x,source:e.target.value} : x))} required /></label>
@@ -1264,7 +1268,8 @@ function BindChangeModal({ app, onClose, onSubmitted }: { app: App; onClose: () 
     <button type="button" className="btn" onClick={() => setMounts([...mounts,{source:'',target:'',readOnly:true}])}>Ajouter un montage</button>
     {error && <p className="error" role="alert">{error}</p>}
     <p className="muted">Un changement de node ne copie pas les fichiers. Il sera appliqué après validation des chemins sur le node cible.</p>
-    <button type="submit" className="btn btn-primary" disabled={busy || !nodeId}>{busy?'Envoi…':'Soumettre au superadmin'}</button>
+    {(admin || superadmin) && app.bindAuthorized && !app.stackId && <button type="button" className="btn danger" disabled={busy} onClick={revoke}>Révoquer l’autorisation</button>}
+    <button type="submit" className="btn btn-primary" disabled={busy || !nodeId}>{busy?'Envoi…':superadmin ? 'Valider les accès' : 'Soumettre au superadmin'}</button>
   </Modal>
 }
 
@@ -1474,10 +1479,9 @@ function AppDetail({
               ? 'Conteneur arrêté. Le redémarrage avec ces montages est bloqué.'
               : `Arrêt demandé. État observé : ${stateText(app)}.`}</p>}
           <ul>{app.bindMounts.map((m, i) => <li key={i}><code>{m.source}</code> → <code>{m.target}</code> · {m.readOnly ? 'lecture seule' : 'lecture / écriture'}</li>)}</ul>
-          {(admin || app.ownerId === userId) && app.bindMounts.length > 0 && <button type="button" className="btn" disabled={busy} onClick={() => setChangingBinds(true)}>{app.bindAuthorized ? 'Demander une modification des accès / du node' : 'Demander de nouveaux accès sur un autre node'}</button>}
-          {superadmin && app.bindAuthorized && !app.stackId && <button type="button" className="btn danger" disabled={busy} onClick={() => run(() => api.revokeAppBinds(app.id))}>Révoquer l’autorisation</button>}
+          {(admin || superadmin || app.ownerId === userId) && !app.stackId && <button type="button" className="btn" disabled={busy} onClick={() => setChangingBinds(true)}>Gérer les dossiers du node</button>}
         </section>}
-        {changingBinds && <BindChangeModal app={app} onClose={() => setChangingBinds(false)} onSubmitted={(id) => { setChangingBinds(false); go(`support/bind/${id}`) }} />}
+        {changingBinds && <BindChangeModal app={app} admin={admin} superadmin={superadmin} onClose={() => setChangingBinds(false)} onRevoked={() => { setChangingBinds(false); onChange() }} onSubmitted={(id) => { setChangingBinds(false); go(`support/bind/${id}`) }} />}
 
         <dl className="kv">
           <dt>Image</dt>

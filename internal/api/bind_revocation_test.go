@@ -28,13 +28,13 @@ func TestBindRevocationPersistsAndBlocksRestart(t *testing.T) {
 	}
 	<-states
 	url := base + "/api/admin/apps/" + itoa(request.AppID) + "/bind-mounts/revoke"
-	for _, client := range []*http.Client{owner, staff} {
+	for _, client := range []*http.Client{owner} {
 		if code := postJSON(t, client, url, struct{}{}, nil); code != http.StatusForbidden {
 			t.Fatalf("unauthorized revoke: %d", code)
 		}
 	}
 	var app appResponse
-	if code := postJSON(t, superadmin, url, struct{}{}, &app); code != http.StatusOK {
+	if code := postJSON(t, staff, url, struct{}{}, &app); code != http.StatusOK {
 		t.Fatalf("revoke: %d", code)
 	}
 	if app.BindAuthorized || app.Running || len(app.BindMounts) != 1 {

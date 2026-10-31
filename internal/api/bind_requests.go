@@ -74,6 +74,7 @@ func (s *Server) handleCreateBindChange(w http.ResponseWriter, r *http.Request, 
 	var appEnv map[string]string
 	var originalMountsJSON string
 	var originalStackBindings string
+	var authorizationState string
 	var app db.App
 	var stack db.Stack
 	if change.ResourceType == "app" {
@@ -95,10 +96,7 @@ func (s *Server) handleCreateBindChange(w http.ResponseWriter, r *http.Request, 
 			writeError(w, http.StatusConflict, "arrêtez l'app avant de demander un changement de node")
 			return
 		}
-		if app.BindAuthorized == 0 && change.NodeID == app.NodeID {
-			writeError(w, http.StatusConflict, "l'autorisation est révoquée ; choisissez un autre node pour demander explicitement de nouveaux accès")
-			return
-		}
+		authorizationState = strconv.FormatInt(app.BindAuthorized, 10)
 		currentNode = app.NodeID
 		originalMountsJSON = app.BindMounts
 		oldMounts = bindAPI(appBinds(app))
@@ -128,10 +126,7 @@ func (s *Server) handleCreateBindChange(w http.ResponseWriter, r *http.Request, 
 		for _, a := range apps {
 			oldMounts = append(oldMounts, bindAPI(appBinds(a))...)
 			originalStackBindings += a.Service + ":" + a.BindMounts + "\n"
-			if a.BindAuthorized == 0 && len(appBinds(a)) > 0 && change.NodeID == stack.NodeID {
-				writeError(w, http.StatusConflict, "l'autorisation du projet est révoquée")
-				return
-			}
+			authorizationState += a.Service + ":" + strconv.FormatInt(a.BindAuthorized, 10) + "\n"
 		}
 		if change.NodeID > 0 && change.NodeID != stack.NodeID {
 			for _, a := range apps {
@@ -304,6 +299,7 @@ func (s *Server) handleCreateBindChange(w http.ResponseWriter, r *http.Request, 
 	}
 	secretEnv["__FORGEYARD_BIND_CHANGE_BASE"] = originalMountsJSON
 	secretEnv["__FORGEYARD_BIND_CHANGE_NODE"] = strconv.FormatInt(currentNode, 10)
+	secretEnv["__FORGEYARD_BIND_CHANGE_AUTH"] = authorizationState
 	sealed, err := s.sealEnv(secretEnv)
 	if err != nil {
 		s.internalError(w, r, err)

@@ -49,8 +49,10 @@ func (s *Server) approveBindChange(ctx context.Context, r *http.Request, row db.
 	}
 	baseConfig := requestSecrets["__FORGEYARD_BIND_CHANGE_BASE"]
 	baseNode, _ := strconv.ParseInt(requestSecrets["__FORGEYARD_BIND_CHANGE_NODE"], 10, 64)
+	baseAuth := requestSecrets["__FORGEYARD_BIND_CHANGE_AUTH"]
 	delete(requestSecrets, "__FORGEYARD_BIND_CHANGE_BASE")
 	delete(requestSecrets, "__FORGEYARD_BIND_CHANGE_NODE")
+	delete(requestSecrets, "__FORGEYARD_BIND_CHANGE_AUTH")
 	if change.ResourceType == "app" {
 		app, err = s.store.GetApp(ctx, change.ResourceID)
 		if err != nil {
@@ -68,8 +70,8 @@ func (s *Server) approveBindChange(ctx context.Context, r *http.Request, row db.
 		if app.BindMounts != baseConfig || app.NodeID != baseNode {
 			return errors.New("les accès de l'app ont changé depuis cette demande")
 		}
-		if app.BindAuthorized == 0 && change.NodeID == app.NodeID {
-			return errors.New("l'autorisation a été révoquée ; choisissez un node cible et des montages à réautoriser explicitement")
+		if (baseAuth == "" && app.BindAuthorized == 0) || (baseAuth != "" && baseAuth != strconv.FormatInt(app.BindAuthorized, 10)) {
+			return errors.New("l'autorisation a changé depuis la soumission ; soumettez une nouvelle demande")
 		}
 		if change.NodeID != app.NodeID && app.Running != 0 {
 			return errors.New("arrêtez l'app avant de changer de node")
@@ -98,13 +100,18 @@ func (s *Server) approveBindChange(ctx context.Context, r *http.Request, row db.
 		if currentBindings != baseConfig || stack.NodeID != baseNode {
 			return errors.New("les accès du projet ont changé depuis cette demande")
 		}
+		var currentAuth string
 		for _, service := range services {
-			if service.BindAuthorized == 0 && len(appBinds(service)) > 0 && change.NodeID == stack.NodeID {
-				return errors.New("l'autorisation du projet a été révoquée ; choisissez un autre node et redemandez explicitement les accès")
+			currentAuth += service.Service + ":" + strconv.FormatInt(service.BindAuthorized, 10) + "\n"
+			if baseAuth == "" && service.BindAuthorized == 0 && len(appBinds(service)) > 0 {
+				return errors.New("l'autorisation du projet a été révoquée depuis la soumission")
 			}
 			if change.NodeID != stack.NodeID && service.Running != 0 {
 				return errors.New("arrêtez tous les services du projet avant de changer de node")
 			}
+		}
+		if baseAuth != "" && baseAuth != currentAuth {
+			return errors.New("l'autorisation du projet a changé depuis la soumission ; soumettez une nouvelle demande")
 		}
 		mounts = in.BindMounts
 		in.Stack.Env, err = s.openStackEnv(stack.EnvSealed)

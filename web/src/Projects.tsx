@@ -198,7 +198,7 @@ function StackBinds({
   )
 }
 
-function ProjectBindChangeModal({ stack, onClose, onSubmitted }: { stack: Stack; onClose: () => void; onSubmitted: (id: number) => void }) {
+function ProjectBindChangeModal({ stack, admin, superadmin, onClose, onSubmitted, onRevoked }: { stack: Stack; admin?: boolean; superadmin?: boolean; onClose: () => void; onSubmitted: (id: number) => void; onRevoked: () => void }) {
   const [nodes, setNodes] = useState<BindNode[]>([])
   const [nodeId, setNodeId] = useState(stack.nodeId)
   const [compose, setCompose] = useState(stack.compose ?? '')
@@ -213,13 +213,18 @@ function ProjectBindChangeModal({ stack, onClose, onSubmitted }: { stack: Stack;
     } catch (err) { setError(errorMessage(err)); setBusy(false) }
   }
   const revoked = stack.services.some((service) => service.bindMounts?.length && !service.bindAuthorized)
-  return <Modal wide title={`Dossiers de ${stack.name}`} subtitle={revoked ? "L’autorisation est révoquée. Choisissez un autre node pour demander explicitement de nouveaux accès." : "Le Compose et les accès actifs restent en place jusqu’à la décision du superadmin."} onClose={onClose} onSubmit={submit}>
+  async function revoke() {
+    setBusy(true); setError('')
+    try { await api.revokeStackBinds(stack.id); onRevoked() } catch (err) { setError(errorMessage(err)); setBusy(false) }
+  }
+  return <Modal wide title={`Dossiers de ${stack.name}`} subtitle={revoked ? "L’autorisation est révoquée. Demandez explicitement de nouveaux accès pour les rétablir." : "Le Compose et les accès actifs restent en place jusqu’à validation des modifications."} onClose={onClose} onSubmit={submit}>
     <label className="field"><span>Node des chemins</span><select value={nodeId} onChange={(e)=>setNodeId(Number(e.target.value))}>{nodes.map((n)=><option key={n.id} value={n.id}>{n.name} · {n.online?'en ligne':'hors ligne'}</option>)}</select></label>
     <BindHelper compose={compose} setCompose={setCompose} note="Les modifications sont inscrites automatiquement dans le Compose. Elles seront appliquées après approbation de la demande." />
     <details className="field"><summary>Voir ou modifier le Compose</summary><label className="field"><span>Compose de la demande</span><textarea className="mono compose-editor" rows={12} value={compose} onChange={(e)=>setCompose(e.target.value)} required /></label></details>
     <p className="muted">Conservez les volumes nommés. Les chemins hôtes ne sont pas copiés lors d’un changement de node.</p>
     {error && <p className="error" role="alert">{error}</p>}
-    <button type="submit" className="btn btn-primary" disabled={busy || !nodeId}>{busy?'Envoi…':'Soumettre au superadmin'}</button>
+    {(admin || superadmin) && stack.services.some((service) => service.bindMounts?.length && service.bindAuthorized) && <button type="button" className="btn danger" disabled={busy} onClick={revoke}>Révoquer les bind mounts du projet</button>}
+    <button type="submit" className="btn btn-primary" disabled={busy || !nodeId}>{busy?'Envoi…':superadmin ? 'Valider les accès' : 'Soumettre au superadmin'}</button>
   </Modal>
 }
 
@@ -788,12 +793,14 @@ export function ProjectDetail({
   onChange,
   go,
   readOnly,
+  admin,
   superadmin,
 }: {
   stack: Stack
   onChange: () => void
   go: (path: string) => void
   readOnly?: boolean // another member's project, opened from their profile
+  admin?: boolean
   superadmin?: boolean
 }) {
   const [full, setFull] = useState<Stack | null>(null)
@@ -939,10 +946,9 @@ export function ProjectDetail({
               <button type="button" className="btn detail-actions-wide" disabled={busy || !full} onClick={() => setEditing(true)}>
                 Modifier le compose
               </button>
-              {isOwner && <button type="button" className="btn detail-actions-wide" disabled={busy || !full} onClick={() => setChangingBinds(true)}>{!stack.services.some((service) => service.bindMounts?.length) ? 'Monter un dossier du node…' : stack.services.some((service) => service.bindMounts?.length && !service.bindAuthorized) ? 'Demander de nouveaux accès sur un autre node' : 'Gérer les dossiers du node'}</button>}
-              {superadmin && stack.services.some((service) => service.bindMounts?.length && service.bindAuthorized) && <button type="button" className="btn danger detail-actions-wide" disabled={busy} onClick={() => run(() => api.revokeStackBinds(stack.id))}>Révoquer les bind mounts du projet</button>}
+              {(isOwner || admin || superadmin) && <button type="button" className="btn detail-actions-wide" disabled={busy || !full} onClick={() => setChangingBinds(true)}>{!stack.services.some((service) => service.bindMounts?.length) ? 'Monter un dossier du node…' : 'Gérer les dossiers du node'}</button>}
             </div>
-            {changingBinds && full && <ProjectBindChangeModal stack={full} onClose={() => setChangingBinds(false)} onSubmitted={(id) => { setChangingBinds(false); go(`support/bind/${id}`) }} />}
+            {changingBinds && full && <ProjectBindChangeModal stack={full} admin={admin} superadmin={superadmin} onClose={() => setChangingBinds(false)} onRevoked={() => { setChangingBinds(false); onChange() }} onSubmitted={(id) => { setChangingBinds(false); go(`support/bind/${id}`) }} />}
             {isOwner && (
               <button type="button" className="link-button danger-link" disabled={busy} onClick={() => setDeleting(true)}>
                 Supprimer le projet…

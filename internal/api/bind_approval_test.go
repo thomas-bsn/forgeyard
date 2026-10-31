@@ -191,6 +191,21 @@ func TestBindChangeKeepsOldAccessUntilSuperadminApproves(t *testing.T) {
 	if err != nil || pending != 0 {
 		t.Fatalf("cancelled failed request still blocks a replacement: pending=%d err=%v", pending, err)
 	}
+	if code := postJSON(t, owner, base+"/api/bind-requests", change, &request); code != http.StatusCreated || request.Status != "pending" {
+		t.Fatalf("same-node reauthorization submission: %d %+v", code, request)
+	}
+	if code := postJSON(t, superadmin, base+"/api/admin/bind-requests/"+itoa(request.ID)+"/approve", struct{}{}, &request); code != http.StatusOK || request.Status != "created" {
+		t.Fatalf("same-node reauthorization approval: %d %+v", code, request)
+	}
+	if code := get(t, owner, base+"/api/apps/"+itoa(appID), &current); code != http.StatusOK || !current.BindAuthorized || current.Running {
+		t.Fatalf("reauthorized app: %d %+v", code, current)
+	}
+	if code := postJSON(t, superadmin, base+"/api/admin/apps/"+itoa(appID)+"/bind-mounts/revoke", struct{}{}, nil); code != http.StatusOK {
+		t.Fatalf("revoke before superadmin reauthorization: %d", code)
+	}
+	if code := postJSON(t, superadmin, base+"/api/bind-requests", change, &request); code != http.StatusCreated || request.Status != "created" {
+		t.Fatalf("superadmin same-node reauthorization: %d %+v", code, request)
+	}
 }
 
 func TestComposeBindChangeIsStagedAndAppliedAsOneProject(t *testing.T) {
@@ -264,6 +279,7 @@ func TestComposeBindRequestStagesNoProjectUntilSuperadminApproval(t *testing.T) 
 		return &agentpb.BindValidationResult{Mounts: check.Mounts}
 	})
 	owner := bindTestUser(t, server, base, "compose-owner", "user")
+	staff := bindTestUser(t, server, base, "compose-staff", "admin")
 	composeText := `services:
   db:
     image: postgres:17-alpine
@@ -356,7 +372,7 @@ volumes:
 		t.Fatalf("ordinary user revoked project binds: %d", code)
 	}
 	var revoked stackResponse
-	if code := postJSON(t, superadmin, revokeURL, struct{}{}, &revoked); code != http.StatusOK || len(revoked.Services) != 2 {
+	if code := postJSON(t, staff, revokeURL, struct{}{}, &revoked); code != http.StatusOK || len(revoked.Services) != 2 {
 		t.Fatalf("revoke project binds: %d %+v", code, revoked)
 	}
 	if code := postJSON(t, superadmin, base+"/api/stacks/"+itoa(request.StackID)+"/start", struct{}{}, nil); code != http.StatusConflict {
@@ -367,8 +383,9 @@ volumes:
 	}
 	reauthorizedCompose := strings.Replace(composeText, "/srv/postgres:/backup:ro", "/srv/postgres-new:/backup:rw", 1)
 	change := map[string]any{"change": map[string]any{"resourceId": request.StackID, "resourceType": "stack", "nodeId": node.nodeID, "stack": map[string]any{"name": "archive", "compose": reauthorizedCompose, "env": map[string]string{"DB_PASSWORD": "secret-db"}}}}
-	if code := postJSON(t, owner, base+"/api/bind-requests", change, nil); code != http.StatusConflict {
-		t.Fatalf("same-node reauthorization bypassed revocation: %d", code)
+	var reauthorization bindRequestResponse
+	if code := postJSON(t, owner, base+"/api/bind-requests", change, &reauthorization); code != http.StatusCreated || reauthorization.Status != "pending" {
+		t.Fatalf("same-node reauthorization submission: %d %+v", code, reauthorization)
 	}
 	select {
 	case desired := <-states:
@@ -380,10 +397,21 @@ volumes:
 	case <-time.After(5 * time.Second):
 		t.Fatal("no desired state after project revocation")
 	}
+	if code := postJSON(t, superadmin, base+"/api/admin/bind-requests/"+itoa(reauthorization.ID)+"/approve", struct{}{}, &reauthorization); code != http.StatusOK || reauthorization.Status != "created" {
+		t.Fatalf("same-node project reauthorization approval: %d %+v", code, reauthorization)
+	}
 	selfCompose := "services:\n  files:\n    image: nginx:alpine\n    volumes:\n      - /srv/self:/files\n"
 	var selfRequest bindRequestResponse
 	if code := postJSON(t, superadmin, base+"/api/bind-requests", map[string]any{"nodeId": node.nodeID, "stack": map[string]any{"name": "self-approved", "compose": selfCompose}}, &selfRequest); code != http.StatusCreated || selfRequest.Status != "created" || selfRequest.StackID == 0 {
 		t.Fatalf("superadmin compose auto-approval: %d %+v", code, selfRequest)
+	}
+	selfID := selfRequest.StackID
+	if code := postJSON(t, superadmin, base+"/api/admin/stacks/"+itoa(selfID)+"/bind-mounts/revoke", struct{}{}, nil); code != http.StatusOK {
+		t.Fatalf("revoke self project: %d", code)
+	}
+	selfChange := map[string]any{"change": map[string]any{"resourceId": selfID, "resourceType": "stack", "nodeId": node.nodeID, "stack": map[string]any{"name": "self-approved", "compose": selfCompose}}}
+	if code := postJSON(t, superadmin, base+"/api/bind-requests", selfChange, &selfRequest); code != http.StatusCreated || selfRequest.Status != "created" {
+		t.Fatalf("superadmin project same-node reauthorization: %d %+v", code, selfRequest)
 	}
 }
 
