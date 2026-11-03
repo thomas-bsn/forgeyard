@@ -105,6 +105,10 @@ func start(ctx context.Context, args []string, mustJoin bool, logger *slog.Logge
 	joinFile := fs.String("join-file", os.Getenv("FORGEYARD_JOIN_FILE"), "wait for the server of the same Compose project to drop join details in this file")
 	dockerHost := fs.String("docker-host", docker.DefaultHost(), "Docker daemon socket")
 	fs.Parse(args)
+	// A wrong address set by hand stops the agent here, rather than relaying apps nowhere.
+	if _, err := agent.LocalIPOverride(); err != nil {
+		return err
+	}
 
 	_, err := agent.LoadState(*stateDir)
 	joined := err == nil

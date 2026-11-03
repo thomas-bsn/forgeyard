@@ -72,6 +72,7 @@ En relais :
 - le Traefik du node écoute en HTTP sur son port d'entrée (8090 par défaut ; pratique aussi quand le port 80 est déjà pris, par Pi-hole par exemple) ;
 - le Traefik du node A reçoit, pour chaque app du node, une règle ``Host(`<app>.<domaine>`)`` vers `http://<IP locale du node>:<port>` ; l'agent l'écrit dans un fichier de configuration du conteneur Traefik (`/forgeyard/relays.yml`), que Traefik relit seul ; les règles suivent les apps, les nodes et leurs IP locales ;
 - il faut que le node A joigne le node à son IP locale (même réseau, ou un VPN).
+- l'IP locale est celle que l'agent du node annonce ; sous Docker Desktop (Windows/WSL2, macOS), il ne peut pas la trouver : la donner avec `FORGEYARD_LOCAL_IP` (voir [l'agent](../nodes/agent.md#commandes-et-options)), sinon le relais vise la VM de Docker.
 
 En tunnel :
 

@@ -142,3 +142,60 @@ func TestMoveApp(t *testing.T) {
 		t.Fatalf("anonymous choices: %d", code)
 	}
 }
+
+// reconnect opens a new stream for the same node, as an agent restarted with a new local IP does; the hub
+// drops the old one.
+func (f *fakeAgent) reconnect(t *testing.T, localIP string) {
+	t.Helper()
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+	stream, err := f.client.Connect(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stream.Send(&agentpb.AgentMessage{Msg: &agentpb.AgentMessage_Hello{Hello: &agentpb.Hello{AgentVersion: "test", Info: &agentpb.NodeInfo{Hostname: "restarted", Cpus: 2, LocalIp: localIP}}}})
+	if msg, err := stream.Recv(); err != nil || msg.GetWelcome() == nil {
+		t.Fatalf("welcome: %v %v", msg, err)
+	}
+	f.stream = stream
+}
+
+// A relayed node whose agent restarts with another local IP (e.g. FORGEYARD_LOCAL_IP set on a Docker
+// Desktop machine that announced Docker's VM) gets its apps relayed to the new address.
+func TestRelaysFollowLocalIP(t *testing.T) {
+	ts, server := newTestServerWithHandle(t)
+	admin := newClient()
+	post(t, admin, ts.URL+"/api/setup", setupRequest{Token: testToken, InstanceName: "F", Username: "boss",
+		Password: "a-long-enough-password", PublicURL: "https://forgeyard.example.com"})
+	mem := dnstest.New("example.com.")
+	server.newDNSProvider = func(string, map[string]string) (dns.Provider, error) { return mem, nil }
+	put(t, admin, ts.URL+"/api/admin/settings/domain", putDomainSettings{
+		PublicURL: "https://forgeyard.example.com", Mode: "provider", Domain: "example.com", PublicIP: "203.0.113.1",
+		Provider: "cloudflare", Credentials: map[string]string{"api_token": "x"},
+	})
+
+	front := connectFakeAgent(t, ts.URL, server, admin, "nas")
+	front.desired(t)
+	if _, err := server.store.DB.ExecContext(context.Background(), "UPDATE nodes SET is_local = 1 WHERE id = ?", front.nodeID); err != nil {
+		t.Fatal(err)
+	}
+	wsl := connectFakeAgent(t, ts.URL, server, admin, "wsl", func(h *agentpb.Hello) { h.Info.LocalIp = "192.168.65.3" })
+	wsl.desired(t)
+	if code := put(t, admin, ts.URL+"/api/admin/nodes/"+itoa(wsl.nodeID)+"/ingress", nodeIngressRequest{Mode: "relay", HTTPPort: 8090}); code != http.StatusOK {
+		t.Fatalf("relay: %d", code)
+	}
+	if code := postJSON(t, admin, ts.URL+"/api/apps", appInput{Name: "site", Image: "nginx", Port: 80, NodeID: wsl.nodeID}, nil); code != http.StatusCreated {
+		t.Fatalf("create: %d", code)
+	}
+	front.drainUntil(t, func(relays int, _, targets []string) bool {
+		return relays == 1 && targets[0] == "http://192.168.65.3:8090"
+	})
+
+	wsl.reconnect(t, "192.168.1.17")
+	front.drainUntil(t, func(relays int, hosts, targets []string) bool {
+		return relays == 1 && hosts[0] == "site.example.com" && targets[0] == "http://192.168.1.17:8090"
+	})
+	if node, err := server.store.GetNode(context.Background(), wsl.nodeID); err != nil || node.LocalIp != "192.168.1.17" {
+		t.Fatalf("node's local IP: %q %v", node.LocalIp, err)
+	}
+}
