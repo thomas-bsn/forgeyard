@@ -1522,8 +1522,14 @@ function AppDetail({
             {memoryDraft === null ? (
               <>
                 {app.memoryMb} Mo max.{' '}
-                {full && canWrite && !app.stackId && (
-                  <button type="button" className="link-button" disabled={busy} onClick={() => setMemoryDraft(String(full.memoryMb))}>
+                {full && canWrite && (!app.stackId || app.service) && (
+                  <button
+                    type="button"
+                    className="link-button"
+                    disabled={busy}
+                    onClick={() => setMemoryDraft(String(full.memoryMb))}
+                    title={app.stackId ? 'Écrit mem_limit dans le docker-compose.yml du projet' : undefined}
+                  >
                     Modifier
                   </button>
                 )}
@@ -1534,7 +1540,12 @@ function AppDetail({
                 onSubmit={async (e) => {
                   e.preventDefault()
                   if (!full || !memoryValid) return
-                  if (await saveConfig(full, { memoryMb: memoryValue })) setMemoryDraft(null)
+                  // A service's configuration lives in its project's compose file: the server rewrites it there.
+                  const saved =
+                    app.stackId && app.service
+                      ? await run(() => api.setStackServiceMemory(app.stackId!, app.service!, memoryValue))
+                      : await saveConfig(full, { memoryMb: memoryValue })
+                  if (saved) setMemoryDraft(null)
                 }}
               >
                 <input

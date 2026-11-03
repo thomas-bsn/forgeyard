@@ -63,9 +63,10 @@ Tout le reste est refusé, avec la ligne et la raison (tous les problèmes d'un 
 | `depends_on` | Liste, ou objet avec `condition` : `service_started`, `service_healthy`, `service_completed_successfully`. |
 | `healthcheck` | `test` (`["CMD", …]`, `["CMD-SHELL", "…"]`, une chaîne ou `["NONE"]`), `interval`, `timeout`, `start_period`, `retries`, `disable`. |
 | `restart` | `no`, `always`, `on-failure[:N]`, `unless-stopped` ; sans, `unless-stopped`. |
+| `mem_limit`, `deploy.resources.limits.memory` | La mémoire maximale, comme docker compose la lit : `512m`, `1g`, `1.5GB`, ou un nombre d'octets (`512` seul = 512 octets, refusé). Entre 64 Mo et 16 Go ; 512 Mo sans limite. Le reste de `deploy` (Swarm) est refusé. Deux limites différentes (avec `x-forgeyard.memory`) sont une erreur. Le bouton « Modifier » de la mémoire, sur la page du service, réécrit la limite là où elle est dans le fichier, ou ajoute `mem_limit` ; il refuse une limite venant d'une variable ou d'une ancre partagée. |
 | `volumes:` (racine) | Des noms, sans options (`driver`, `external`… refusés). |
 | `name`, `version`, `x-…` | Ignorés (les ancres YAML `&` / `*` et `<<:` marchent). |
-| `x-forgeyard` | `expose: { port: 80 }`, `backup: { type: postgres }`, `memory: 1024` (Mo, 512 par défaut). |
+| `x-forgeyard` | `expose: { port: 80 }`, `backup: { type: postgres }`, `memory: 1024` (Mo, 512 par défaut ; `mem_limit` fait la même chose et marche aussi avec docker compose). |
 
 ### Ce qui est refusé, et pourquoi
 

@@ -275,9 +275,16 @@ func (p *parser) service(name string, keyN, n *yaml.Node, volumes map[string]boo
 		return svc
 	}
 	var imageN *yaml.Node
+	mem := memorySources{service: name}
 	for _, kv := range pairs(n) {
 		v := kv.value
 		switch kv.key {
+		case "mem_limit":
+			if mb, ok := p.memorySize(v, name+".mem_limit"); ok {
+				mem.add(p, v, "mem_limit", mb)
+			}
+		case "deploy":
+			p.deploy(v, name, &mem)
 		case "image":
 			imageN = v
 			svc.Image = p.scalar(v, name+".image")
@@ -306,7 +313,7 @@ func (p *parser) service(name string, keyN, n *yaml.Node, volumes map[string]boo
 				p.errorf(v, "%s.restart : no, always, on-failure ou unless-stopped", name)
 			}
 		case "x-forgeyard":
-			p.forgeyard(v, &svc)
+			p.forgeyard(v, &svc, &mem)
 		default:
 			switch msg, ok := refused[kv.key]; {
 			case ok:
@@ -317,6 +324,7 @@ func (p *parser) service(name string, keyN, n *yaml.Node, volumes map[string]boo
 			}
 		}
 	}
+	svc.MemoryMB = mem.mb
 	if imageN == nil {
 		p.errorf(keyN, "service %s : image est obligatoire (une image publiée, build n'est pas pris en charge)", name)
 	} else if svc.Image != "" && (len(svc.Image) > 255 || strings.ContainsAny(svc.Image, " \t\n")) {
@@ -628,7 +636,7 @@ func (p *parser) healthcheck(n *yaml.Node, svc string) *Healthcheck {
 	return h
 }
 
-func (p *parser) forgeyard(n *yaml.Node, svc *Service) {
+func (p *parser) forgeyard(n *yaml.Node, svc *Service, mem *memorySources) {
 	if n.Kind != yaml.MappingNode {
 		p.errorf(n, "%s.x-forgeyard : un objet est attendu", svc.Name)
 		return
@@ -672,10 +680,11 @@ func (p *parser) forgeyard(n *yaml.Node, svc *Service) {
 			}
 		case "memory":
 			mb, err := strconv.Atoi(p.scalar(kv.value, what))
-			if err != nil || mb < 64 || mb > 16384 {
+			if err != nil || mb < MinMemoryMB || mb > MaxMemoryMB {
 				p.errorf(kv.value, "%s : entre 64 et 16384 (Mo)", what)
+				continue
 			}
-			svc.MemoryMB = mb
+			mem.add(p, kv.value, "x-forgeyard.memory", mb)
 		default:
 			p.errorf(kv.keyN, "%s n'est pas pris en charge (expose, backup ou memory)", what)
 		}

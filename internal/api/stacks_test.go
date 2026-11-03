@@ -568,3 +568,53 @@ func TestStackServiceUser(t *testing.T) {
 		t.Fatalf("bad user: %d %+v", code, bad)
 	}
 }
+
+// A service's memory is changed from its page by rewriting the project's compose file: the file stays the
+// source, only that service is redeployed, and the variables are kept.
+func TestStackServiceMemory(t *testing.T) {
+	url, server, admin, fa := setupStackServer(t)
+	var st stackResponse
+	if code := postJSON(t, admin, url+"/api/stacks", stackInput{Name: "shameless", Compose: shamelessCompose, Env: map[string]string{"DB_PASSWORD": "pw"}}, &st); code != http.StatusCreated {
+		t.Fatalf("create: %d", code)
+	}
+	before := fa.desiredWith(t, 4)
+	memory := url + "/api/stacks/" + itoa(st.ID) + "/services/api/memory"
+
+	if code := putJSON(t, admin, memory, map[string]int{"memoryMb": 768}, &st); code != http.StatusOK {
+		t.Fatalf("set memory: %d", code)
+	}
+	after := fa.desiredWith(t, 4)
+	for name, a := range before {
+		if bumped := after[name].GetGeneration() != a.GetGeneration(); bumped != (name == "api") {
+			t.Fatalf("%s redeployed: %v", name, bumped)
+		}
+	}
+	if got := after["api"].GetMemoryBytes(); got != 768<<20 {
+		t.Fatalf("api memory: %d", got)
+	}
+	if after["api"].GetEnv()["DB_PASSWORD"] != "pw" {
+		t.Fatalf("variables lost: %v", after["api"].GetEnv())
+	}
+	var full stackResponse
+	get(t, admin, url+"/api/stacks/"+itoa(st.ID), &full)
+	if !strings.Contains(full.Compose, "  api:\n    mem_limit: 768m\n    image: ghcr.io/shameless/api:latest\n") {
+		t.Fatalf("compose after the change:\n%s", full.Compose)
+	}
+	// Saving the file again keeps the limit: it is in the file.
+	if code := putJSON(t, admin, url+"/api/stacks/"+itoa(st.ID), stackInput{Compose: full.Compose, KeepEnv: []string{"DB_PASSWORD"}}, nil); code != http.StatusOK {
+		t.Fatalf("save again: %d", code)
+	}
+	if a, err := server.store.GetApp(context.Background(), after["api"].GetId()); err != nil || a.MemoryMb != 768 {
+		t.Fatalf("memory after saving the file: %d %v", a.MemoryMb, err)
+	}
+
+	for body, path := range map[int]string{32: memory, 512: url + "/api/stacks/" + itoa(st.ID) + "/services/nope/memory"} {
+		var e struct{ Error string }
+		if code := putJSON(t, admin, path, map[string]int{"memoryMb": body}, &e); code != http.StatusBadRequest || e.Error == "" {
+			t.Fatalf("%s %d: %d %q", path, body, code, e.Error)
+		}
+	}
+	if code := putJSON(t, newClient(), memory, map[string]int{"memoryMb": 512}, nil); code != http.StatusUnauthorized {
+		t.Fatalf("anonymous: %d", code)
+	}
+}

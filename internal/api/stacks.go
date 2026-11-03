@@ -1025,7 +1025,6 @@ func (s *Server) createAppRecord(ctx context.Context, c dnsConfig, a db.App, nod
 // handleUpdateStack saves a new compose file or new variables: only the services that changed are
 // deployed again, the others keep running untouched.
 func (s *Server) handleUpdateStack(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
 	st, ok := s.stackFromPath(w, r, actUpdate)
 	if !ok {
 		return
@@ -1034,6 +1033,43 @@ func (s *Server) handleUpdateStack(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSON(w, r, &in) {
 		return
 	}
+	s.updateStack(w, r, st, in)
+}
+
+// handleStackServiceMemory changes the memory limit of a stack's service by rewriting it in the stack's
+// compose file, which stays the one source of a service's configuration; the change then goes the way of
+// any edit of the file.
+func (s *Server) handleStackServiceMemory(w http.ResponseWriter, r *http.Request) {
+	st, ok := s.stackFromPath(w, r, actUpdate)
+	if !ok {
+		return
+	}
+	var body struct {
+		MemoryMB int `json:"memoryMb"`
+	}
+	if !decodeJSON(w, r, &body) {
+		return
+	}
+	src, err := compose.SetServiceMemory([]byte(st.Compose), r.PathValue("service"), body.MemoryMB)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	env, err := s.openStackEnv(st.EnvSealed)
+	if err != nil {
+		s.internalError(w, r, err)
+		return
+	}
+	keep := make([]string, 0, len(env))
+	for k := range env {
+		keep = append(keep, k)
+	}
+	s.updateStack(w, r, st, stackInput{Compose: string(src), Env: map[string]string{}, KeepEnv: keep})
+}
+
+// updateStack applies a new compose file and variables to a stack: services added, changed and removed.
+func (s *Server) updateStack(w http.ResponseWriter, r *http.Request, st db.Stack, in stackInput) {
+	ctx := r.Context()
 	in.Name = st.Name
 	oldEnv, err := s.openStackEnv(st.EnvSealed)
 	if err != nil {

@@ -265,6 +265,7 @@ func (s *Server) Handler(webFS fs.FS) http.Handler {
 	mux.HandleFunc("GET /api/stacks/{id}", s.requireUser(s.handleGetStack))
 	mux.HandleFunc("PUT /api/stacks/{id}", s.requireUser(s.handleUpdateStack))
 	mux.HandleFunc("PUT /api/stacks/{id}/logo", s.requireUser(s.handlePutStackLogo))
+	mux.HandleFunc("PUT /api/stacks/{id}/services/{service}/memory", s.requireUser(s.handleStackServiceMemory))
 	mux.HandleFunc("GET /api/stacks/{id}/logo", s.requireUser(s.handleGetStackLogo))
 	mux.HandleFunc("POST /api/stacks/{id}/{action}", s.requireUser(s.handleStackAction))
 	mux.HandleFunc("DELETE /api/stacks/{id}", s.requireUser(s.handleDeleteStack))

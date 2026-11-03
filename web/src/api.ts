@@ -706,6 +706,9 @@ export const api = {
     request<{ compose?: string; candidates: ComposePortCandidate[]; error?: string }>('POST', '/api/stacks/adapt-ports', body),
   createStack: (body: { name: string; compose: string; env: Record<string, string>; nodeId?: number; registry?: RegistryLogin }) => request<Stack>('POST', '/api/stacks', body),
   updateStack: (id: number, body: { compose: string; env: Record<string, string>; keepEnv?: string[]; registry?: RegistryLogin }) => request<Stack>('PUT', `/api/stacks/${id}`, body),
+  // Rewrites the service's memory limit in the project's compose file, then applies the file.
+  setStackServiceMemory: (id: number, service: string, memoryMb: number) =>
+    request<Stack>('PUT', `/api/stacks/${id}/services/${encodeURIComponent(service)}/memory`, { memoryMb }),
   stackAction: (id: number, action: 'start' | 'stop' | 'redeploy') => request<Stack>('POST', `/api/stacks/${id}/${action}`, {}),
   deleteStack: (id: number, volumes: boolean) => request<void>('DELETE', `/api/stacks/${id}${volumes ? '?volumes=1' : ''}`, {}),
   saveBackupPolicy: (id: number, volume: string, body: { schedule: BackupPolicy['schedule']; hour: number; keep: number; enabled: boolean }) =>
