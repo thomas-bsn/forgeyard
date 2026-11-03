@@ -1306,18 +1306,42 @@ function AppDetail({
     api.app(app.id).then(setFull).catch((err) => setError(errorMessage(err)))
   }, [app.id, app.updatedAt])
 
-  async function run(action: () => Promise<unknown>) {
+  async function run(action: () => Promise<unknown>): Promise<boolean> {
     setBusy(true)
     setError('')
     try {
       await action()
       onChange()
+      return true
     } catch (err) {
       setError(errorMessage(err))
+      return false
     } finally {
       setBusy(false)
     }
   }
+
+  // Changes one setting of the app, keeping the rest of its configuration as it is (variables by name).
+  function saveConfig(full: App, change: { port?: number; memoryMb?: number }) {
+    return run(async () =>
+      setFull(
+        await api.updateApp(app.id, {
+          image: full.dockerfile ? '' : full.image,
+          dockerfile: full.dockerfile ?? '',
+          port: change.port ?? full.port,
+          memoryMb: change.memoryMb ?? full.memoryMb,
+          env: {},
+          keepEnv: full.envKeys,
+          volumes: full.volumes.filter((v) => !v.builtin).map((v) => v.path),
+          gpu: full.gpu,
+        }),
+      ),
+    )
+  }
+
+  const [memoryDraft, setMemoryDraft] = useState<string | null>(null)
+  const memoryValue = Number(memoryDraft)
+  const memoryValid = Number.isInteger(memoryValue) && memoryValue >= 64 && memoryValue <= 16384
 
   const tone = appTone(app)
   const bindsRevoked = !!app.bindMounts?.length && !app.bindAuthorized
@@ -1430,22 +1454,7 @@ function AppDetail({
                     type="button"
                     className="link-button"
                     disabled={busy}
-                    onClick={() =>
-                      run(async () =>
-                        setFull(
-                          await api.updateApp(app.id, {
-                            image: full.dockerfile ? '' : full.image,
-                            dockerfile: full.dockerfile ?? '',
-                            port: p,
-                            memoryMb: full.memoryMb,
-                            env: {},
-                            keepEnv: full.envKeys,
-                            volumes: full.volumes.filter((v) => !v.builtin).map((v) => v.path),
-                            gpu: full.gpu,
-                          }),
-                        ),
-                      )
-                    }
+                    onClick={() => saveConfig(full, { port: p })}
                   >
                     Utiliser {p}
                   </button>
@@ -1509,7 +1518,46 @@ function AppDetail({
             </>
           )}
           <dt>Mémoire</dt>
-          <dd>{app.memoryMb} Mo max.</dd>
+          <dd>
+            {memoryDraft === null ? (
+              <>
+                {app.memoryMb} Mo max.{' '}
+                {full && canWrite && !app.stackId && (
+                  <button type="button" className="link-button" disabled={busy} onClick={() => setMemoryDraft(String(full.memoryMb))}>
+                    Modifier
+                  </button>
+                )}
+              </>
+            ) : (
+              <form
+                className="memory-edit"
+                onSubmit={async (e) => {
+                  e.preventDefault()
+                  if (!full || !memoryValid) return
+                  if (await saveConfig(full, { memoryMb: memoryValue })) setMemoryDraft(null)
+                }}
+              >
+                <input
+                  type="number"
+                  min={64}
+                  max={16384}
+                  step={64}
+                  value={memoryDraft}
+                  onChange={(e) => setMemoryDraft(e.target.value)}
+                  aria-label="Mémoire maximale en Mo"
+                  autoFocus
+                  required
+                />{' '}
+                Mo{' '}
+                <button type="submit" className="btn btn-small" disabled={busy || !memoryValid} title="Le conteneur est recréé avec la nouvelle limite">
+                  Enregistrer
+                </button>{' '}
+                <button type="button" className="link-button" disabled={busy} onClick={() => setMemoryDraft(null)}>
+                  Annuler
+                </button>
+              </form>
+            )}
+          </dd>
           {app.gpu && (
             <>
               <dt>GPU</dt>
