@@ -1493,6 +1493,8 @@ function AppDetail({
         {changingBinds && <BindChangeModal app={app} admin={admin} superadmin={superadmin} onClose={() => setChangingBinds(false)} onRevoked={() => { setChangingBinds(false); onChange() }} onSubmitted={(id) => { setChangingBinds(false); go(`support/bind/${id}`) }} />}
 
         <dl className="kv">
+          <dt>Conteneur Docker</dt>
+          <dd className="mono">forgeyard-app-{app.id}</dd>
           <dt>Image</dt>
           <dd className="mono">{app.image}</dd>
           {app.kind === 'web' && (
